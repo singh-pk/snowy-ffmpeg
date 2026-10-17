@@ -1,0 +1,11 @@
+{
+  "config": {
+    "default": true,
+    "MD013": false, // line length: prose is one line per paragraph
+    "MD033": { "allowed_elements": ["picture", "source", "img", "br", "details", "summary"] },
+    "MD041": false, // skills and agents start with YAML front matter
+    "MD060": false,
+  },
+  "globs": ["**/*.md", ".agents/**/*.md", ".claude/**/*.md", ".github/**/*.md"],
+  "ignores": ["node_modules/**", "dist/**", "bench/media/**", "bench/variants/**", "LICENSES/**"],
+}

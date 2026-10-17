@@ -1,0 +1,3 @@
+This file holds factual data that is not subject to copyright, such as a published
+public key. It is distributed only so the build can verify upstream sources, and carries
+no licence because none is needed.

@@ -1,0 +1,28 @@
+name: Bug
+description: Something in the build, the API or the tooling is broken.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What is wrong
+      description: What you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce
+      description: The smallest steps or code that show it.
+      placeholder: |
+        1. bun run build
+        2. …
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: snowy-ffmpeg commit or version, browser, OS, and Docker/Bun versions for build problems.
+    validations:
+      required: true

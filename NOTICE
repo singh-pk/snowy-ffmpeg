@@ -1,0 +1,20 @@
+snowy-ffmpeg
+Copyright 2026 The Snowy Authors
+Licensed under the GNU Lesser General Public License v2.1 or later (LICENSES/LGPL-2.1-or-later.txt).
+
+The WebAssembly modules built by this repository contain code from:
+
+- FFmpeg (https://ffmpeg.org), LGPL-2.1-or-later. Built without --enable-gpl
+  and --enable-nonfree. Each release attaches the exact FFmpeg source,
+  patches and build scripts used.
+- dav1d (https://code.videolan.org/videolan/dav1d), BSD-2-Clause,
+  Copyright VideoLAN and dav1d authors.
+- zlib (https://zlib.net), zlib License,
+  Copyright Jean-loup Gailly and Mark Adler.
+- bzip2 (https://sourceware.org/bzip2), bzip2-1.0.6 License,
+  Copyright Julian R Seward.
+
+Lineage: this project grew out of ffmpeg.wasm (https://github.com/ffmpegwasm/ffmpeg.wasm),
+MIT License, Copyright (c) 2019 Jerome Wu. No ffmpeg.wasm code is included at
+present; any file adapted from it will carry its MIT notice in SPDX headers and
+LICENSES/MIT.txt will be added.

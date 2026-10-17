@@ -1,0 +1,6 @@
+# SPDX-FileCopyrightText: 2026 The Snowy Authors
+# SPDX-License-Identifier: LGPL-2.1-or-later
+ignored:
+  # apt packages come from the digest-pinned Emscripten image's Ubuntu release; exact apt
+  # versions disappear from the archive and would break the build.
+  - DL3008

@@ -1,0 +1,5 @@
+.git
+dist
+bench
+node_modules
+test

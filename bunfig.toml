@@ -1,0 +1,6 @@
+# Run package binaries (oxfmt, tsc, markdownlint, …) on Bun, never Node.
+[run]
+bun = true
+
+[install]
+exact = true

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(bun install)",
+      "Bash(bun run check)",
+      "Bash(bun run format)",
+      "Bash(bun run lint)",
+      "Bash(bun run typecheck)",
+      "Bash(bun run build)",
+      "Bash(bun test)",
+      "Bash(bun test:*)",
+      "Bash(bun scripts/gen-dts.ts)",
+      "Bash(shasum -a 256 -c dist.sha256)",
+      "Bash(git diff:*)",
+      "Bash(git status)",
+      "Bash(git log:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh issue view:*)"
+    ]
+  }
+}

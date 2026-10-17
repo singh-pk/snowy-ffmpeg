@@ -1,0 +1,38 @@
+name: File won't open or demuxes wrong
+description: A media file that fails to open, is missing streams, or has wrong timestamps or seeking.
+title: "format: "
+labels: [format]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! The fastest fix starts from a small sample: cut one with `ffmpeg -i in.ext -t 2 -c copy sample.ext` and attach it (zip it if GitHub refuses the extension).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens
+      description: The error, or what is wrong compared with the native `ffprobe` output.
+    validations:
+      required: true
+  - type: textarea
+    id: ffprobe
+    attributes:
+      label: Native ffprobe output
+      description: Output of `ffprobe -hide_banner sample.ext`.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: Sample file
+      description: Attach it here, or link to it.
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and version
+      placeholder: Chrome 156, Firefox 157, Safari 27
+    validations:
+      required: true

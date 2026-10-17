@@ -1,0 +1,75 @@
+{
+  "date": "2026-10-17T17:01:44.942Z",
+  "core": "bench/variants/o2/core",
+  "avio": 4194304,
+  "runs": 3,
+  "size": {
+    "snowy": {
+      "raw": 5786622,
+      "gzip": 2647581,
+      "brotli": 2167315
+    }
+  },
+  "browsers": {
+    "chromium": {
+      "version": "156.0.8078.4",
+      "snowy": {
+        "instantiateMs": 11.594999998807907,
+        "results": {
+          "1080p.mp4": {
+            "openMs": 19.099999994039536,
+            "seekColdMs": 2.594999998807907,
+            "seekWarmMs": 2.994999974966049,
+            "seekErr": 0,
+            "demuxMs": 412.91499999165535,
+            "packets": 23064,
+            "MBps": 1749.073042596062,
+            "packetsPerSec": 55856.53221720234,
+            "readAmp": 1.006038136652568,
+            "ioMs": 307.03500005602837,
+            "heapMB": 64
+          },
+          "1080p-faststart.mp4": {
+            "openMs": 4.219999998807907,
+            "seekColdMs": 2.1500000059604645,
+            "seekWarmMs": 2.074999988079071,
+            "seekErr": 0,
+            "demuxMs": 426.57499998807907,
+            "packets": 23064,
+            "MBps": 1693.0633426458194,
+            "packetsPerSec": 54067.866144627646,
+            "readAmp": 1,
+            "ioMs": 314.91499999165535,
+            "heapMB": 64
+          },
+          "1080p.mkv": {
+            "openMs": 5.284999996423721,
+            "seekColdMs": 2.2349999845027924,
+            "seekWarmMs": 1.8199999928474426,
+            "seekErr": 0,
+            "demuxMs": 640.3400000035763,
+            "packets": 23064,
+            "MBps": 1127.867219547309,
+            "packetsPerSec": 36018.36524326325,
+            "readAmp": 1,
+            "ioMs": 322.495000064373,
+            "heapMB": 64
+          },
+          "1080p.ts": {
+            "openMs": 8.025000005960464,
+            "seekColdMs": 7.0250000059604645,
+            "seekWarmMs": 2.395000010728836,
+            "seekErr": 0.034000000000020236,
+            "demuxMs": 989.6999999880791,
+            "packets": 23064,
+            "MBps": 729.8870102175426,
+            "packetsPerSec": 23304.031524985152,
+            "readAmp": 1.005724841638448,
+            "ioMs": 344.9449999332428,
+            "heapMB": 64
+          }
+        }
+      }
+    }
+  }
+}

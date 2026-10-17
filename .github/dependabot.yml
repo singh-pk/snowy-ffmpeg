@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: 2026 The Snowy Authors
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# FFmpeg, Emscripten and the C libraries are pinned by version and checksum in the
+# Dockerfile and bumped by hand (CONTRIBUTING.md#updating-a-pinned-dependency).
+version: 2
+updates:
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      dev-tools:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: build
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: ci

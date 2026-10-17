@@ -1,0 +1,517 @@
+{
+  "date": "2026-10-17T18:11:50.921Z",
+  "core": "dist/core",
+  "avio": 4194304,
+  "runs": 3,
+  "size": {
+    "snowy": {
+      "raw": 5824763,
+      "gzip": 2638214,
+      "brotli": 2161592
+    },
+    "libav": {
+      "raw": 2644615,
+      "gzip": 968256,
+      "brotli": 766088
+    },
+    "mediabunny": {
+      "raw": 693871,
+      "gzip": 178538,
+      "brotli": 145393
+    }
+  },
+  "browsers": {
+    "chromium": {
+      "version": "156.0.8078.4",
+      "snowy": {
+        "instantiateMs": 9.879999995231628,
+        "results": {
+          "1080p.mp4": {
+            "openMs": 18.165000021457672,
+            "seekColdMs": 2.594999998807907,
+            "seekWarmMs": 2.0900000035762787,
+            "seekErr": 0,
+            "demuxMs": 405.02500000596046,
+            "packets": 23064,
+            "MBps": 1783.1454733864061,
+            "packetsPerSec": 56944.63304650474,
+            "readAmp": 1.006038136652568,
+            "ioMs": 293.26999992132187,
+            "heapMB": 64
+          },
+          "1080p-faststart.mp4": {
+            "openMs": 4.234999984502792,
+            "seekColdMs": 3.080000013113022,
+            "seekWarmMs": 2.240000009536743,
+            "seekErr": 0,
+            "demuxMs": 380.78999999165535,
+            "packets": 23064,
+            "MBps": 1896.6319897706983,
+            "packetsPerSec": 60568.817459768965,
+            "readAmp": 1,
+            "ioMs": 289.7700002193451,
+            "heapMB": 64
+          },
+          "1080p.mkv": {
+            "openMs": 5.219999998807907,
+            "seekColdMs": 2.6599999964237213,
+            "seekWarmMs": 2.550000011920929,
+            "seekErr": 0,
+            "demuxMs": 560.2150000035763,
+            "packets": 23064,
+            "MBps": 1289.180931185968,
+            "packetsPerSec": 41169.90798149419,
+            "readAmp": 1,
+            "ioMs": 306.6149998009205,
+            "heapMB": 64
+          },
+          "1080p.ts": {
+            "openMs": 6.759999990463257,
+            "seekColdMs": 6.820000022649765,
+            "seekWarmMs": 2.155000001192093,
+            "seekErr": 0.034000000000020236,
+            "demuxMs": 803.3799999952316,
+            "packets": 23064,
+            "MBps": 899.1625059223389,
+            "packetsPerSec": 28708.705718510413,
+            "readAmp": 1.005724841638448,
+            "ioMs": 282.3849997520447,
+            "heapMB": 64
+          }
+        }
+      },
+      "libav": {
+        "instantiateMs": 13.46000000834465,
+        "results": {
+          "1080p.mp4": {
+            "openMs": 13.964999973773956,
+            "seekColdMs": 1.2699999809265137,
+            "seekWarmMs": 0.7899999916553497,
+            "seekErr": 0,
+            "demuxMs": 4040.7249999940395,
+            "packets": 23064,
+            "MBps": 178.73487935210213,
+            "packetsPerSec": 5707.88657976824,
+            "readAmp": null,
+            "ioMs": null,
+            "heapMB": null
+          },
+          "1080p-faststart.mp4": {
+            "openMs": 4.395000010728836,
+            "seekColdMs": 0.7800000011920929,
+            "seekWarmMs": 0.7649999856948853,
+            "seekErr": 0,
+            "demuxMs": 4149.564999997616,
+            "packets": 23064,
+            "MBps": 174.0467965604521,
+            "packetsPerSec": 5558.172965121224,
+            "readAmp": null,
+            "ioMs": null,
+            "heapMB": null
+          },
+          "1080p.mkv": {
+            "openMs": 27.514999985694885,
+            "seekColdMs": 1.0900000035762787,
+            "seekWarmMs": 0.7049999833106995,
+            "seekErr": 0,
+            "demuxMs": 3956.354999989271,
+            "packets": 23064,
+            "MBps": 182.54643361652734,
+            "packetsPerSec": 5829.60831372881,
+            "readAmp": null,
+            "ioMs": null,
+            "heapMB": null
+          },
+          "1080p.ts": {
+            "error": "Error: Could not open source file"
+          }
+        }
+      },
+      "mediabunny": {
+        "instantiateMs": 0.004999995231628418,
+        "results": {
+          "1080p.mp4": {
+            "openMs": 2.770000010728836,
+            "seekColdMs": 2.6600000262260437,
+            "seekWarmMs": 0.36500000953674316,
+            "seekErr": 0,
+            "demuxMs": 395.7300000190735,
+            "packets": 23064,
+            "MBps": 1825.0284166834656,
+            "packetsPerSec": 58282.1620773971,
+            "readAmp": null,
+            "ioMs": null,
+            "heapMB": null
+          },
+          "1080p-faststart.mp4": {
+            "openMs": 0.5250000059604645,
+            "seekColdMs": 1.6699999868869781,
+            "seekWarmMs": 0.33500000834465027,
+            "seekErr": 0,
+            "demuxMs": 380.47499999403954,
+            "packets": 23064,
+            "MBps": 1898.2022350490088,
+            "packetsPerSec": 60618.96313913218,
+            "readAmp": null,
+            "ioMs": null,
+            "heapMB": null
+          },
+          "1080p.mkv": {
+            "openMs": 3.4500000178813934,
+            "seekColdMs": 1.854999989271164,
+            "seekWarmMs": 2.0850000083446503,
+            "seekErr": 0,
+            "demuxMs": 358.0649999976158,
+            "packets": 23064,
+            "MBps": 2017.0038830205867,
+            "packetsPerSec": 64412.88592896143,
+            "readAmp": null,
+            "ioMs": null,
+            "heapMB": null
+          },
+          "1080p.ts": {
+            "openMs": 4.265000015497208,
+            "seekColdMs": 21.76000002026558,
+            "seekWarmMs": 11.879999995231628,
+            "seekErr": 0,
+            "demuxMs": 1944.3549999892712,
+            "packets": 23064,
+            "MBps": 371.5212366093574,
+            "packetsPerSec": 11862.031367794085,
+            "readAmp": null,
+            "ioMs": null,
+            "heapMB": null
+          }
+        }
+      }
+    },
+    "firefox": {
+      "version": "157.0",
+      "snowy": {
+        "instantiateMs": 40.059999999999995,
+        "results": {
+          "1080p.mp4": {
+            "openMs": 9.240000000000002,
+            "seekColdMs": 3.1400000000000006,
+            "seekWarmMs": 3.0999999999999943,
+            "seekErr": 0,
+            "demuxMs": 497.56000000000006,
+            "packets": 23064,
+            "MBps": 1451.520410340376,
+            "packetsPerSec": 46354.20853766379,
+            "readAmp": 1.006038136652568,
+            "ioMs": 415.58000000000015,
+            "heapMB": 64
+          },
+          "1080p-faststart.mp4": {
+            "openMs": 4.639999999999986,
+            "seekColdMs": 3.1200000000000045,
+            "seekWarmMs": 2.9400000000000546,
+            "seekErr": 0,
+            "demuxMs": 490.48000000000013,
+            "packets": 23064,
+            "MBps": 1472.4728742638993,
+            "packetsPerSec": 47023.32409068666,
+            "readAmp": 1,
+            "ioMs": 409.5000000000005,
+            "heapMB": 64
+          },
+          "1080p.mkv": {
+            "openMs": 5.3400000000001455,
+            "seekColdMs": 2.3200000000001637,
+            "seekWarmMs": 2.240000000000009,
+            "seekErr": 0,
+            "demuxMs": 485.9000000000001,
+            "packets": 23064,
+            "MBps": 1486.3521205370598,
+            "packetsPerSec": 47466.556904712896,
+            "readAmp": 1,
+            "ioMs": 405.94000000000165,
+            "heapMB": 64
+          },
+          "1080p.ts": {
+            "openMs": 5.459999999999809,
+            "seekColdMs": 8.279999999999973,
+            "seekWarmMs": 2.6399999999998727,
+            "seekErr": 0.034000000000020236,
+            "demuxMs": 1042.4,
+            "packets": 23064,
+            "MBps": 692.9865445161176,
+            "packetsPerSec": 22125.863392171912,
+            "readAmp": 1.005724841638448,
+            "ioMs": 424.21999999999616,
+            "heapMB": 64
+          }
+        }
+      },
+      "libav": {
+        "instantiateMs": 29.66,
+        "results": {
+          "1080p.mp4": {
+            "openMs": 6.280000000000001,
+            "seekColdMs": 0.6800000000000068,
+            "seekWarmMs": 0.5399999999999991,
+            "seekErr": 0,
+            "demuxMs": 2185.66,
+            "packets": 23064,
+            "MBps": 330.4349694686994,
+            "packetsPerSec": 10552.41894896736,
+            "readAmp": null,
+            "ioMs": null,
+            "heapMB": null
+          },
+          "1080p-faststart.mp4": {
+            "openMs": 5.099999999999909,
+            "seekColdMs": 0.5199999999999818,
+            "seekWarmMs": 0.5,
+            "seekErr": 0,
+            "demuxMs": 2155.64,
+            "packets": 23064,
+            "MBps": 335.036692290437,
+            "packetsPerSec": 10699.37466367297,
+            "readAmp": null,
+            "ioMs": null,
+            "heapMB": null
+          },
+          "1080p.mkv": {
+            "openMs": 12.420000000000073,
+            "seekColdMs": 0.6999999999998181,
+            "seekWarmMs": 0.4600000000000364,
+            "seekErr": 0,
+            "demuxMs": 2213.8399999999992,
+            "packets": 23064,
+            "MBps": 326.2288581690446,
+            "packetsPerSec": 10418.097062118313,
+            "readAmp": null,
+            "ioMs": null,
+            "heapMB": null
+          },
+          "1080p.ts": {
+            "error": "Error: Could not open source file"
+          }
+        }
+      },
+      "mediabunny": {
+        "instantiateMs": 0,
+        "results": {
+          "1080p.mp4": {
+            "openMs": 4,
+            "seekColdMs": 4.060000000000002,
+            "seekWarmMs": 0.8800000000000026,
+            "seekErr": 0,
+            "demuxMs": 876.9200000000001,
+            "packets": 23064,
+            "MBps": 823.5853844922656,
+            "packetsPerSec": 26301.14491629795,
+            "readAmp": null,
+            "ioMs": null,
+            "heapMB": null
+          },
+          "1080p-faststart.mp4": {
+            "openMs": 1.5,
+            "seekColdMs": 5.8799999999999955,
+            "seekWarmMs": 0.4399999999999409,
+            "seekErr": 0,
+            "demuxMs": 870.3799999999999,
+            "packets": 23064,
+            "MBps": 829.773771650265,
+            "packetsPerSec": 26498.770651899173,
+            "readAmp": null,
+            "ioMs": null,
+            "heapMB": null
+          },
+          "1080p.mkv": {
+            "openMs": 5.019999999999982,
+            "seekColdMs": 3.160000000000082,
+            "seekWarmMs": 3.4400000000000546,
+            "seekErr": 0,
+            "demuxMs": 978.8,
+            "packets": 23064,
+            "MBps": 737.8611517868385,
+            "packetsPerSec": 23563.547200653862,
+            "readAmp": null,
+            "ioMs": null,
+            "heapMB": null
+          },
+          "1080p.ts": {
+            "openMs": 23.88000000000011,
+            "seekColdMs": 120.38000000000011,
+            "seekWarmMs": 85.01999999999998,
+            "seekErr": 0,
+            "demuxMs": 23083.199999999997,
+            "packets": 23064,
+            "MBps": 31.294152197425017,
+            "packetsPerSec": 999.1682262424621,
+            "readAmp": null,
+            "ioMs": null,
+            "heapMB": null
+          }
+        }
+      }
+    },
+    "webkit": {
+      "version": "27.2",
+      "snowy": {
+        "instantiateMs": 9.7,
+        "results": {
+          "1080p.mp4": {
+            "openMs": 16.16,
+            "seekColdMs": 3.799999999999997,
+            "seekWarmMs": 2.299999999999997,
+            "seekErr": 0,
+            "demuxMs": 286.7,
+            "packets": 23064,
+            "MBps": 2519.073928737208,
+            "packetsPerSec": 80446.45971398674,
+            "readAmp": 1.006038136652568,
+            "ioMs": 225.90000000000023,
+            "heapMB": 64
+          },
+          "1080p-faststart.mp4": {
+            "openMs": 4.600000000000023,
+            "seekColdMs": 1.5399999999999636,
+            "seekWarmMs": 1.660000000000025,
+            "seekErr": 0,
+            "demuxMs": 274.06,
+            "packets": 23064,
+            "MBps": 2635.2568611579854,
+            "packetsPerSec": 84156.75399547543,
+            "readAmp": 1,
+            "ioMs": 222.22000000000008,
+            "heapMB": 64
+          },
+          "1080p.mkv": {
+            "openMs": 4.100000000000023,
+            "seekColdMs": 1.4800000000000182,
+            "seekWarmMs": 1.5,
+            "seekErr": 0,
+            "demuxMs": 253.58000000000004,
+            "packets": 23064,
+            "MBps": 2848.0893420970006,
+            "packetsPerSec": 90953.54523227383,
+            "readAmp": 1,
+            "ioMs": 199.9000000000005,
+            "heapMB": 64
+          },
+          "1080p.ts": {
+            "openMs": 5.279999999999973,
+            "seekColdMs": 5.800000000000068,
+            "seekWarmMs": 1.4600000000000364,
+            "seekErr": 0.034000000000020236,
+            "demuxMs": 681.5200000000001,
+            "packets": 23064,
+            "MBps": 1059.938334903746,
+            "packetsPerSec": 33842.00023476933,
+            "readAmp": 1.005724841638448,
+            "ioMs": 199.84000000000026,
+            "heapMB": 64
+          }
+        }
+      },
+      "libav": {
+        "instantiateMs": 16.62,
+        "results": {
+          "1080p.mp4": {
+            "openMs": 17.38,
+            "seekColdMs": 3.0600000000000023,
+            "seekWarmMs": 2.519999999999996,
+            "seekErr": 0,
+            "demuxMs": 11298.1,
+            "packets": 23064,
+            "MBps": 63.92388944769099,
+            "packetsPerSec": 2041.4051920234376,
+            "readAmp": null,
+            "ioMs": null,
+            "heapMB": null
+          },
+          "1080p-faststart.mp4": {
+            "openMs": 11.319999999999709,
+            "seekColdMs": 2.860000000000582,
+            "seekWarmMs": 1.9400000000005093,
+            "seekErr": 0,
+            "demuxMs": 21110.219999999998,
+            "packets": 23064,
+            "MBps": 34.21179387846065,
+            "packetsPerSec": 1092.5513803266854,
+            "readAmp": null,
+            "ioMs": null,
+            "heapMB": null
+          },
+          "1080p.mkv": {
+            "openMs": 174.07999999999447,
+            "seekColdMs": 8.10000000000582,
+            "seekWarmMs": 6.059999999997672,
+            "seekErr": 0,
+            "demuxMs": 27936.159999999996,
+            "packets": 23064,
+            "MBps": 25.852461303520514,
+            "packetsPerSec": 825.5966460673193,
+            "readAmp": null,
+            "ioMs": null,
+            "heapMB": null
+          },
+          "1080p.ts": {
+            "error": "Error: Could not open source file"
+          }
+        }
+      },
+      "mediabunny": {
+        "instantiateMs": 0.019999999999999574,
+        "results": {
+          "1080p.mp4": {
+            "openMs": 8.760000000000002,
+            "seekColdMs": 4.640000000000001,
+            "seekWarmMs": 2.480000000000004,
+            "seekErr": 0,
+            "demuxMs": 40078.5,
+            "packets": 23064,
+            "MBps": 18.02009794201274,
+            "packetsPerSec": 575.4706388712152,
+            "readAmp": null,
+            "ioMs": null,
+            "heapMB": null
+          },
+          "1080p-faststart.mp4": {
+            "openMs": 10.779999999998836,
+            "seekColdMs": 2.459999999999127,
+            "seekWarmMs": 2.599999999998545,
+            "seekErr": 0,
+            "demuxMs": 40553.35999999999,
+            "packets": 23064,
+            "MBps": 17.809091413608087,
+            "packetsPerSec": 568.7321593081315,
+            "readAmp": null,
+            "ioMs": null,
+            "heapMB": null
+          },
+          "1080p.mkv": {
+            "openMs": 9.30000000000291,
+            "seekColdMs": 7,
+            "seekWarmMs": 8.939999999987776,
+            "seekErr": 0,
+            "demuxMs": 1537.820000000007,
+            "packets": 23064,
+            "MBps": 469.637860977848,
+            "packetsPerSec": 14997.854105161783,
+            "readAmp": null,
+            "ioMs": null,
+            "heapMB": null
+          },
+          "1080p.ts": {
+            "openMs": 55.13999999999942,
+            "seekColdMs": 336.6399999999994,
+            "seekWarmMs": 188.44000000000233,
+            "seekErr": 0,
+            "demuxMs": 63059.259999999995,
+            "packets": 23064,
+            "MBps": 11.455402013972272,
+            "packetsPerSec": 365.75119974449433,
+            "readAmp": null,
+            "ioMs": null,
+            "heapMB": null
+          }
+        }
+      }
+    }
+  }
+}

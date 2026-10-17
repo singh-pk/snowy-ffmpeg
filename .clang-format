@@ -1,0 +1,6 @@
+# SPDX-FileCopyrightText: 2026 The Snowy Authors
+# SPDX-License-Identifier: LGPL-2.1-or-later
+BasedOnStyle: LLVM
+ColumnLimit: 100
+AllowShortFunctionsOnASingleLine: All
+AlignTrailingComments: false

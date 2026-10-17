@@ -1,0 +1,37 @@
+{
+  "name": "snowy-ffmpeg-dev",
+  "private": true,
+  "description": "Build, test and benchmark tooling for snowy-ffmpeg",
+  "license": "LGPL-2.1-or-later",
+  "repository": "github:singh-pk/snowy-ffmpeg",
+  "type": "module",
+  "scripts": {
+    "prepare": "git config core.hooksPath .githooks",
+    "build": "docker buildx build --target dist --output type=local,dest=dist . && bun scripts/gen-dts.ts",
+    "test": "bun test",
+    "bench": "bun bench/run.ts",
+    "fixtures": "bun scripts/gen-fixtures.ts",
+    "settings": "bun scripts/settings.ts",
+    "format": "oxfmt && clang-format -i src/*.c",
+    "format:check": "oxfmt --check && clang-format --dry-run --Werror src/*.c",
+    "lint": "oxlint --type-aware --max-warnings 0 --report-unused-disable-directives-severity error",
+    "lint:md": "markdownlint-cli2",
+    "lint:unused": "knip",
+    "typecheck": "tsc",
+    "check": "bun run format:check && bun run lint && bun run typecheck && bun run lint:md && bun run lint:unused"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.3",
+    "@wasm-fmt/clang-format": "23.1.1",
+    "knip": "6.41.0",
+    "libav.js": "6.10.9",
+    "markdownlint-cli2": "0.23.3",
+    "mediabunny": "1.61.6",
+    "oxfmt": "0.73.0",
+    "oxlint": "1.88.0",
+    "oxlint-tsgolint": "7.0.2004",
+    "playwright": "1.64.1",
+    "typescript": "7.0.2"
+  },
+  "packageManager": "bun@1.4.2"
+}

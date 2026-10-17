@@ -1,0 +1,73 @@
+# SPDX-FileCopyrightText: 2026 The Snowy Authors
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# Repository settings, topics and labels. GitHub does not read this file: a maintainer
+# applies it, together with .github/rulesets/*.json, with `bun run settings`.
+
+# Fields of the "update a repository" REST API.
+repository:
+  description: "FFmpeg 9 compiled to WebAssembly for Snowy: small, lazily loaded modules tuned for playback and editing"
+  has_wiki: false
+  has_projects: false
+  # Squash only; the pull request title becomes the commit on main (CONTRIBUTING.md#commits).
+  allow_squash_merge: true
+  allow_merge_commit: false
+  allow_rebase_merge: false
+  squash_merge_commit_title: PR_TITLE
+  squash_merge_commit_message: BLANK
+  allow_update_branch: true
+  delete_branch_on_merge: true
+
+topics:
+  - ffmpeg
+  - webassembly
+  - wasm
+  - emscripten
+  - video
+  - audio
+  - demuxer
+  - browser
+  - webcodecs
+  - video-player
+
+# Used by the issue forms, the triage-issue skill, the changelog check and Dependabot.
+labels:
+  - {
+      name: format,
+      color: "5319e7",
+      description: "A file won't open, or demuxes differently from native FFmpeg",
+    }
+  - { name: bug, color: "d73a4a", description: "Something isn't working" }
+  - { name: enhancement, color: "a2eeef", description: New feature or request }
+  - { name: question, color: "d876e3", description: Further information is requested }
+  - { name: duplicate, color: "cfd3d7", description: This issue or pull request already exists }
+  - {
+      name: good first issue,
+      color: "7057ff",
+      description: "Small, well understood, no build-system knowledge needed",
+    }
+  - {
+      name: needs-info,
+      color: "fbca04",
+      description: "Waiting on the reporter for a sample, versions or steps",
+    }
+  - { name: security, color: "b60205", description: "Needs private handling, see SECURITY.md" }
+  - {
+      name: no-changelog,
+      color: "ededed",
+      description: "Skips the CHANGELOG.md check on feat, fix and perf pull requests",
+    }
+  - { name: dependencies, color: "0366d6", description: Dependency updates }
+  - {
+      name: "area:core",
+      color: "1d76db",
+      description: "src/, the core module and its JavaScript API",
+    }
+  - {
+      name: "area:build",
+      color: "1d76db",
+      description: "Dockerfile, build/ and pinned upstream versions",
+    }
+  - { name: "area:bench", color: "1d76db", description: "bench/ harness, adapters and results" }
+  - { name: "area:ci", color: "1d76db", description: GitHub workflows and repository checks }
+  - { name: "area:docs", color: "1d76db", description: "README, docs/ and contributor guides" }

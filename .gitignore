@@ -1,0 +1,7 @@
+dist/
+node_modules/
+.build.log
+.DS_Store
+bench/media/
+bench/variants/
+.claude/settings.local.json

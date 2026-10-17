@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: 2026 The Snowy Authors
+# SPDX-License-Identifier: LGPL-2.1-or-later
+[files]
+extend-exclude = ["test/fixtures/", "bench/results/", "LICENSES/", "keys/", "*.lock"]
+
+[default.extend-words]
+caf = "caf" # Core Audio Format
+seeked = "seeked" # the HTML media event name
+
+[default.extend-identifiers]
+f64toi64 = "f64toi64" # libav.js API

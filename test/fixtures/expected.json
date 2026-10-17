@@ -1,0 +1,693 @@
+{
+  "anim.gif": {
+    "format": "gif",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "gif",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "10",
+          "20"
+        ]
+      }
+    ]
+  },
+  "subs.vtt": {
+    "format": "webvtt",
+    "streams": [
+      {
+        "type": "subtitle",
+        "codec": "webvtt",
+        "packets": 2,
+        "firstPts": [
+          "0",
+          "500"
+        ]
+      }
+    ]
+  },
+  "pcm.wav": {
+    "format": "wav",
+    "streams": [
+      {
+        "type": "audio",
+        "codec": "pcm_s16le",
+        "packets": 12,
+        "firstPts": [
+          "0",
+          "4096",
+          "8192"
+        ]
+      }
+    ]
+  },
+  "prores-pcm.mov": {
+    "format": "mov,mp4,m4a,3gp,3g2,mj2",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "prores",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "1024",
+          "2048"
+        ]
+      },
+      {
+        "type": "audio",
+        "codec": "pcm_s16le",
+        "packets": 47,
+        "firstPts": [
+          "0",
+          "1024",
+          "2048"
+        ]
+      }
+    ]
+  },
+  "anim.apng": {
+    "format": "apng",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "apng",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "10000",
+          "20000"
+        ]
+      }
+    ]
+  },
+  "audio.ac3": {
+    "format": "ac3",
+    "streams": [
+      {
+        "type": "audio",
+        "codec": "ac3",
+        "packets": 32,
+        "firstPts": [
+          "0",
+          "2880",
+          "5760"
+        ]
+      }
+    ]
+  },
+  "h264-ac3.ts": {
+    "format": "mpegts",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "h264",
+        "packets": 10,
+        "firstPts": [
+          "144000",
+          "171000",
+          "153000"
+        ]
+      },
+      {
+        "type": "audio",
+        "codec": "ac3",
+        "packets": 32,
+        "firstPts": [
+          "143520",
+          "146400",
+          "149280"
+        ]
+      }
+    ]
+  },
+  "raw.y4m": {
+    "format": "yuv4mpegpipe",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "rawvideo",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "1",
+          "2"
+        ]
+      }
+    ]
+  },
+  "mpeg2-mp2.mpg": {
+    "format": "mpeg",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "mpeg2video",
+        "packets": 10,
+        "firstPts": [
+          "54000",
+          "63000",
+          "72000"
+        ]
+      },
+      {
+        "type": "audio",
+        "codec": "mp2",
+        "packets": 42,
+        "firstPts": [
+          "53098",
+          "55258",
+          "57418"
+        ]
+      }
+    ]
+  },
+  "pcm.aiff": {
+    "format": "aiff",
+    "streams": [
+      {
+        "type": "audio",
+        "codec": "pcm_s16be",
+        "packets": 24,
+        "firstPts": [
+          "0",
+          "2048",
+          "4096"
+        ]
+      }
+    ]
+  },
+  "h264-aac.mkv": {
+    "format": "matroska,webm",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "h264",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "300",
+          "100"
+        ]
+      },
+      {
+        "type": "audio",
+        "codec": "aac",
+        "packets": 48,
+        "firstPts": [
+          "-21",
+          "0",
+          "21"
+        ]
+      }
+    ]
+  },
+  "subs.srt": {
+    "format": "srt",
+    "streams": [
+      {
+        "type": "subtitle",
+        "codec": "subrip",
+        "packets": 2,
+        "firstPts": [
+          "0",
+          "500"
+        ]
+      }
+    ]
+  },
+  "vorbis.oga": {
+    "format": "ogg",
+    "streams": [
+      {
+        "type": "audio",
+        "codec": "vorbis",
+        "packets": 48,
+        "firstPts": [
+          "-1024",
+          "0",
+          "1024"
+        ]
+      }
+    ]
+  },
+  "audio.mp3": {
+    "format": "mp3",
+    "streams": [
+      {
+        "type": "audio",
+        "codec": "mp3",
+        "packets": 43,
+        "firstPts": [
+          "0",
+          "338688",
+          "677376"
+        ]
+      }
+    ]
+  },
+  "h263-aac.3gp": {
+    "format": "mov,mp4,m4a,3gp,3g2,mj2",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "h263",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "1024",
+          "2048"
+        ]
+      },
+      {
+        "type": "audio",
+        "codec": "aac",
+        "packets": 17,
+        "firstPts": [
+          "-1024",
+          "0",
+          "1024"
+        ]
+      }
+    ]
+  },
+  "adts.aac": {
+    "format": "aac",
+    "streams": [
+      {
+        "type": "audio",
+        "codec": "aac",
+        "packets": 48,
+        "firstPts": [
+          "0",
+          "602112",
+          "1204224"
+        ]
+      }
+    ]
+  },
+  "audio.mp2": {
+    "format": "mp3",
+    "streams": [
+      {
+        "type": "audio",
+        "codec": "mp2",
+        "packets": 42,
+        "firstPts": [
+          "0",
+          "338688",
+          "677376"
+        ]
+      }
+    ]
+  },
+  "hevc.hevc": {
+    "format": "hevc",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "hevc",
+        "packets": 10,
+        "firstPts": [
+          null,
+          null,
+          null
+        ]
+      }
+    ]
+  },
+  "h264-aac-ass.mkv": {
+    "format": "matroska,webm",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "h264",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "300",
+          "100"
+        ]
+      },
+      {
+        "type": "audio",
+        "codec": "aac",
+        "packets": 48,
+        "firstPts": [
+          "-21",
+          "0",
+          "21"
+        ]
+      },
+      {
+        "type": "subtitle",
+        "codec": "ass",
+        "packets": 2,
+        "firstPts": [
+          "0",
+          "500"
+        ]
+      }
+    ]
+  },
+  "vp9-opus.webm": {
+    "format": "matroska,webm",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "vp9",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "100",
+          "200"
+        ]
+      },
+      {
+        "type": "audio",
+        "codec": "opus",
+        "packets": 51,
+        "firstPts": [
+          "-7",
+          "14",
+          "34"
+        ]
+      }
+    ]
+  },
+  "pcm.w64": {
+    "format": "w64",
+    "streams": [
+      {
+        "type": "audio",
+        "codec": "pcm_s16le",
+        "packets": 12,
+        "firstPts": [
+          "0",
+          "4096",
+          "8192"
+        ]
+      }
+    ]
+  },
+  "alac.caf": {
+    "format": "caf",
+    "streams": [
+      {
+        "type": "audio",
+        "codec": "alac",
+        "packets": 12,
+        "firstPts": [
+          "0",
+          "4096",
+          "8192"
+        ]
+      }
+    ]
+  },
+  "audio.eac3": {
+    "format": "eac3",
+    "streams": [
+      {
+        "type": "audio",
+        "codec": "eac3",
+        "packets": 32,
+        "firstPts": [
+          "0",
+          "2880",
+          "5760"
+        ]
+      }
+    ]
+  },
+  "av1.obu": {
+    "format": "obu",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "av1",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "48000",
+          "96000"
+        ]
+      }
+    ]
+  },
+  "nocues.mkv": {
+    "format": "matroska,webm",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "h264",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "300",
+          "100"
+        ]
+      },
+      {
+        "type": "audio",
+        "codec": "aac",
+        "packets": 48,
+        "firstPts": [
+          "-21",
+          "0",
+          "21"
+        ]
+      }
+    ]
+  },
+  "subs.ass": {
+    "format": "ass",
+    "streams": [
+      {
+        "type": "subtitle",
+        "codec": "ass",
+        "packets": 2,
+        "firstPts": [
+          "0",
+          "50"
+        ]
+      }
+    ]
+  },
+  "wmv2-wmav2.wmv": {
+    "format": "asf",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "wmv2",
+        "packets": 10,
+        "firstPts": [
+          "43",
+          "143",
+          "243"
+        ]
+      },
+      {
+        "type": "audio",
+        "codec": "wmav2",
+        "packets": 24,
+        "firstPts": [
+          "0",
+          "43",
+          "86"
+        ]
+      }
+    ]
+  },
+  "av1.ivf": {
+    "format": "ivf",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "av1",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "1",
+          "2"
+        ]
+      }
+    ]
+  },
+  "mpeg2.m2v": {
+    "format": "mpegvideo",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "mpeg2video",
+        "packets": 10,
+        "firstPts": [
+          null,
+          null,
+          null
+        ]
+      }
+    ]
+  },
+  "audio.flac": {
+    "format": "flac",
+    "streams": [
+      {
+        "type": "audio",
+        "codec": "flac",
+        "packets": 47,
+        "firstPts": [
+          "0",
+          "1024",
+          "2048"
+        ]
+      }
+    ]
+  },
+  "opus.ogg": {
+    "format": "ogg",
+    "streams": [
+      {
+        "type": "audio",
+        "codec": "opus",
+        "packets": 51,
+        "firstPts": [
+          "-312",
+          "648",
+          "1608"
+        ]
+      }
+    ]
+  },
+  "h264.h264": {
+    "format": "h264",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "h264",
+        "packets": 10,
+        "firstPts": [
+          null,
+          null,
+          null
+        ]
+      }
+    ]
+  },
+  "ffv1-flac.nut": {
+    "format": "nut",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "ffv1",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "8192",
+          "16384"
+        ]
+      },
+      {
+        "type": "audio",
+        "codec": "flac",
+        "packets": 48,
+        "firstPts": [
+          "0",
+          "1024",
+          "2048"
+        ]
+      }
+    ]
+  },
+  "alac.m4a": {
+    "format": "mov,mp4,m4a,3gp,3g2,mj2",
+    "streams": [
+      {
+        "type": "audio",
+        "codec": "alac",
+        "packets": 12,
+        "firstPts": [
+          "0",
+          "4096",
+          "8192"
+        ]
+      }
+    ]
+  },
+  "mpeg4-mp3.avi": {
+    "format": "avi",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "mpeg4",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "2",
+          "3"
+        ]
+      },
+      {
+        "type": "audio",
+        "codec": "mp3",
+        "packets": 43,
+        "firstPts": [
+          "0",
+          "1",
+          "2"
+        ]
+      }
+    ]
+  },
+  "h264-aac.flv": {
+    "format": "flv",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "h264",
+        "packets": 10,
+        "firstPts": [
+          "200",
+          "500",
+          "300"
+        ]
+      },
+      {
+        "type": "audio",
+        "codec": "aac",
+        "packets": 48,
+        "firstPts": [
+          "179",
+          "200",
+          "221"
+        ]
+      }
+    ]
+  },
+  "hevc-aac.mp4": {
+    "format": "mov,mp4,m4a,3gp,3g2,mj2",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "hevc",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "3072",
+          "2048"
+        ]
+      },
+      {
+        "type": "audio",
+        "codec": "aac",
+        "packets": 48,
+        "firstPts": [
+          "-1024",
+          "0",
+          "1024"
+        ]
+      }
+    ]
+  }
+}
