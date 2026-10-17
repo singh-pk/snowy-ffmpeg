@@ -1,10 +1,10 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: LGPL-2.1-or-later
 //
-// Applies .github/settings.yml (repository settings, topics, labels) and
+// Applies .github/settings.yml (repository settings, security features, topics, labels) and
 // .github/rulesets/*.json (in the format GitHub exports) to the GitHub repository of the
-// current checkout. Creates and
-// updates; never deletes a label or ruleset that the files don't mention.
+// current checkout. Creates and updates; never deletes a label or ruleset that the files
+// don't mention.
 // Needs the GitHub CLI signed in as a repository admin.
 // Usage: bun scripts/settings.ts
 
@@ -13,6 +13,7 @@ import config from "../.github/settings.yml";
 
 interface Settings {
   repository: Record<string, unknown>;
+  security: Record<string, boolean>;
   topics: string[];
   labels: { name: string; color: string; description: string }[];
 }
@@ -39,6 +40,13 @@ async function api(method: string, path: string, body: unknown) {
 await api("PATCH", `repos/${repo}`, settings.repository);
 await api("PUT", `repos/${repo}/topics`, { names: settings.topics });
 console.log(`settings and ${settings.topics.length} topics`);
+
+// Each feature is its own endpoint: PUT turns it on, DELETE turns it off.
+for (const [feature, on] of Object.entries(settings.security)) {
+  await api(on ? "PUT" : "DELETE", `repos/${repo}/${feature.replaceAll("_", "-")}`, {});
+}
+
+console.log(`${Object.keys(settings.security).length} security features`);
 
 for (const { name, color, description } of settings.labels) {
   const res =

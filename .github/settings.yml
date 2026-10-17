@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 The Snowy Authors
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
-# Repository settings, topics and labels. GitHub does not read this file: a maintainer
+# Repository settings, security features, topics and labels. GitHub does not read this file: a maintainer
 # applies it, together with .github/rulesets/*.json, with `bun run settings`.
 
 # Fields of the "update a repository" REST API.
@@ -17,6 +17,16 @@ repository:
   squash_merge_commit_message: BLANK
   allow_update_branch: true
   delete_branch_on_merge: true
+  security_and_analysis:
+    secret_scanning: { status: enabled }
+    secret_scanning_push_protection: { status: enabled }
+
+# Features with their own endpoint (repos/{repo}/{feature}). Order matters: Dependabot
+# security fixes need vulnerability alerts on first.
+security:
+  vulnerability_alerts: true
+  automated_security_fixes: true
+  private_vulnerability_reporting: true
 
 topics:
   - ffmpeg
