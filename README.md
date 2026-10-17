@@ -7,13 +7,13 @@
 
 FFmpeg 9 compiled to WebAssembly as small, lazily loaded modules for playing and editing video in the browser. It powers [Snowy](https://github.com/singh-pk/snowy).
 
-- **Every format.** The `core` module opens every single-file container FFmpeg knows (350 demuxers) and decodes every audio and subtitle codec.
+- **Every format.** The `core` module opens every single-file container FFmpeg knows (350 demuxers) and decodes every common audio codec and every subtitle codec; `audio-ext`, loaded only when a file needs it, decodes the remaining audio codecs.
 - **Fast.** It demuxes a 750 MB 1080p file in 0.25–1 s in Chromium, Firefox and WebKit alike, where other browser demuxers slow down by up to 100× in some engines ([benchmarks](bench/README.md)).
 - **Exact.** Every fixture demuxes to the same streams, packets and timestamps as native `ffprobe`, and decodes to the same audio as native `ffmpeg`.
 - **Reproducible.** Pinned, checksummed and GPG-verified sources; CI checks that the output is byte-identical.
 
 > [!NOTE]
-> Pre-release. The `core` module works; video decoding and muxing modules are in development, and nothing is published to npm yet.
+> Pre-release. The `core` and `audio-ext` modules work; video decoding and muxing modules are in development, and nothing is published to npm yet.
 
 ## What it is, and isn't
 
@@ -77,7 +77,7 @@ self.onmessage = ({ data: input }) => {
 
 ### Decoding audio
 
-`core` decodes every audio codec to 32-bit float planar, the format Web Audio uses. Open a decoder for a stream, send it that stream's packets, and take the frames:
+Audio decodes to 32-bit float planar, the format Web Audio uses. Open a decoder for a stream, send it that stream's packets, and take the frames:
 
 ```js
 const out = core._malloc(4);
@@ -107,15 +107,16 @@ core._sny_converter_free(swr);
 core._sny_decoder_close(dec);
 ```
 
-[`test/support/audio-decoder.js`](test/support/audio-decoder.js) is the complete loop, including the case where the decoder is full. Integer decoders produce exactly what native FFmpeg does; float decoders match within 10⁻⁶.
+`_sny_decoder_open` returns `AVERROR_DECODER_NOT_FOUND` for a long-tail codec (ATRAC, RealAudio, speech codecs and the like): decode it with `audio-ext` instead. [`test/support/audio-decoder.js`](test/support/audio-decoder.js) is the complete loop, including the case where the decoder is full and handing a stream to `audio-ext`. Integer decoders produce exactly what native FFmpeg does; float decoders match within 10⁻⁶.
 
-Every `_sny_*` call that can fail returns a negative AVERROR code, and `_sny_strerror` describes it. The full API is [`src/helpers.c`](src/helpers.c); `dist/core/index.d.ts` types every function and constant. [docs/architecture.md](docs/architecture.md) explains the design.
+Every `_sny_*` call that can fail returns a negative AVERROR code, and `_sny_strerror` describes it. The full API is in [`src/`](src): [`demux.c`](src/demux.c), [`decode.c`](src/decode.c) and [`common.c`](src/common.c); `dist/core/index.d.ts` types every function and constant. [docs/architecture.md](docs/architecture.md) explains the design.
 
 ## Modules
 
 | Module | Contents | Status |
 | --- | --- | --- |
-| `core` | every single-file demuxer, every parser, every audio and subtitle decoder | available |
+| `core` | every single-file demuxer, every parser, every common audio decoder, every subtitle decoder | available |
+| `audio-ext` | the long-tail audio decoders (speech, game, legacy and niche lossless codecs) | available |
 | `video` | common software video decoders, dav1d, swscale | in development |
 | `video-ext` | the remaining FFmpeg video decoders | in development |
 | `mux` | muxers and audio encoders | in development |
@@ -126,7 +127,7 @@ Requires Docker with buildx, and [Bun](https://bun.sh).
 
 ```sh
 bun install
-bun run build   # dist/core/{core.js,core.wasm,index.js,index.d.ts}
+bun run build   # dist/core/ and dist/audio-ext/: module .js, .wasm, index.js, index.d.ts
 bun test        # Chromium, Firefox, WebKit (run `bunx playwright install` once)
 ```
 

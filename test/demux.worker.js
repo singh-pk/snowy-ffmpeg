@@ -3,6 +3,7 @@
 //
 // Test worker: demuxes each fixture with the WASM core through FileReaderSync I/O, decodes
 // every audio stream, and reports what native FFmpeg reports (see scripts/gen-fixtures.ts).
+// With ?transfer, every audio stream goes through the copy that feeds audio-ext.
 
 import {
   AV_NOPTS_VALUE,
@@ -11,7 +12,7 @@ import {
   AVSEEK_FLAG_BYTE,
   createCore,
 } from "/dist/core/index.js";
-import { openAudioDecoder } from "/test/support/audio-decoder.js";
+import { createAudioDecoders } from "/test/support/audio-decoder.js";
 import { attachFileSource } from "/test/support/file-source.js";
 
 const TYPES = ["video", "audio", "data", "subtitle", "attachment"];
@@ -20,10 +21,30 @@ const PROBE_STRIDE = 127;
 
 const timestamp = (v) => (v === AV_NOPTS_VALUE ? null : String(v));
 
+// Appends a frame decoded in module m to d.audio, channels interleaved as native FFmpeg
+// writes them.
+function append(d, m, fltp) {
+  const n = m._sny_frame_samples(fltp);
+  const channels = m._sny_frame_channels(fltp);
+  const pcm = new Float32Array(n * channels);
+
+  for (let c = 0; c < channels; c++) {
+    const plane = m._sny_frame_plane(fltp, c) >> 2;
+    for (let i = 0; i < n; i++) pcm[i * channels + c] = m.HEAPF32[plane + i];
+  }
+
+  d.chunks.push(pcm);
+  d.audio.frames++;
+  d.audio.samples += n;
+  if (d.audio.firstPts.length < 3) d.audio.firstPts.push(timestamp(m._sny_frame_pts(fltp)));
+}
+
 async function createDemuxer() {
   const core = await createCore();
   core._sny_set_log_level(16); // errors only
   const source = attachFileSource(core);
+  const transferAll = new URL(import.meta.url).searchParams.has("transfer");
+  const openAudioDecoder = createAudioDecoders(core, transferAll);
 
   const str = (ptr) => (ptr ? core.UTF8ToString(ptr) : null);
 
@@ -34,24 +55,7 @@ async function createDemuxer() {
     return ret;
   }
 
-  // Appends a decoded frame to d.audio, channels interleaved as native FFmpeg writes them.
-  function append(d, fltp) {
-    const n = core._sny_frame_samples(fltp);
-    const channels = core._sny_frame_channels(fltp);
-    const pcm = new Float32Array(n * channels);
-
-    for (let c = 0; c < channels; c++) {
-      const plane = core._sny_frame_plane(fltp, c) >> 2;
-      for (let i = 0; i < n; i++) pcm[i * channels + c] = core.HEAPF32[plane + i];
-    }
-
-    d.chunks.push(pcm);
-    d.audio.frames++;
-    d.audio.samples += n;
-    if (d.audio.firstPts.length < 3) d.audio.firstPts.push(timestamp(core._sny_frame_pts(fltp)));
-  }
-
-  function demux(file) {
+  async function demux(file) {
     source.open(file);
     const out = core._malloc(4);
     const name = core.stringToNewUTF8(file.name);
@@ -78,8 +82,9 @@ async function createDemuxer() {
         streams.push(stream);
         if (stream.type !== "audio") continue;
         stream.audio = { frames: 0, samples: 0, firstPts: [] };
-        const d = { audio: stream.audio, chunks: [], decoder: openAudioDecoder(core, ctx, i) };
-        d.onFrame = (fltp) => append(d, fltp);
+        const decoder = await openAudioDecoder(ctx, i);
+        const d = { audio: stream.audio, chunks: [], decoder };
+        d.onFrame = (m, fltp) => append(d, m, fltp);
         decoders.set(i, d);
       }
 
@@ -164,7 +169,7 @@ async function run(names) {
       const res = await fetch(`/test/fixtures/${name}`);
       const blob = await res.blob();
       const file = new File([blob], name);
-      const result = demux(file);
+      const result = await demux(file);
       results[name] = await summarize(result);
     } catch (e) {
       results[name] = { error: String(e) };

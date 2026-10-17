@@ -6,6 +6,7 @@ extend-exclude = ["test/fixtures/", "bench/results/", "LICENSES/", "keys/", "*.l
 [default.extend-words]
 caf = "caf" # Core Audio Format
 seeked = "seeked" # the HTML media event name
+als = "als" # MPEG-4 Audio Lossless Coding decoder
 
 [default.extend-identifiers]
 f64toi64 = "f64toi64" # libav.js API
