@@ -6,12 +6,12 @@
 // frame out of the WASM heap as a hand-off to an AudioWorklet would.
 
 import { AVERROR_EOF, AVMEDIA_TYPE_AUDIO, createCore } from "/dist/core/index.js";
-import { openAudioDecoder } from "/test/support/audio-decoder.js";
+import { createAudioDecoders } from "/test/support/audio-decoder.js";
 import { attachFileSource } from "/test/support/file-source.js";
 
 const ready = createCore();
 
-function measure(core, source, file) {
+async function measure(core, source, openAudioDecoder, file) {
   const check = (ret, what) => {
     if (ret < 0) throw new Error(`${what}: ${core.UTF8ToString(core._sny_strerror(ret))}`);
     return ret;
@@ -39,20 +39,20 @@ function measure(core, source, file) {
     )
       stream++;
     if (stream === count) throw new Error("no audio stream");
-    decoder = openAudioDecoder(core, ctx, stream);
+    decoder = await openAudioDecoder(ctx, stream);
     const result = { samples: 0, channels: 0, sampleRate: 0 };
     let scratch = new Float32Array(0);
 
-    const onFrame = (fltp) => {
-      const n = core._sny_frame_samples(fltp);
+    const onFrame = (m, fltp) => {
+      const n = m._sny_frame_samples(fltp);
       result.samples += n;
-      result.channels = core._sny_frame_channels(fltp);
-      result.sampleRate = core._sny_frame_sample_rate(fltp);
+      result.channels = m._sny_frame_channels(fltp);
+      result.sampleRate = m._sny_frame_sample_rate(fltp);
       if (scratch.length < n) scratch = new Float32Array(n);
 
       for (let c = 0; c < result.channels; c++) {
-        const plane = core._sny_frame_plane(fltp, c) >> 2;
-        scratch.set(core.HEAPF32.subarray(plane, plane + n));
+        const plane = m._sny_frame_plane(fltp, c) >> 2;
+        scratch.set(m.HEAPF32.subarray(plane, plane + n));
       }
     };
 
@@ -79,11 +79,12 @@ async function run({ files }) {
     const core = await ready;
     core._sny_set_log_level(16);
     const source = attachFileSource(core);
+    const openAudioDecoder = createAudioDecoders(core);
     const results = {};
 
     for (const file of files) {
       try {
-        results[file.name] = measure(core, source, file);
+        results[file.name] = await measure(core, source, openAudioDecoder, file);
       } catch (e) {
         results[file.name] = { error: String(e) };
       }

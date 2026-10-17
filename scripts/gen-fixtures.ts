@@ -73,6 +73,11 @@ const fixtures: Record<string, string[]> = {
   "adpcm.wav": [...STEREO, "-c:a", "adpcm_ima_wav"],
   "audio.wv": [...STEREO, "-c:a", "wavpack"],
   "audio.tta": [...STEREO, "-c:a", "tta"],
+  // Decoded by audio-ext.
+  "ra144.rm": [...A, "-c:a", "real_144", "-ar", "8000", "-ac", "1"],
+  "nellymoser.flv": [...A, "-c:a", "nellymoser", "-ar", "22050", "-ac", "1"],
+  "g723_1.tco": [...A, "-c:a", "g723_1", "-ar", "8000", "-ac", "1", "-b:a", "6300", "-f", "g723_1"],
+  "audio.sbc": [...STEREO, "-c:a", "sbc"],
 };
 
 await rm(dir, { recursive: true, force: true });
