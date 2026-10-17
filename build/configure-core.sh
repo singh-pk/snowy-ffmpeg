@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
 # FFmpeg configure for the `core` module (docs/architecture.md#modules).
-# Every single-file demuxer, all parsers, and every native audio and subtitle decoder.
+# Every single-file demuxer, all parsers, every native audio and subtitle decoder, and
+# libswresample to hand audio to JavaScript as 32-bit float planar.
 # The decoders belong here even for demuxing: avformat_find_stream_info needs them to fill
 # in codec parameters (e.g. ADTS AAC has no packet timestamps without the AAC decoder).
 set -eu
@@ -43,7 +44,7 @@ emconfigure ./configure \
   --disable-everything --disable-autodetect \
   --disable-programs --disable-doc --disable-debug --disable-stripping \
   --disable-network --disable-protocols \
-  --disable-avdevice --disable-avfilter --disable-swresample --disable-swscale \
+  --disable-avdevice --disable-avfilter --disable-swscale \
   --disable-iconv --disable-runtime-cpudetect \
   --enable-pthreads --enable-zlib --enable-bzlib \
   --enable-demuxers $disable \

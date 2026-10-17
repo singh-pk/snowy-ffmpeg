@@ -14,6 +14,7 @@ snowy-ffmpeg compiles FFmpeg to WebAssembly modules that browsers call directly 
 | Format everything | `bun run format` |
 | All static checks (CI's `check` job) | `bun run check` |
 | Demux benchmark | `bun run bench --browsers chromium --runs 3` |
+| Audio decode benchmark | `bun run bench:audio --browsers chromium --runs 3` |
 | Regenerate fixtures (needs native FFmpeg 9.0.2) | `bun run fixtures` |
 
 A full FFmpeg build takes 20+ minutes; changing only `src/` relinks in under a minute. Run `bun run check` before every commit; the hook runs it anyway.

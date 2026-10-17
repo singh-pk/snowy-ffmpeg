@@ -78,13 +78,13 @@ COPY src /build/src
 ARG EXTRA_LDFLAGS=""
 RUN mkdir -p /out/core && emcc $CFLAGS $LDFLAGS $EXTRA_LDFLAGS \
       /build/src/helpers.c -I"$SYSROOT/include" -L"$SYSROOT/lib" \
-      -lavformat -lavcodec -lavutil -lz -lbz2 \
+      -lavformat -lavcodec -lswresample -lavutil -lz -lbz2 \
       --js-library /build/src/io.js \
       -sENVIRONMENT=worker -sMODULARIZE -sEXPORT_ES6 -sEXPORT_NAME=createCore \
       -sFILESYSTEM=0 -sASSERTIONS=0 -sDYNAMIC_EXECUTION=0 -sTEXTDECODER=2 \
       -sPTHREAD_POOL_SIZE=0 -sALLOW_MEMORY_GROWTH -sINITIAL_MEMORY=64MB -sMAXIMUM_MEMORY=4GB -sSTACK_SIZE=1MB \
       -sEXPORTED_FUNCTIONS=_malloc,_free \
-      -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAP32,UTF8ToString,stringToNewUTF8 \
+      -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAP32,HEAPF32,UTF8ToString,stringToNewUTF8 \
       -o /out/core/core.js \
  && ls -l /out/core
 

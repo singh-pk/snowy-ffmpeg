@@ -9,7 +9,7 @@ FFmpeg 9 compiled to WebAssembly as small, lazily loaded modules for playing and
 
 - **Every format.** The `core` module opens every single-file container FFmpeg knows (350 demuxers) and decodes every audio and subtitle codec.
 - **Fast.** It demuxes a 750 MB 1080p file in 0.25–1 s in Chromium, Firefox and WebKit alike, where other browser demuxers slow down by up to 100× in some engines ([benchmarks](bench/README.md)).
-- **Exact.** Every fixture demuxes to the same streams, packets and timestamps as native `ffprobe`.
+- **Exact.** Every fixture demuxes to the same streams, packets and timestamps as native `ffprobe`, and decodes to the same audio as native `ffmpeg`.
 - **Reproducible.** Pinned, checksummed and GPG-verified sources; CI checks that the output is byte-identical.
 
 > [!NOTE]
@@ -54,8 +54,10 @@ self.onmessage = ({ data: input }) => {
   file = input; // a File from <input type=file> or drag and drop
   pos = 0;
   const out = core._malloc(4);
-  const err = core._sny_open(1, 4 << 20, out); // 4 MiB read buffer
+  const name = core.stringToNewUTF8(file.name); // the extension identifies some raw formats
+  const err = core._sny_open(1, 4 << 20, name, out); // 4 MiB read buffer
   const ctx = core.HEAP32[out >> 2];
+  core._free(name);
   core._free(out);
   if (err < 0) throw new Error(core.UTF8ToString(core._sny_strerror(err)));
   core._sny_find_stream_info(ctx);
@@ -72,6 +74,40 @@ self.onmessage = ({ data: input }) => {
   core._sny_close(ctx);
 };
 ```
+
+### Decoding audio
+
+`core` decodes every audio codec to 32-bit float planar, the format Web Audio uses. Open a decoder for a stream, send it that stream's packets, and take the frames:
+
+```js
+const out = core._malloc(4);
+const opened = core._sny_decoder_open(ctx, stream, out);
+const dec = core.HEAP32[out >> 2];
+core._free(out);
+if (opened < 0) throw new Error(core.UTF8ToString(core._sny_strerror(opened)));
+const swr = core._sny_converter_alloc();
+const frame = core._sny_frame_alloc();
+const fltp = core._sny_frame_alloc();
+
+// For each packet of the stream, and once more with 0 at the end to drain:
+core._sny_decoder_send(dec, pkt);
+while (core._sny_decoder_receive(dec, frame) >= 0) {
+  if (core._sny_to_float_planar(swr, frame, fltp) < 0) break;
+  const n = core._sny_frame_samples(fltp);
+  for (let c = 0; c < core._sny_frame_channels(fltp); c++) {
+    const plane = core._sny_frame_plane(fltp, c) >> 2;
+    const samples = core.HEAPF32.subarray(plane, plane + n); // copy out before the next frame
+  }
+}
+
+// When done:
+core._sny_frame_free(fltp);
+core._sny_frame_free(frame);
+core._sny_converter_free(swr);
+core._sny_decoder_close(dec);
+```
+
+[`test/support/audio-decoder.js`](test/support/audio-decoder.js) is the complete loop, including the case where the decoder is full. Integer decoders produce exactly what native FFmpeg does; float decoders match within 10⁻⁶.
 
 Every `_sny_*` call that can fail returns a negative AVERROR code, and `_sny_strerror` describes it. The full API is [`src/helpers.c`](src/helpers.c); `dist/core/index.d.ts` types every function and constant. [docs/architecture.md](docs/architecture.md) explains the design.
 

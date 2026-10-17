@@ -11,6 +11,7 @@
 import { parseArgs } from "node:util";
 import { brotliCompressSync, constants } from "node:zlib";
 import { type BrowserType, chromium, firefox, webkit } from "playwright";
+import { serve } from "../test/support/server";
 
 const { values: args } = parseArgs({
   options: {
@@ -80,26 +81,7 @@ function merge(runs: Json[]): Json {
   );
 }
 
-const headers = {
-  "Cross-Origin-Opener-Policy": "same-origin",
-  "Cross-Origin-Embedder-Policy": "require-corp",
-};
-
-const page = '<!doctype html><title>bench</title><input type="file" multiple>';
-const server = Bun.serve({
-  port: 0,
-  async fetch(req) {
-    const path = new URL(req.url).pathname;
-
-    if (path === "/") {
-      return new Response(page, { headers: { ...headers, "Content-Type": "text/html" } });
-    }
-
-    const file = Bun.file(root + path.slice(1));
-    const exists = await file.exists();
-    return exists ? new Response(file, { headers }) : new Response("not found", { status: 404 });
-  },
-});
+const server = serve('<!doctype html><title>bench</title><input type="file" multiple>');
 
 const libs = args.libs.split(",");
 const result = {

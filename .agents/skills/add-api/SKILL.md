@@ -7,7 +7,7 @@ description: Expose a new FFmpeg field, function or constant to JavaScript throu
 
 The whole API of a module is `src/helpers.c`. JavaScript must never read FFmpeg structs by offset, so every value goes through a function here.
 
-1. **Find the source of truth.** Locate the field or function in FFmpeg's public headers (`libavformat/avformat.h`, `libavcodec/codec_par.h`, `libavcodec/packet.h`, …) inside the build image, for example `docker run --rm <ffmpeg-core stage> grep -n field /opt/sysroot/include/libavformat/avformat.h`. Use only public API, never `internal.h`.
+1. **Find the source of truth.** Locate the field or function in FFmpeg's public headers (`libavformat/avformat.h`, `libavcodec/codec_par.h`, `libavcodec/packet.h`, `libavutil/frame.h`, …) inside the build image, for example `docker run --rm <ffmpeg-core stage> grep -n field /opt/sysroot/include/libavformat/avformat.h`. Use only public API, never `internal.h`.
 2. **Add the smallest wrapper** in the matching section of `src/helpers.c`:
    - a field: `API int sny_codec_width(const AVStream *st) { return st->codecpar->width; }`
    - a call: a short function that returns `0` or a negative AVERROR, with a one-line comment for units or ownership

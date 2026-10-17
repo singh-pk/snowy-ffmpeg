@@ -3,7 +3,7 @@
   "entry": [
     "scripts/*.ts",
     "bench/variants.ts",
-    "bench/worker.js",
+    "bench/*worker.js",
     "bench/adapters/*.js",
     "test/*.worker.js"
   ],

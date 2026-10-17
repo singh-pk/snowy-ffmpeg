@@ -1,0 +1,183 @@
+{
+  "date": "2026-10-17T20:26:01.760Z",
+  "runs": 3,
+  "browsers": {
+    "chromium": {
+      "version": "156.0.8078.4",
+      "audio-aac.mka": {
+        "samples": 2880512,
+        "channels": 2,
+        "sampleRate": 48000,
+        "ms": 44.49500000476837,
+        "realtime": 1348.7058469543888
+      },
+      "audio-ac3-51.mka": {
+        "samples": 2879744,
+        "channels": 6,
+        "sampleRate": 48000,
+        "ms": 78.30999997258186,
+        "realtime": 766.1175672030671
+      },
+      "audio-dts-51.mka": {
+        "samples": 2880000,
+        "channels": 6,
+        "sampleRate": 48000,
+        "ms": 171.47999998927116,
+        "realtime": 349.8950315124444
+      },
+      "audio-eac3-51.mka": {
+        "samples": 2879744,
+        "channels": 6,
+        "sampleRate": 48000,
+        "ms": 73.31000000238419,
+        "realtime": 818.3694811719481
+      },
+      "audio-flac-24.mka": {
+        "samples": 2880000,
+        "channels": 2,
+        "sampleRate": 48000,
+        "ms": 77.66499999165535,
+        "realtime": 772.5487672239316
+      },
+      "audio-mp3.mka": {
+        "samples": 2880000,
+        "channels": 2,
+        "sampleRate": 48000,
+        "ms": 53.714999973773956,
+        "realtime": 1117.006423332303
+      },
+      "audio-opus.mka": {
+        "samples": 2880000,
+        "channels": 2,
+        "sampleRate": 48000,
+        "ms": 87.67999997735023,
+        "realtime": 684.3065695198378
+      },
+      "audio-truehd-51.mka": {
+        "samples": 2880000,
+        "channels": 6,
+        "sampleRate": 48000,
+        "ms": 321.2349999845028,
+        "realtime": 186.77914922998602
+      }
+    },
+    "firefox": {
+      "version": "157.0",
+      "audio-aac.mka": {
+        "samples": 2880512,
+        "channels": 2,
+        "sampleRate": 48000,
+        "ms": 43.60000000000001,
+        "realtime": 1376.3914373088683
+      },
+      "audio-ac3-51.mka": {
+        "samples": 2879744,
+        "channels": 6,
+        "sampleRate": 48000,
+        "ms": 91.42,
+        "realtime": 656.253190403267
+      },
+      "audio-dts-51.mka": {
+        "samples": 2880000,
+        "channels": 6,
+        "sampleRate": 48000,
+        "ms": 192.08,
+        "realtime": 312.3698458975427
+      },
+      "audio-eac3-51.mka": {
+        "samples": 2879744,
+        "channels": 6,
+        "sampleRate": 48000,
+        "ms": 84.5,
+        "realtime": 709.9960552268244
+      },
+      "audio-flac-24.mka": {
+        "samples": 2880000,
+        "channels": 2,
+        "sampleRate": 48000,
+        "ms": 83.32000000000005,
+        "realtime": 720.1152184349492
+      },
+      "audio-mp3.mka": {
+        "samples": 2880000,
+        "channels": 2,
+        "sampleRate": 48000,
+        "ms": 63.25999999999999,
+        "realtime": 948.4666455896302
+      },
+      "audio-opus.mka": {
+        "samples": 2880000,
+        "channels": 2,
+        "sampleRate": 48000,
+        "ms": 99.65999999999997,
+        "realtime": 602.0469596628539
+      },
+      "audio-truehd-51.mka": {
+        "samples": 2880000,
+        "channels": 6,
+        "sampleRate": 48000,
+        "ms": 370.58000000000004,
+        "realtime": 161.90835986831453
+      }
+    },
+    "webkit": {
+      "version": "27.2",
+      "audio-aac.mka": {
+        "samples": 2880512,
+        "channels": 2,
+        "sampleRate": 48000,
+        "ms": 43.48,
+        "realtime": 1380.1901257283043
+      },
+      "audio-ac3-51.mka": {
+        "samples": 2879744,
+        "channels": 6,
+        "sampleRate": 48000,
+        "ms": 81.07999999999998,
+        "realtime": 739.9440881433976
+      },
+      "audio-dts-51.mka": {
+        "samples": 2880000,
+        "channels": 6,
+        "sampleRate": 48000,
+        "ms": 183.5,
+        "realtime": 326.97547683923705
+      },
+      "audio-eac3-51.mka": {
+        "samples": 2879744,
+        "channels": 6,
+        "sampleRate": 48000,
+        "ms": 73.86000000000001,
+        "realtime": 812.275476126004
+      },
+      "audio-flac-24.mka": {
+        "samples": 2880000,
+        "channels": 2,
+        "sampleRate": 48000,
+        "ms": 86.86000000000001,
+        "realtime": 690.7667510937139
+      },
+      "audio-mp3.mka": {
+        "samples": 2880000,
+        "channels": 2,
+        "sampleRate": 48000,
+        "ms": 58.60000000000002,
+        "realtime": 1023.8907849829347
+      },
+      "audio-opus.mka": {
+        "samples": 2880000,
+        "channels": 2,
+        "sampleRate": 48000,
+        "ms": 89.89999999999998,
+        "realtime": 667.408231368187
+      },
+      "audio-truehd-51.mka": {
+        "samples": 2880000,
+        "channels": 6,
+        "sampleRate": 48000,
+        "ms": 356.74,
+        "realtime": 168.18971800190616
+      }
+    }
+  }
+}
