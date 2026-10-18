@@ -19,7 +19,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      actions: read
       security-events: write # code scanning
       id-token: write # publishing the score
     steps:

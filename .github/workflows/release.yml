@@ -52,7 +52,7 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
       - name: GitHub release
-        run: gh release create "$TAG" --verify-tag --title "$TAG" --notes-file release/notes.md release/*-source.tar.xz release/*.tgz dist.sha256
+        run: gh release create "$TAG" --draft --verify-tag --title "$TAG" --notes-file release/notes.md release/*-source.tar.xz release/*.tgz dist.sha256
         env:
           TAG: ${{ github.ref_name }}
           GH_TOKEN: ${{ github.token }}
@@ -64,3 +64,10 @@ jobs:
           node-version: 24.21.0
           package-manager-cache: false
       - run: npm publish release/*.tgz
+      # Releases are immutable once published, so the release stays a draft until npm has the
+      # package; a failed publish leaves a draft that can be deleted and re-run.
+      - name: Publish the GitHub release
+        run: gh release edit "$TAG" --draft=false
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
