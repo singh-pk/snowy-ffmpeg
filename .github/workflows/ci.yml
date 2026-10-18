@@ -48,8 +48,36 @@ jobs:
       - run: zizmor --offline --min-severity=low .github
       - uses: fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5 # v6.0.0
 
+  # Pull requests that leave packages/ffmpeg alone skip its 2-minute build; pushes to main
+  # always build it, which also keeps the build cache warm for pull requests.
+  changes:
+    name: changed packages
+    runs-on: ubuntu-latest
+    outputs:
+      ffmpeg: ${{ steps.diff.outputs.ffmpeg }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      # A file counts for a package if it is in the package or outside packages/ (lockfile,
+      # shared configuration, workflows). Markdown never changes a build. On a pull request
+      # HEAD is the merge commit, so HEAD^1 is the base it merges into; --no-renames also
+      # lists the old path of a file moved out of a package.
+      - id: diff
+        run: |
+          files=$(git diff --name-only --no-renames HEAD^1 HEAD)
+          if [ "$GITHUB_EVENT_NAME" = push ] || printf '%s\n' "$files" \
+            | awk '!/\.md$/ && (!/^packages\// || /^packages\/ffmpeg\//) { found = 1 } END { exit !found }'; then
+            echo ffmpeg=true >> "$GITHUB_OUTPUT"
+          else
+            echo ffmpeg=false >> "$GITHUB_OUTPUT"
+          fi
+
   build:
-    name: build and test
+    name: ffmpeg build and test
+    needs: changes
+    if: needs.changes.outputs.ffmpeg == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -76,3 +104,23 @@ jobs:
       - run: bun scripts/gen-dts.ts
       - run: bunx playwright install --with-deps chromium firefox webkit
       - run: bun test
+
+  # The one check the main ruleset requires, so adding, renaming or skipping a job never
+  # needs a ruleset change; a new job must be added to needs below. Skipped jobs pass;
+  # failed or cancelled ones do not.
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [check, repo, changes, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every job passed or was skipped
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in $RESULTS; do
+            case $result in
+              success | skipped) ;;
+              *) echo "::error::a required job ended with $result" && exit 1 ;;
+            esac
+          done
