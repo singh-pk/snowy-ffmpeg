@@ -1,4 +1,4 @@
-# \-media/ffmpeg
+# @snowy-media/ffmpeg
 
 [![npm](https://img.shields.io/npm/v/@snowy-media/ffmpeg)](https://www.npmjs.com/package/@snowy-media/ffmpeg)
 [![ci](https://github.com/singh-pk/snowy-media/actions/workflows/ci.yml/badge.svg)](https://github.com/singh-pk/snowy-media/actions/workflows/ci.yml)
