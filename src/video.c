@@ -5,10 +5,12 @@
 
 #include "sny.h"
 
+#include <libavutil/display.h>
 #include <libavutil/frame.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/pixdesc.h>
 #include <libswscale/swscale.h>
+#include <math.h>
 
 // ---- Video frames ----
 
@@ -21,6 +23,12 @@ API int sny_frame_color_range(const AVFrame *frame) { return frame->color_range;
 API int sny_frame_color_primaries(const AVFrame *frame) { return frame->color_primaries; }
 API int sny_frame_color_trc(const AVFrame *frame) { return frame->color_trc; }
 API int sny_frame_color_space(const AVFrame *frame) { return frame->colorspace; }
+// Degrees to rotate the frame counterclockwise for display (its display matrix, from the
+// container or the bitstream), or 0.
+API int sny_frame_rotation(const AVFrame *frame) {
+  const AVFrameSideData *sd = av_frame_get_side_data(frame, AV_FRAME_DATA_DISPLAYMATRIX);
+  return sd ? (int)lrint(av_display_rotation_get((const int32_t *)sd->data)) : 0;
+}
 // FFmpeg's name for the frame's pixel format ("yuv420p", "pal8", …).
 API const char *sny_frame_pix_fmt(const AVFrame *frame) {
   return av_get_pix_fmt_name(frame->format);
@@ -66,6 +74,25 @@ static const char *video_format(const AVFrame *frame) {
 // sny_to_video_format first.
 API const char *sny_frame_video_format(const AVFrame *frame) { return video_format(frame); }
 
+// The yuvj formats are full-range yuv ones, the range being a frame property; as themselves,
+// avcodec_find_best_pix_fmt_of_list counts them as another colour model and picks RGB.
+static enum AVPixelFormat without_range(enum AVPixelFormat format) {
+  switch (format) {
+  case AV_PIX_FMT_YUVJ420P:
+    return AV_PIX_FMT_YUV420P;
+  case AV_PIX_FMT_YUVJ422P:
+    return AV_PIX_FMT_YUV422P;
+  case AV_PIX_FMT_YUVJ444P:
+    return AV_PIX_FMT_YUV444P;
+  case AV_PIX_FMT_YUVJ440P:
+    return AV_PIX_FMT_YUV440P;
+  case AV_PIX_FMT_YUVJ411P:
+    return AV_PIX_FMT_YUV411P;
+  default:
+    return format;
+  }
+}
+
 // A scaler holds the libswscale state between frames.
 API SwsContext *sny_scaler_alloc(void) { return sws_alloc_context(); }
 API void sny_scaler_free(SwsContext *sws) { sws_free_context(&sws); }
@@ -90,9 +117,11 @@ API int sny_to_video_format(SwsContext *sws, const AVFrame *in, AVFrame *out) {
   // libswscale reads both frames' colour properties: copied first, YUV stays in the source's
   // range and matrix instead of being squeezed to limited range; RGB is full range.
   int ret = av_frame_copy_props(out, in);
-  if (ret < 0)
+  if (ret < 0) {
+    av_frame_unref(out);
     return ret;
-  out->format = avcodec_find_best_pix_fmt_of_list(accepted, in->format,
+  }
+  out->format = avcodec_find_best_pix_fmt_of_list(accepted, without_range(in->format),
                                                   !!(desc->flags & AV_PIX_FMT_FLAG_ALPHA), NULL);
   out->width = in->width;
   out->height = in->height;

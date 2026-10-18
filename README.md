@@ -111,7 +111,7 @@ core._sny_decoder_close(dec);
 
 ### Decoding video
 
-Video decoders live in `video` and `video-ext`; `core._sny_codec_module(ctx, stream)` names the one a stream needs, so a page loads only that. Copy the stream's codec parameters across with `_sny_params_export` and open the decoder with `_sny_decoder_open_params(buf, size, threads, out)` on up to one thread per core, at most 8 (the module's thread pool); then copy each packet across with `_sny_packet_make`, and run the same send/receive loop as for audio. [`test/support/decoder.js`](test/support/decoder.js) does all of it.
+Video decoders live in `video` and `video-ext`; `core._sny_codec_module(ctx, stream)` names the one a stream needs, so a page loads only that. Copy the stream's codec parameters across with `_sny_params_export` and open the decoder with `_sny_decoder_open_params(buf, size, threads, out)` on up to one thread per core, at most 8: the module's thread pool, shared by every decoder open in it; then copy each packet across with `_sny_packet_make`, and run the same send/receive loop as for audio. [`test/support/decoder.js`](test/support/decoder.js) does all of it.
 
 Each decoded frame becomes a WebCodecs `VideoFrame` with one copy out of the WASM heap:
 

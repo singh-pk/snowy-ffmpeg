@@ -36,7 +36,7 @@ Shipped size:
 |---|---|---|---|
 | snowy `core` (every demuxer, common audio decoders, subtitle decoders) | 4,243 KB | 1,703 KB | 1,352 KB |
 | snowy `audio-ext` (long-tail audio decoders, loaded on demand) | 2,215 KB | 1,186 KB | 1,006 KB |
-| snowy `video` (common video decoders, dav1d, libswscale, loaded on demand) | 6,845 KB | 1,683 KB | 1,197 KB |
+| snowy `video` (common video decoders, dav1d, libswscale, loaded on demand) | 6,845 KB | 1,684 KB | 1,197 KB |
 | snowy `video-ext` (every other video decoder, loaded on demand) | 8,179 KB | 2,323 KB | 1,692 KB |
 | libav.js `webcodecs` (5 demuxers) | 2,583 KB | 946 KB | 748 KB |
 | mediabunny (≈10 formats, no decoders) | 678 KB | 174 KB | 142 KB |

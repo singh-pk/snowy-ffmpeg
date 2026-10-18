@@ -60,7 +60,14 @@ const fixtures: Record<string, string[]> = {
   "h264-10.mkv": [...V, "-c:v", "libx264", "-pix_fmt", "yuv420p10le"],
   "h264-10-full.mkv": [...V, "-c:v", "libx264", "-pix_fmt", "yuv420p10le", "-color_range", "pc"],
   "gray.nut": [...V, "-c:v", "ffv1", "-pix_fmt", "gray"],
-  "odd.y4m": [...V, "-vf", "format=yuv444p,crop=127:95"],
+  // Odd size: Firefox takes it only in RGB, so a VideoFrame format is converted too.
+  "odd.y4m": [...V, "-vf", "scale=127:95", "-pix_fmt", "yuv420p"],
+  // One per VideoFrame format not covered above.
+  "alpha.nut": [...V, "-c:v", "ffv1", "-pix_fmt", "yuva420p"],
+  "prores-4444.mov": [...V, "-c:v", "prores_ks", "-profile:v", "4444", "-pix_fmt", "yuva444p10le"],
+  "nv12.nut": [...V, "-c:v", "rawvideo", "-pix_fmt", "nv12"],
+  "rgba.nut": [...V, "-c:v", "rawvideo", "-pix_fmt", "rgba"],
+  "bgr0.nut": [...V, "-c:v", "rawvideo", "-pix_fmt", "bgr0"],
   "opus.ogg": [...A, "-c:a", "libopus"],
   "vorbis.oga": [...A, "-c:a", "vorbis", "-strict", "-2", "-ac", "2"],
   "pcm.wav": [...A, "-c:a", "pcm_s16le"],
@@ -122,6 +129,7 @@ interface VideoFrame {
   width: number;
   height: number;
   pix_fmt: string;
+  side_data_list?: { side_data_type: string; rotation?: number }[];
 }
 
 interface Packet {
@@ -164,8 +172,9 @@ const CONVERTED: Record<string, string> = {
   "h264-10-full.mkv": "yuv420p", // full range stays full range
   "anim.apng": "rgb0", // rgb24
   "gray.nut": "rgb0",
-  "mjpeg-422.avi": "rgb0", // full-range 4:2:2
-  "odd.y4m": "rgb0", // 4:4:4 of odd size
+  "mjpeg-422.avi": "yuv420p", // full-range 4:2:2
+  "odd.y4m": "rgb0", // 4:2:0 of odd size
+  "prores-4444.mov": "yuva420p", // 10-bit 4:4:4 with alpha
 };
 
 const sha256 = (data: ArrayBuffer) => new Bun.CryptoHasher("sha256").update(data).digest("hex");
@@ -178,7 +187,7 @@ async function decodeVideo(file: string, name: string, index: number, codec: str
   // FFmpeg's own av1 decoder needs hardware; the WASM build decodes AV1 with dav1d.
   const dec = codec === "av1" ? ["-c:v", "libdav1d"] : [];
   const { frames }: { frames: VideoFrame[] } =
-    await $`ffprobe -v error ${dec} -select_streams ${index} -show_entries frame=pts,width,height,pix_fmt -of json ${file}`.json();
+    await $`ffprobe -v error ${dec} -select_streams ${index} -show_entries frame=pts,width,height,pix_fmt:frame_side_data=side_data_type,rotation -of json ${file}`.json();
   // As the decoder outputs it: not rotated, not converted, no frame dropped or repeated.
   const decode = (vf: string[]) =>
     $`ffmpeg -v error -cpuflags 0 -noautorotate ${dec} -i ${file} -map 0:${index} -fps_mode passthrough ${vf} -c:v rawvideo -f rawvideo -`.arrayBuffer();
@@ -194,6 +203,9 @@ async function decodeVideo(file: string, name: string, index: number, codec: str
     width: first?.width,
     height: first?.height,
     pixFmt: first?.pix_fmt,
+    // Coded side data, such as a container's display matrix, reaches the frames.
+    rotation:
+      first?.side_data_list?.find((s) => s.side_data_type === "3x3 displaymatrix")?.rotation ?? 0,
     sha256: sha256(raw),
     ...(converted ? { converted: { pixFmt: target, sha256: sha256(converted) } } : {}),
   };

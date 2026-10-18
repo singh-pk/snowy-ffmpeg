@@ -33,20 +33,21 @@ int sny_open_codec(const AVCodecParameters *par, AVRational time_base, int threa
 }
 
 // Opens a decoder from the `size` bytes sny_params_export wrote in core, copied into this
-// module, decoding on up to `threads` threads (1 for audio; at most the module's thread pool
-// for video, or opening fails). Returns 0 and stores the decoder in *out, or a negative AVERROR.
+// module, decoding on `threads` threads: 1 for audio; for video at least 1 (FFmpeg's automatic
+// 0 asks for more than the pool) and, with every other decoder open in the module, at most its
+// thread pool, or opening fails. Returns 0 and stores the decoder in *out, or a negative AVERROR.
 API int sny_decoder_open_params(const uint8_t *buf, int size, int threads, AVCodecContext **out) {
   SnyParams p;
-  if (size < (int)sizeof p)
+  if (threads < 1 || size < (int)sizeof p)
     return AVERROR(EINVAL);
   memcpy(&p, buf, sizeof p);
   int custom = p.par.ch_layout.order == AV_CHANNEL_ORDER_CUSTOM;
   int nb_side_data = p.par.nb_coded_side_data;
   if (p.par.ch_layout.nb_channels < 0 || p.par.extradata_size < 0 || nb_side_data < 0)
     return AVERROR(EINVAL);
-  size_t map = custom ? (size_t)p.par.ch_layout.nb_channels * sizeof(AVChannelCustom) : 0;
-  size_t at = sizeof p + map + (size_t)p.par.extradata_size;
-  if (at > (size_t)size)
+  uint64_t map = custom ? (uint64_t)p.par.ch_layout.nb_channels * sizeof(AVChannelCustom) : 0;
+  uint64_t at = sizeof p + map + (uint64_t)p.par.extradata_size;
+  if (at > (uint64_t)size)
     return AVERROR(EINVAL);
   if (custom)
     p.par.ch_layout.u.map = (AVChannelCustom *)(buf + sizeof p);
@@ -58,13 +59,13 @@ API int sny_decoder_open_params(const uint8_t *buf, int size, int threads, AVCod
   int ret = 0;
   for (int i = 0; i < nb_side_data && ret >= 0; i++) {
     SnySideData h;
-    if (at + sizeof h > (size_t)size) {
+    if (at + sizeof h > (uint64_t)size) {
       ret = AVERROR(EINVAL);
       break;
     }
     memcpy(&h, buf + at, sizeof h);
     at += sizeof h;
-    if (h.size < 0 || at + (size_t)h.size > (size_t)size) {
+    if (h.size < 0 || at + (uint64_t)h.size > (uint64_t)size) {
       ret = AVERROR(EINVAL);
       break;
     }
@@ -76,7 +77,7 @@ API int sny_decoder_open_params(const uint8_t *buf, int size, int threads, AVCod
       memcpy(sd->data, buf + at, h.size);
     at += h.size;
   }
-  if (ret >= 0 && at != (size_t)size)
+  if (ret >= 0 && at != (uint64_t)size)
     ret = AVERROR(EINVAL);
   if (ret >= 0)
     ret = sny_open_codec(&p.par, p.time_base, threads, out);

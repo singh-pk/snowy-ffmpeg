@@ -14,7 +14,7 @@ ARG MODULE_LDFLAGS="-sENVIRONMENT=worker -sMODULARIZE -sEXPORT_ES6 \
 # Video decoders create their threads while opening, which a WebAssembly worker can't wait
 # for: the pool starts with the module, one thread per core up to 8, and asking a decoder
 # for more fails instead of hanging.
-ARG VIDEO_LDFLAGS="-sPTHREAD_POOL_SIZE=navigator.hardwareConcurrency>8?8:navigator.hardwareConcurrency \
+ARG VIDEO_LDFLAGS="-sPTHREAD_POOL_SIZE=Math.min(navigator.hardwareConcurrency,8) \
   -sPTHREAD_POOL_SIZE_STRICT=2"
 ARG EMSDK_IMAGE=emscripten/emsdk:6.0.12@sha256:77638e6c215a65f25a704c0c831d5c2463a8c0468a58c6cb82489dbe621dfa05
 
@@ -75,6 +75,7 @@ RUN emmake make libbz2.a CC=emcc AR=emar RANLIB=emranlib CFLAGS="$CFLAGS -D_FILE
  && install -Dm644 bzlib.h "$SYSROOT/include/bzlib.h"
 
 # Ubuntu 24.04's release versions, which its archive keeps: meson sets dav1d's compile flags.
+# Their Python dependencies are not pinned; dist.sha256 catches any change they make.
 FROM base AS dav1d
 RUN apt-get update \
  && apt-get install -y --no-install-recommends meson=1.3.2-1ubuntu1 ninja-build=1.11.1-2 \

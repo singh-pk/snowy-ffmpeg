@@ -88,6 +88,7 @@ function appendVideo(d, m, out, frame) {
   v.width ??= m._sny_frame_width(frame);
   v.height ??= m._sny_frame_height(frame);
   v.pixFmt ??= m.UTF8ToString(m._sny_frame_pix_fmt(frame));
+  v.rotation ??= m._sny_frame_rotation(frame);
   const raw = pack(m, frame);
   d.chunks.push(raw);
   const pixFmt = m.UTF8ToString(m._sny_frame_pix_fmt(out));
