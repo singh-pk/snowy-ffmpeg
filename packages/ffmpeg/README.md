@@ -1,5 +1,6 @@
-# \-media/ffmpeg
+# @snowy-media/ffmpeg
 
+[![npm](https://img.shields.io/npm/v/@snowy-media/ffmpeg)](https://www.npmjs.com/package/@snowy-media/ffmpeg)
 [![ci](https://github.com/singh-pk/snowy-media/actions/workflows/ci.yml/badge.svg)](https://github.com/singh-pk/snowy-media/actions/workflows/ci.yml)
 [![REUSE compliant](https://img.shields.io/badge/REUSE-compliant-green)](https://reuse.software)
 [![License: LGPL-2.1-or-later](https://img.shields.io/badge/license-LGPL--2.1--or--later-blue)](https://github.com/singh-pk/snowy-media/blob/main/LICENSES/LGPL-2.1-or-later.txt)
@@ -13,7 +14,7 @@ FFmpeg 9 compiled to WebAssembly as small, lazily loaded modules for playing and
 - **Reproducible.** Pinned, checksummed and GPG-verified sources; CI checks that the output is byte-identical.
 
 > [!NOTE]
-> Pre-release: nothing is published to npm yet, and until 1.0 a minor version may change the API. The demuxing and decoding modules work; the muxing module is in development.
+> Pre-release: until 1.0 a minor version may change the API. The demuxing and decoding modules work; the muxing module is in development.
 
 ## What it is, and isn't
 
