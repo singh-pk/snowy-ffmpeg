@@ -6,6 +6,7 @@
 #include "sny.h"
 
 #include <libavformat/avformat.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -162,15 +163,44 @@ API int sny_read(AVFormatContext *ctx, AVPacket *pkt) {
 // when the codec is in another module (open it there with sny_params_export).
 API int sny_decoder_open(const AVFormatContext *ctx, int stream, AVCodecContext **out) {
   const AVStream *st = ctx->streams[stream];
-  return sny_open_codec(st->codecpar, st->time_base, out);
+  return sny_open_codec(st->codecpar, st->time_base, 1, out);
+}
+
+// The codec IDs the `video` module decodes, generated from build/configure.sh by the
+// Dockerfile (configure.sh video-codecs).
+static const enum AVCodecID video_codecs[] = {
+#include "video_codecs.h"
+};
+
+// The module that decodes stream `stream`: "core", "audio-ext", "video" or "video-ext"
+// (dist/<name>), or NULL for a stream that is neither audio, video nor subtitles. Only that
+// module needs loading. The long tail is sent by media type, so a codec FFmpeg decodes only
+// through an external library or under the GPL (JPEG XL, EVC, a few ADPCM variants) names a
+// module whose sny_decoder_open_params then returns AVERROR_DECODER_NOT_FOUND.
+API const char *sny_codec_module(const AVFormatContext *ctx, int stream) {
+  enum AVCodecID id = ctx->streams[stream]->codecpar->codec_id;
+  if (avcodec_find_decoder(id))
+    return "core";
+  for (size_t i = 0; i < sizeof video_codecs / sizeof *video_codecs; i++)
+    if (video_codecs[i] == id)
+      return "video";
+  switch (avcodec_get_type(id)) {
+  case AVMEDIA_TYPE_AUDIO:
+    return "audio-ext";
+  case AVMEDIA_TYPE_VIDEO:
+    return "video-ext";
+  default:
+    return NULL;
+  }
 }
 
 // Writes stream `stream`'s codec parameters and time base as SnyParams bytes for
 // sny_decoder_open_params in another module. Returns their size and stores them in *out
-// (free with _free), or a negative AVERROR. Coded side data is not carried over.
+// (free with _free), or a negative AVERROR.
 API int sny_params_export(const AVFormatContext *ctx, int stream, uint8_t **out) {
   const AVStream *st = ctx->streams[stream];
-  SnyParams p = {*st->codecpar, st->time_base};
+  const AVCodecParameters *par = st->codecpar;
+  SnyParams p = {*par, st->time_base};
   size_t map = 0;
   if (p.par.ch_layout.order == AV_CHANNEL_ORDER_CUSTOM) {
     map = p.par.ch_layout.nb_channels * sizeof(AVChannelCustom);
@@ -179,17 +209,31 @@ API int sny_params_export(const AVFormatContext *ctx, int stream, uint8_t **out)
   p.par.ch_layout.opaque = NULL;
   p.par.extradata = NULL;
   p.par.coded_side_data = NULL;
-  p.par.nb_coded_side_data = 0;
-  uint8_t *buf = malloc(sizeof p + map + p.par.extradata_size);
+  size_t size = sizeof p + map + p.par.extradata_size;
+  for (int i = 0; i < par->nb_coded_side_data; i++)
+    size += sizeof(SnySideData) + par->coded_side_data[i].size;
+  if (size > INT_MAX)
+    return AVERROR(EINVAL);
+  uint8_t *buf = malloc(size);
   if (!buf)
     return AVERROR(ENOMEM);
   memcpy(buf, &p, sizeof p);
+  uint8_t *at = buf + sizeof p;
   if (map)
-    memcpy(buf + sizeof p, st->codecpar->ch_layout.u.map, map);
+    memcpy(at, par->ch_layout.u.map, map);
+  at += map;
   if (p.par.extradata_size)
-    memcpy(buf + sizeof p + map, st->codecpar->extradata, p.par.extradata_size);
+    memcpy(at, par->extradata, p.par.extradata_size);
+  at += p.par.extradata_size;
+  for (int i = 0; i < par->nb_coded_side_data; i++) {
+    const AVPacketSideData *sd = &par->coded_side_data[i];
+    SnySideData h = {sd->type, (int)sd->size};
+    memcpy(at, &h, sizeof h);
+    memcpy(at + sizeof h, sd->data, sd->size);
+    at += sizeof h + sd->size;
+  }
   *out = buf;
-  return sizeof p + map + p.par.extradata_size;
+  return (int)size;
 }
 
 // ---- Seeking and index ----

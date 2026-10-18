@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 //
 // Test worker: demuxes each fixture with the WASM core through FileReaderSync I/O, decodes
-// every audio stream, and reports what native FFmpeg reports (see scripts/gen-fixtures.ts).
-// With ?transfer, every audio stream goes through the copy that feeds audio-ext.
+// every audio and video stream, and reports what native FFmpeg reports (see
+// scripts/gen-fixtures.ts). With ?transfer, streams core decodes also go through the copy
+// that feeds the other modules.
 
 import {
   AV_NOPTS_VALUE,
@@ -12,12 +13,16 @@ import {
   AVSEEK_FLAG_BYTE,
   createCore,
 } from "/dist/core/index.js";
-import { createAudioDecoders } from "/test/support/audio-decoder.js";
+import { createDecoders } from "/test/support/decoder.js";
 import { attachFileSource } from "/test/support/file-source.js";
 
 const TYPES = ["video", "audio", "data", "subtitle", "attachment"];
 // Must match PROBE_STRIDE in scripts/gen-fixtures.ts.
 const PROBE_STRIDE = 127;
+// The video modules' thread pool (VIDEO_LDFLAGS in the Dockerfile). Video decodes on up to 4
+// threads, so frame threading runs in the tests.
+const POOL = Math.min(navigator.hardwareConcurrency, 8);
+const THREADS = Math.min(POOL, 4);
 
 const timestamp = (v) => (v === AV_NOPTS_VALUE ? null : String(v));
 
@@ -39,12 +44,70 @@ function append(d, m, fltp) {
   if (d.audio.firstPts.length < 3) d.audio.firstPts.push(timestamp(m._sny_frame_pts(fltp)));
 }
 
+// The frame's planes packed as native FFmpeg's rawvideo encoder writes them, copied out of
+// the WASM heap.
+function pack(m, frame) {
+  const size = m._sny_frame_pack_size(frame);
+  if (size < 0) throw new Error(`frame_pack_size: ${size}`);
+  const dst = m._malloc(size);
+  const written = m._sny_frame_pack(frame, dst, size);
+  const bytes = m.HEAPU8.slice(dst, dst + size);
+  m._free(dst);
+  if (written < 0) throw new Error(`frame_pack: ${written}`);
+  return bytes;
+}
+
+// "ok" when `out`, a frame converted by sny_to_video_format and packed as `bytes`,
+// constructs a VideoFrame.
+function toVideoFrame(m, out, bytes) {
+  const at = m._sny_frame_video_format(out);
+  if (!at) return `no VideoFrame format for ${m.UTF8ToString(m._sny_frame_pix_fmt(out))}`;
+  const format = m.UTF8ToString(at);
+  const init = {
+    format,
+    codedWidth: m._sny_frame_width(out),
+    codedHeight: m._sny_frame_height(out),
+    timestamp: 0,
+  };
+
+  try {
+    new VideoFrame(bytes, init).close();
+    return "ok";
+  } catch (e) {
+    return `${format}: ${String(e)}`;
+  }
+}
+
+// Appends a frame decoded in module m to d.video, packed as native FFmpeg writes it, and
+// its converted form, when sny_to_video_format converted it, to d.converted; and checks that
+// the converted form makes a VideoFrame.
+function appendVideo(d, m, out, frame) {
+  const v = d.video;
+  v.frames++;
+  if (v.firstPts.length < 3) v.firstPts.push(timestamp(m._sny_frame_pts(frame)));
+  v.width ??= m._sny_frame_width(frame);
+  v.height ??= m._sny_frame_height(frame);
+  v.pixFmt ??= m.UTF8ToString(m._sny_frame_pix_fmt(frame));
+  const raw = pack(m, frame);
+  d.chunks.push(raw);
+  const pixFmt = m.UTF8ToString(m._sny_frame_pix_fmt(out));
+  let bytes = raw;
+
+  if (pixFmt !== v.pixFmt) {
+    bytes = pack(m, out);
+    v.convertedTo ??= pixFmt;
+    d.converted.push(bytes);
+  }
+
+  if (v.videoFrame === "ok") v.videoFrame = toVideoFrame(m, out, bytes);
+}
+
 async function createDemuxer() {
   const core = await createCore();
   core._sny_set_log_level(16); // errors only
   const source = attachFileSource(core);
   const transferAll = new URL(import.meta.url).searchParams.has("transfer");
-  const openAudioDecoder = createAudioDecoders(core, transferAll);
+  const openDecoder = createDecoders(core, { transferAll });
 
   const str = (ptr) => (ptr ? core.UTF8ToString(ptr) : null);
 
@@ -80,12 +143,20 @@ async function createDemuxer() {
           firstPts: [],
         };
         streams.push(stream);
-        if (stream.type !== "audio") continue;
-        stream.audio = { frames: 0, samples: 0, firstPts: [] };
-        const decoder = await openAudioDecoder(ctx, i);
-        const d = { audio: stream.audio, chunks: [], decoder };
-        d.onFrame = (m, fltp) => append(d, m, fltp);
-        decoders.set(i, d);
+
+        if (stream.type === "audio") {
+          stream.audio = { frames: 0, samples: 0, firstPts: [] };
+          const decoder = await openDecoder(ctx, i);
+          const d = { audio: stream.audio, chunks: [], decoder };
+          d.onFrame = (m, fltp) => append(d, m, fltp);
+          decoders.set(i, d);
+        } else if (stream.type === "video") {
+          stream.video = { frames: 0, firstPts: [], videoFrame: "ok" };
+          const decoder = await openDecoder(ctx, i, THREADS);
+          const d = { video: stream.video, chunks: [], converted: [], decoder };
+          d.onFrame = (m, converted, frame) => appendVideo(d, m, converted, frame);
+          decoders.set(i, d);
+        }
       }
 
       for (;;) {
@@ -102,7 +173,13 @@ async function createDemuxer() {
 
       for (const d of decoders.values()) {
         d.decoder.decode(0, d.onFrame); // drain
-        d.audio.pcm = concat(d.chunks);
+
+        if (d.audio) {
+          d.audio.pcm = concat(d.chunks, Float32Array);
+        } else {
+          d.video.raw = concat(d.chunks, Uint8Array);
+          if (d.converted.length > 0) d.video.converted = concat(d.converted, Uint8Array);
+        }
       }
 
       // Seek back to the start and confirm the next packet is that stream's first packet again.
@@ -127,11 +204,32 @@ async function createDemuxer() {
     }
   }
 
-  return demux;
+  // Opens video stream 0 of `file` on one thread more than the pool has: "rejected" when it
+  // fails cleanly, as it must, instead of hanging.
+  async function openBeyondPool(file) {
+    source.open(file);
+    const out = core._malloc(4);
+    const opened = core._sny_open(1, 1 << 22, 0, out);
+    const ctx = core.HEAP32[out >> 2];
+    core._free(out);
+    check(opened, "open");
+
+    try {
+      const decoder = await openDecoder(ctx, 0, POOL + 1);
+      decoder.close();
+      return "opened";
+    } catch (e) {
+      return String(e).includes("decoder_open_params") ? "rejected" : String(e);
+    } finally {
+      core._sny_close(ctx);
+    }
+  }
+
+  return { demux, openBeyondPool, transferAll };
 }
 
-function concat(chunks) {
-  const out = new Float32Array(chunks.reduce((n, c) => n + c.length, 0));
+function concat(chunks, Type) {
+  const out = new Type(chunks.reduce((n, c) => n + c.length, 0));
   let at = 0;
 
   for (const c of chunks) {
@@ -142,16 +240,30 @@ function concat(chunks) {
   return out;
 }
 
-// Replaces the decoded samples with what the expectations hold: their SHA-256, and every
-// PROBE_STRIDE-th value for comparing float decoders within a tolerance.
+async function sha256(data) {
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Replaces the decoded output with what the expectations hold: its SHA-256, and for audio
+// every PROBE_STRIDE-th value for comparing float decoders within a tolerance.
 async function summarize(result) {
   for (const s of result.streams ?? []) {
-    if (!s.audio) continue;
-    const { pcm, ...audio } = s.audio;
-    const digest = await crypto.subtle.digest("SHA-256", pcm);
-    const sha256 = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0"));
-    const probe = Array.from(pcm.filter((_, i) => i % PROBE_STRIDE === 0));
-    s.audio = { ...audio, sha256: sha256.join(""), probe };
+    if (s.audio) {
+      const { pcm, ...audio } = s.audio;
+      const probe = Array.from(pcm.filter((_, i) => i % PROBE_STRIDE === 0));
+      const digest = await sha256(pcm);
+      s.audio = { ...audio, sha256: digest, probe };
+    } else if (s.video) {
+      const { raw, converted, convertedTo, ...video } = s.video;
+      const digest = await sha256(raw);
+      s.video = { ...video, sha256: digest };
+
+      if (converted) {
+        const convertedDigest = await sha256(converted);
+        s.video.converted = { pixFmt: convertedTo, sha256: convertedDigest };
+      }
+    }
   }
 
   return result;
@@ -161,7 +273,7 @@ async function summarize(result) {
 const ready = createDemuxer();
 
 async function run(names) {
-  const demux = await ready;
+  const { demux, openBeyondPool, transferAll } = await ready;
   const results = {};
 
   for (const name of names) {
@@ -174,6 +286,12 @@ async function run(names) {
     } catch (e) {
       results[name] = { error: String(e) };
     }
+  }
+
+  if (!transferAll) {
+    const res = await fetch("/test/fixtures/h264.h264");
+    const blob = await res.blob();
+    results.threadPool = await openBeyondPool(new File([blob], "h264.h264"));
   }
 
   self.postMessage(results);

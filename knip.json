@@ -12,6 +12,5 @@
     "/test/*": ["./test/*"]
   },
   "ignoreBinaries": ["ffmpeg", "ffprobe"],
-  "ignoreDependencies": ["libav.js", "mediabunny"],
-  "ignoreUnresolved": ["bench/run.ts"]
+  "ignoreDependencies": ["libav.js", "mediabunny"]
 }

@@ -9,12 +9,13 @@ snowy-ffmpeg compiles FFmpeg to WebAssembly modules that browsers call directly 
 | Task | Command |
 | --- | --- |
 | Install tools and the pre-commit hook | `bun install` |
-| Build `dist/core` and `dist/audio-ext` (Docker) | `bun run build` |
+| Build every module into `dist/` (Docker) | `bun run build` |
 | Browser tests (Chromium, Firefox, WebKit) | `bun test` |
 | Format everything | `bun run format` |
 | All static checks (CI's `check` job) | `bun run check` |
 | Demux benchmark | `bun run bench --browsers chromium --runs 3` |
 | Audio decode benchmark | `bun run bench:audio --browsers chromium --runs 3` |
+| Video decode benchmark | `bun run bench:video --browsers chromium --runs 3` |
 | Regenerate fixtures (needs native FFmpeg 9.0.2) | `bun run fixtures` |
 
 A full FFmpeg build takes 20+ minutes; changing only `src/` relinks in under a minute. Run `bun run check` before every commit; the hook runs it anyway.
@@ -24,7 +25,7 @@ A full FFmpeg build takes 20+ minutes; changing only `src/` relinks in under a m
 | Path | What it holds |
 | --- | --- |
 | `Dockerfile` | the only build path; every pinned version and checksum |
-| `build/configure.sh` | FFmpeg configure flags per module; which decoders go to `audio-ext` |
+| `build/configure.sh` | FFmpeg configure flags per module; which decoders go to `audio-ext` and `video` |
 | `src/*.c` | the entire JavaScript API of each module (getters, open/read/seek, decoding); `src/sny.h` lists which files each module has |
 | `src/io.js` | Emscripten imports that route AVIO reads to JavaScript hooks |
 | `scripts/gen-dts.ts` | generates `dist/<module>/index.{js,d.ts}` from `src/*.c` |

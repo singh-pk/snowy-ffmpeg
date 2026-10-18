@@ -11,6 +11,7 @@
     "test": "bun test",
     "bench": "bun bench/run.ts",
     "bench:audio": "bun bench/decode.ts",
+    "bench:video": "bun bench/video.ts",
     "fixtures": "bun scripts/gen-fixtures.ts",
     "settings": "bun scripts/settings.ts",
     "format": "oxfmt && clang-format -i src/*.c src/*.h",

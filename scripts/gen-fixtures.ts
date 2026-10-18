@@ -20,8 +20,8 @@ const tones = (n: number) =>
 const STEREO = ["-f", "lavfi", "-i", `aevalsrc=${tones(2)}:s=48000:d=0.5:c=stereo`];
 const SURROUND = ["-f", "lavfi", "-i", `aevalsrc=${tones(6)}:s=48000:d=0.5:c=5.1`];
 
-// name -> ffmpeg output arguments (inputs are prepended). Each covers one demuxer or one
-// audio decoder.
+// name -> ffmpeg output arguments (inputs are prepended). Each covers one demuxer, one
+// decoder or one pixel format.
 const fixtures: Record<string, string[]> = {
   "h264-aac.mkv": [...AV, "-c:v", "libx264", "-c:a", "aac"],
   "vp9-opus.webm": [...AV, "-c:v", "libvpx-vp9", "-c:a", "libopus"],
@@ -52,6 +52,15 @@ const fixtures: Record<string, string[]> = {
   "anim.gif": [...V, "-c:v", "gif"],
   "anim.apng": [...V, "-c:v", "apng", "-f", "apng"],
   "raw.y4m": [...V, "-pix_fmt", "yuv420p"],
+  "mjpeg.avi": [...V, "-c:v", "mjpeg"],
+  "mjpeg-422.avi": [...V, "-c:v", "mjpeg", "-pix_fmt", "yuvj422p"],
+  // A display matrix: coded side data, carried to the video module with the codec parameters.
+  "rotated.mp4": ["-display_rotation", "90", "-noautorotate", ...V, "-c:v", "libx264"],
+  "vp8.webm": [...V, "-c:v", "libvpx"],
+  "h264-10.mkv": [...V, "-c:v", "libx264", "-pix_fmt", "yuv420p10le"],
+  "h264-10-full.mkv": [...V, "-c:v", "libx264", "-pix_fmt", "yuv420p10le", "-color_range", "pc"],
+  "gray.nut": [...V, "-c:v", "ffv1", "-pix_fmt", "gray"],
+  "odd.y4m": [...V, "-vf", "format=yuv444p,crop=127:95"],
   "opus.ogg": [...A, "-c:a", "libopus"],
   "vorbis.oga": [...A, "-c:a", "vorbis", "-strict", "-2", "-ac", "2"],
   "pcm.wav": [...A, "-c:a", "pcm_s16le"],
@@ -108,6 +117,13 @@ interface Stream {
   sample_fmt?: string;
 }
 
+interface VideoFrame {
+  pts?: number;
+  width: number;
+  height: number;
+  pix_fmt: string;
+}
+
 interface Packet {
   stream_index: number;
   pts?: number;
@@ -140,8 +156,51 @@ async function decodeAudio(file: string, index: number, format: string) {
   };
 }
 
+// The pixel format sny_to_video_format converts each fixture's video to, where VideoFrame
+// doesn't accept the decoder's (src/video.c); native libswscale decides the pixels.
+const CONVERTED: Record<string, string> = {
+  "prores-pcm.mov": "yuv420p", // 10-bit 4:2:2
+  "h264-10.mkv": "yuv420p", // 10-bit 4:2:0
+  "h264-10-full.mkv": "yuv420p", // full range stays full range
+  "anim.apng": "rgb0", // rgb24
+  "gray.nut": "rgb0",
+  "mjpeg-422.avi": "rgb0", // full-range 4:2:2
+  "odd.y4m": "rgb0", // 4:4:4 of odd size
+};
+
+const sha256 = (data: ArrayBuffer) => new Bun.CryptoHasher("sha256").update(data).digest("hex");
+
+// Decoded video of stream `index` as native FFmpeg produces it: every frame, in the
+// decoder's own pixel format, planes packed as the rawvideo encoder writes them, and in the
+// format of CONVERTED when the fixture has one. Video decoders and libswscale are exact, so
+// the hashes must match.
+async function decodeVideo(file: string, name: string, index: number, codec: string) {
+  // FFmpeg's own av1 decoder needs hardware; the WASM build decodes AV1 with dav1d.
+  const dec = codec === "av1" ? ["-c:v", "libdav1d"] : [];
+  const { frames }: { frames: VideoFrame[] } =
+    await $`ffprobe -v error ${dec} -select_streams ${index} -show_entries frame=pts,width,height,pix_fmt -of json ${file}`.json();
+  // As the decoder outputs it: not rotated, not converted, no frame dropped or repeated.
+  const decode = (vf: string[]) =>
+    $`ffmpeg -v error -cpuflags 0 -noautorotate ${dec} -i ${file} -map 0:${index} -fps_mode passthrough ${vf} -c:v rawvideo -f rawvideo -`.arrayBuffer();
+  const raw = await decode([]);
+  const first = frames[0];
+  const target = CONVERTED[name];
+  const conversion = target ? decode(["-vf", `format=${target}`]) : null;
+  const converted = await conversion;
+
+  return {
+    frames: frames.length,
+    firstPts: frames.slice(0, 3).map((f) => (f.pts === undefined ? null : String(f.pts))),
+    width: first?.width,
+    height: first?.height,
+    pixFmt: first?.pix_fmt,
+    sha256: sha256(raw),
+    ...(converted ? { converted: { pixFmt: target, sha256: sha256(converted) } } : {}),
+  };
+}
+
 // Expectations from native FFmpeg: container name, streams, packet count and first pts per
-// stream, and for audio streams the decoded output.
+// stream, and for audio and video streams the decoded output.
 const expected: Record<string, unknown> = {};
 const listing = await $`ls ${dir}`.text();
 const names = listing
@@ -166,13 +225,15 @@ for (const name of names) {
       firstPts: pkts.slice(0, 3).map((p) => (p.pts === undefined ? null : String(p.pts))),
     };
 
-    if (s.codec_type !== "audio") {
+    if (s.codec_type === "audio") {
+      const audio = await decodeAudio(file, i, s.sample_fmt ?? "");
+      streams.push({ ...stream, audio });
+    } else if (s.codec_type === "video") {
+      const video = await decodeVideo(file, name, i, s.codec_name);
+      streams.push({ ...stream, video });
+    } else {
       streams.push(stream);
-      continue;
     }
-
-    const audio = await decodeAudio(file, i, s.sample_fmt ?? "");
-    streams.push({ ...stream, audio });
   }
 
   expected[name] = { format: probe.format.format_name, streams };

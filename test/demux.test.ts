@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: LGPL-2.1-or-later
 //
-// Opens every fixture with the WASM core in Chromium, Firefox and WebKit, decodes its audio,
-// and compares the result with native FFmpeg 9.0.2. Usage: bun test (after building dist/).
+// Opens every fixture with the WASM core in Chromium, Firefox and WebKit, decodes its audio
+// and video, and compares the result with native FFmpeg 9.0.2. Usage: bun test (after building dist/).
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { type Browser, type BrowserType, chromium, firefox, webkit } from "playwright";
@@ -26,6 +26,7 @@ interface Audio {
 interface Stream {
   [key: string]: unknown;
   audio?: Audio & { exact?: boolean; probe?: string | number[] };
+  video?: { [key: string]: unknown; videoFrame?: string };
 }
 
 interface Result {
@@ -72,6 +73,8 @@ for (const [engine, type] of [
     afterAll(() => browser?.close());
 
     test("page is cross-origin isolated", () => expect(isolated).toBe(true));
+    test("a decoder asking for more threads than the pool fails", () =>
+      expect(results.threadPool as unknown).toBe("rejected"));
 
     for (const name of names) {
       test(name, () => {
@@ -83,6 +86,8 @@ for (const [engine, type] of [
         for (const [i, s] of streams.entries()) {
           const w = want[i]?.audio;
           if (s.audio && w) expect(audioDiff(s.audio, w)).toBeLessThanOrEqual(FLOAT_TOLERANCE);
+          // Every decoded frame, converted, must be something WebCodecs can display.
+          if (s.video) expect(s.video.videoFrame).toBe("ok");
         }
 
         // Copying a stream to another module must not change a single sample.
@@ -92,8 +97,14 @@ for (const [engine, type] of [
   });
 }
 
-// A stream with its decoded audio reduced to what must match exactly.
-function withoutSamples({ audio, ...stream }: Stream): Stream {
+// A stream with its decoded output reduced to what must match exactly: decoded video
+// entirely, audio but for its float samples.
+function withoutSamples({ audio, video, ...stream }: Stream): Stream {
+  if (video) {
+    const { videoFrame: _, ...v } = video;
+    return { ...stream, video: v };
+  }
+
   if (!audio) return stream;
   const { frames, samples, firstPts } = audio;
   return { ...stream, audio: { frames, samples, firstPts, sha256: "" } };
