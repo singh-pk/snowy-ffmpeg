@@ -2,6 +2,15 @@ name: Feature request
 description: Propose a new capability or a change in behaviour.
 labels: [enhancement]
 body:
+  - type: dropdown
+    id: package
+    attributes:
+      label: Package
+      options:
+        - "@snowy-media/ffmpeg"
+        - Repository, CI or docs
+    validations:
+      required: true
   - type: textarea
     id: problem
     attributes:

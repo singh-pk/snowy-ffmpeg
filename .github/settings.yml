@@ -8,6 +8,7 @@
 repository:
   description: "Snowy: browser-native media playback and editing, built on FFmpeg 9 compiled to WebAssembly"
   has_wiki: false
+  has_discussions: true
   has_projects: false
   # Squash only; the pull request title becomes the commit on main (CONTRIBUTING.md#commits-and-pull-requests).
   allow_squash_merge: true
@@ -27,6 +28,7 @@ security:
   vulnerability_alerts: true
   automated_security_fixes: true
   private_vulnerability_reporting: true
+  immutable_releases: true
 
 topics:
   - ffmpeg
@@ -68,6 +70,7 @@ labels:
       description: "Skips the CHANGELOG.md check on feat, fix and perf pull requests",
     }
   - { name: dependencies, color: "0366d6", description: Dependency updates }
+  - { name: "package:ffmpeg", color: "0e8a16", description: "packages/ffmpeg, @snowy-media/ffmpeg" }
   - {
       name: "area:core",
       color: "1d76db",
