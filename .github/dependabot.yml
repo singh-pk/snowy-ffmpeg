@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: 2026 The Snowy Authors
-# SPDX-License-Identifier: LGPL-2.1-or-later
+# SPDX-License-Identifier: MIT
 #
 # FFmpeg, Emscripten and the C libraries are pinned by version and checksum in the
-# Dockerfile and bumped by hand (CONTRIBUTING.md#updating-a-pinned-dependency).
+# Dockerfile and bumped by hand (CONTRIBUTING.md#updating-a-pinned-ffmpeg-dependency).
 version: 2
 updates:
   - package-ecosystem: bun

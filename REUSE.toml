@@ -1,5 +1,6 @@
 version = 1
 
+# Everything outside packages/ffmpeg is MIT; files that can't carry a header are listed here.
 [[annotations]]
 path = [
   "**/*.md",
@@ -9,22 +10,33 @@ path = [
   "**/*.yaml",
   "**/*.toml",
   ".github/CODEOWNERS",
-  "NOTICE",
   ".gitignore",
-  ".dockerignore",
   ".editorconfig",
-  ".clang-format",
   "bun.lock",
-  "dist.sha256",
-  "bench/results/**",
-  "test/fixtures/**",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 The Snowy Authors"
+SPDX-License-Identifier = "MIT"
+
+# @snowy-media/ffmpeg is LGPL, like FFmpeg. The last matching annotation wins.
+[[annotations]]
+path = [
+  "packages/ffmpeg/**/*.md",
+  "packages/ffmpeg/**/*.json",
+  "packages/ffmpeg/NOTICE",
+  "packages/ffmpeg/.dockerignore",
+  "packages/ffmpeg/.clang-format",
+  "packages/ffmpeg/.hadolint.yaml",
+  "packages/ffmpeg/dist.sha256",
+  "packages/ffmpeg/bench/results/**",
+  "packages/ffmpeg/test/fixtures/**",
 ]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 The Snowy Authors"
 SPDX-License-Identifier = "LGPL-2.1-or-later"
 
 [[annotations]]
-path = "keys/ffmpeg-devel.asc"
+path = "packages/ffmpeg/keys/ffmpeg-devel.asc"
 precedence = "aggregate"
 SPDX-FileCopyrightText = "NOASSERTION"
 SPDX-License-Identifier = "LicenseRef-not-copyrightable"

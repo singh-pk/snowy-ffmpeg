@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
   - name: Report a security vulnerability
-    url: https://github.com/singh-pk/snowy-ffmpeg/security/advisories/new
+    url: https://github.com/singh-pk/snowy-media/security/advisories/new
     about: Report privately, never in a public issue.

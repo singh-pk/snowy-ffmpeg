@@ -23,6 +23,6 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: snowy-ffmpeg commit or version, browser, OS, and Docker/Bun versions for build problems.
+      description: Package and version (or commit), browser, OS, and Docker/Bun versions for build problems.
     validations:
       required: true

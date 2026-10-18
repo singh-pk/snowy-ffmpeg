@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: LGPL-2.1-or-later
+// SPDX-License-Identifier: MIT
 
 const BLOCK_DECLARATIONS = new Set([
   "FunctionDeclaration",

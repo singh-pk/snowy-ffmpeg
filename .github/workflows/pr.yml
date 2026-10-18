@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: 2026 The Snowy Authors
-# SPDX-License-Identifier: LGPL-2.1-or-later
+# SPDX-License-Identifier: MIT
 #
 # Pull requests are squash-merged, so the title becomes the commit message on main and
-# must follow Conventional Commits (CONTRIBUTING.md#commits).
+# must follow Conventional Commits (CONTRIBUTING.md#commits-and-pull-requests).
 name: pr
 
 on:
@@ -25,8 +25,9 @@ jobs:
             exit 1
           fi
 
-  # feat, fix and perf change what users get, so they need a CHANGELOG.md entry. The
-  # no-changelog label skips the check for changes nobody outside the repository notices.
+  # feat, fix and perf change what users get, so they need an entry in the changed package's
+  # CHANGELOG.md. The no-changelog label skips the check for changes nobody outside the
+  # repository notices.
   changelog:
     if: >-
       !contains(github.event.pull_request.labels.*.name, 'no-changelog')
@@ -37,13 +38,13 @@ jobs:
     permissions:
       pull-requests: read
     steps:
-      - name: Check CHANGELOG.md is updated
+      - name: Check a CHANGELOG.md is updated
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
         run: |
-          if ! gh pr diff "$PR" -R "$REPO" --name-only | grep -qx CHANGELOG.md; then
-            echo "::error::Add a line to CHANGELOG.md under Unreleased, or label the pull request no-changelog."
+          if ! gh pr diff "$PR" -R "$REPO" --name-only | grep -Eq '^packages/[^/]+/CHANGELOG\.md$'; then
+            echo "::error::Add a line under Unreleased in the changed package's CHANGELOG.md, or label the pull request no-changelog."
             exit 1
           fi

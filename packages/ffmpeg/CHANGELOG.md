@@ -31,4 +31,4 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 - Decoders are sorted into modules by their codec's media type instead of their section in FFmpeg's `allcodecs.c`. `core` gains six audio decoders filed elsewhere there (S302M, Speex, RKA, DV audio and the two 8SVX variants); the HDR image decoder moves to `video-ext`. Nine decoders FFmpeg builds only under the GPL (eight ADPCM variants and AHX) are left out of every module, as the LGPL build always did.
 - `core` no longer includes the long-tail audio decoders, now in `audio-ext`, or decoders FFmpeg never selects because another decodes the same codec (`aac_fixed`, `ac3_fixed`, fixed-point MP3, float MP1/MP2): 1.3 MB brotli instead of 2.1 MB. `sny_decoder_open` returns `AVERROR_DECODER_NOT_FOUND` for those codecs, and their stream info is what the demuxer reports (the sample format is unknown until a frame is decoded).
 
-[Unreleased]: https://github.com/singh-pk/snowy-ffmpeg/commits/main
+[Unreleased]: https://github.com/singh-pk/snowy-media/commits/main

@@ -1,8 +1,10 @@
-dist/
 node_modules/
-.build.log
 .DS_Store
-bench/media/
-bench/variants/
 .claude/settings.local.json
-release/
+packages/*/dist/
+# Generated from LICENSES/ when a package is packed.
+packages/*/LICENSE
+packages/ffmpeg/.build.log
+packages/ffmpeg/bench/media/
+packages/ffmpeg/bench/variants/
+packages/ffmpeg/release/

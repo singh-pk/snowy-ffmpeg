@@ -1,15 +1,15 @@
 # SPDX-FileCopyrightText: 2026 The Snowy Authors
-# SPDX-License-Identifier: LGPL-2.1-or-later
+# SPDX-License-Identifier: MIT
 #
 # Repository settings, security features, topics and labels. GitHub does not read this file: a maintainer
 # applies it, together with .github/rulesets/*.json, with `bun run settings`.
 
 # Fields of the "update a repository" REST API.
 repository:
-  description: "FFmpeg 9 compiled to WebAssembly for Snowy: small, lazily loaded modules tuned for playback and editing"
+  description: "Snowy: browser-native media playback and editing, built on FFmpeg 9 compiled to WebAssembly"
   has_wiki: false
   has_projects: false
-  # Squash only; the pull request title becomes the commit on main (CONTRIBUTING.md#commits).
+  # Squash only; the pull request title becomes the commit on main (CONTRIBUTING.md#commits-and-pull-requests).
   allow_squash_merge: true
   allow_merge_commit: false
   allow_rebase_merge: false
@@ -71,13 +71,17 @@ labels:
   - {
       name: "area:core",
       color: "1d76db",
-      description: "src/, the core module and its JavaScript API",
+      description: "packages/ffmpeg/src/, the FFmpeg modules and its JavaScript API",
     }
   - {
       name: "area:build",
       color: "1d76db",
-      description: "Dockerfile, build/ and pinned upstream versions",
+      description: "packages/ffmpeg/Dockerfile, build/ and pinned upstream versions",
     }
-  - { name: "area:bench", color: "1d76db", description: "bench/ harness, adapters and results" }
+  - {
+      name: "area:bench",
+      color: "1d76db",
+      description: "Benchmark harnesses, adapters and results",
+    }
   - { name: "area:ci", color: "1d76db", description: GitHub workflows and repository checks }
-  - { name: "area:docs", color: "1d76db", description: "README, docs/ and contributor guides" }
+  - { name: "area:docs", color: "1d76db", description: "READMEs, docs/ and contributor guides" }

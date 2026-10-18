@@ -1,16 +1,30 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": [
-    "scripts/*.ts",
-    "bench/variants.ts",
-    "bench/*worker.js",
-    "bench/adapters/*.js",
-    "test/*.worker.js"
-  ],
-  "project": ["scripts/**/*.ts", "bench/**/*.{ts,js}", "test/**/*.{ts,js}", "!test/fixtures/**"],
-  "paths": {
-    "/test/*": ["./test/*"]
-  },
-  "ignoreBinaries": ["ffmpeg", "ffprobe"],
-  "ignoreDependencies": ["libav.js", "mediabunny"]
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/*.ts"],
+      "project": ["scripts/**/*.ts", "tooling/**/*.js"]
+    },
+    "packages/ffmpeg": {
+      "entry": [
+        "scripts/*.ts",
+        "bench/variants.ts",
+        "bench/*worker.js",
+        "bench/adapters/*.js",
+        "test/*.worker.js"
+      ],
+      "project": [
+        "scripts/**/*.ts",
+        "bench/**/*.{ts,js}",
+        "test/**/*.{ts,js}",
+        "!test/fixtures/**"
+      ],
+      "paths": {
+        "/test/*": ["./test/*"]
+      },
+      "ignoreBinaries": ["ffmpeg", "ffprobe"],
+      "ignoreDependencies": ["libav.js", "mediabunny"],
+      "ignoreUnresolved": ["^/dist/"]
+    }
+  }
 }

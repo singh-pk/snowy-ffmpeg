@@ -1,0 +1,70 @@
+{
+  "name": "@snowy-media/ffmpeg",
+  "version": "0.0.0",
+  "description": "FFmpeg 9 compiled to WebAssembly as small, lazily loaded modules for playing and editing video in the browser",
+  "keywords": [
+    "audio",
+    "decoder",
+    "demuxer",
+    "ffmpeg",
+    "video",
+    "wasm",
+    "webassembly",
+    "webcodecs"
+  ],
+  "homepage": "https://github.com/singh-pk/snowy-media/tree/main/packages/ffmpeg#readme",
+  "bugs": "https://github.com/singh-pk/snowy-media/issues",
+  "license": "LGPL-2.1-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/singh-pk/snowy-media.git",
+    "directory": "packages/ffmpeg"
+  },
+  "files": [
+    "dist/*/*.js",
+    "dist/*/*.d.ts",
+    "dist/*/*.wasm",
+    "dist/licenses",
+    "NOTICE",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "exports": {
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "default": "./dist/core/index.js"
+    },
+    "./audio-ext": {
+      "types": "./dist/audio-ext/index.d.ts",
+      "default": "./dist/audio-ext/index.js"
+    },
+    "./video": {
+      "types": "./dist/video/index.d.ts",
+      "default": "./dist/video/index.js"
+    },
+    "./video-ext": {
+      "types": "./dist/video-ext/index.d.ts",
+      "default": "./dist/video-ext/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "docker buildx build --target dist --output type=local,dest=dist . && bun scripts/gen-dts.ts",
+    "test": "bun test",
+    "bench": "bun bench/run.ts",
+    "bench:audio": "bun bench/decode.ts",
+    "bench:video": "bun bench/video.ts",
+    "fixtures": "bun scripts/gen-fixtures.ts",
+    "typecheck": "bun --bun tsc"
+  },
+  "devDependencies": {
+    "libav.js": "6.10.9",
+    "mediabunny": "1.61.6",
+    "playwright": "1.64.1"
+  }
+}

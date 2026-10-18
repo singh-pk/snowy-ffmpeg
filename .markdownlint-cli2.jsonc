@@ -7,5 +7,11 @@
     "MD060": false,
   },
   "globs": ["**/*.md", ".agents/**/*.md", ".claude/**/*.md", ".github/**/*.md"],
-  "ignores": ["node_modules/**", "dist/**", "bench/media/**", "bench/variants/**", "LICENSES/**"],
+  "ignores": [
+    "**/node_modules/**",
+    "packages/*/dist/**",
+    "packages/ffmpeg/bench/media/**",
+    "packages/ffmpeg/bench/variants/**",
+    "LICENSES/**",
+  ],
 }

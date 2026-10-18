@@ -1,8 +1,8 @@
-snowy-ffmpeg
+@snowy-media/ffmpeg (packages/ffmpeg in https://github.com/singh-pk/snowy-media)
 Copyright 2026 The Snowy Authors
-Licensed under the GNU Lesser General Public License v2.1 or later (LICENSES/LGPL-2.1-or-later.txt).
+Licensed under the GNU Lesser General Public License v2.1 or later (LICENSE in the npm package, LICENSES/LGPL-2.1-or-later.txt in the repository).
 
-The WebAssembly modules built by this repository contain code from:
+The WebAssembly modules built by this package contain code from:
 
 - FFmpeg (https://ffmpeg.org), LGPL-2.1-or-later. Built without --enable-gpl
   and --enable-nonfree, and without patches.
@@ -15,11 +15,10 @@ The WebAssembly modules built by this repository contain code from:
 
 The npm package @snowy-media/ffmpeg carries their licences, as their sources ship
 them, in dist/licenses. Each version's GitHub release
-(https://github.com/singh-pk/snowy-ffmpeg/releases) attaches
-snowy-ffmpeg-<version>-source.tar.xz: this repository at that version and the
+(https://github.com/singh-pk/snowy-media/releases) attaches
+snowy-media-ffmpeg-<version>-source.tar.xz: this package at that version and the
 FFmpeg, dav1d, zlib and bzip2 sources its modules are built from.
 
 Lineage: this project grew out of ffmpeg.wasm (https://github.com/ffmpegwasm/ffmpeg.wasm),
 MIT License, Copyright (c) 2019 Jerome Wu. No ffmpeg.wasm code is included at
-present; any file adapted from it will carry its MIT notice in SPDX headers and
-LICENSES/MIT.txt will be added.
+present; any file adapted from it will carry its MIT notice in SPDX headers.

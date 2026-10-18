@@ -3,19 +3,25 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@snowy-media/ffmpeg",
+      "name": "snowy-media",
       "devDependencies": {
         "@types/bun": "1.4.3",
         "@wasm-fmt/clang-format": "23.1.1",
         "knip": "6.41.0",
-        "libav.js": "6.10.9",
         "markdownlint-cli2": "0.23.3",
-        "mediabunny": "1.61.6",
         "oxfmt": "0.73.0",
         "oxlint": "1.88.0",
         "oxlint-tsgolint": "7.0.2004",
-        "playwright": "1.64.1",
         "typescript": "7.0.2",
+      },
+    },
+    "packages/ffmpeg": {
+      "name": "@snowy-media/ffmpeg",
+      "version": "0.0.0",
+      "devDependencies": {
+        "libav.js": "6.10.9",
+        "mediabunny": "1.61.6",
+        "playwright": "1.64.1",
       },
     },
   },
@@ -201,6 +207,8 @@
     "@oxlint/binding-win32-x64-msvc": ["@oxlint/binding-win32-x64-msvc@1.88.0", "", { "os": "win32", "cpu": "x64" }, "sha512-3Sz6rVWe8Dy+ufsXurFN1GX2dX43F/lQMSLelK9gFjiba7nHvLlqlhR5cHlWVnCpSqUY1hN9pyCX9XToe6ve6g=="],
 
     "@sindresorhus/merge-streams": ["@sindresorhus/merge-streams@4.0.0", "", {}, "sha512-tlqY9xq5ukxTUZBmoOp+m61cqwQD5pHJtFY3Mn8CA8ps6yghLH/Hw8UPdqg4OLmFW3IFlcXnQNmo/dh8HzXYIQ=="],
+
+    "@snowy-media/ffmpeg": ["@snowy-media/ffmpeg@workspace:packages/ffmpeg"],
 
     "@tybys/wasm-util": ["@tybys/wasm-util@0.10.4", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-W3c4gRigFS0T/Ma4qIYF3GDAc5AQdHb1yL5znJT1Zv1YaD9Kitx656wBjvr19qbiosmZT8lWDM5BEMynUqX65A=="],
 
