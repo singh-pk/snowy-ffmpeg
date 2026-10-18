@@ -57,9 +57,9 @@ Welcome, on the same terms as any other: you are responsible for every line, and
 Maintainers release `@snowy-media/ffmpeg` from `main`, in a pull request and then a tag:
 
 1. In a pull request, set `version` in `packages/ffmpeg/package.json` and rename `## [Unreleased]` in `packages/ffmpeg/CHANGELOG.md` to `## [X.Y.Z] - date`, with a new empty `## [Unreleased]` above it and the links at the bottom updated. Merge it.
-2. Tag the merge commit and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+2. Tag the merge commit with the package name and version, and push the tag: `git tag @snowy-media/ffmpeg@X.Y.Z && git push origin @snowy-media/ffmpeg@X.Y.Z`.
 
-[`release.yml`](.github/workflows/release.yml) then rebuilds the modules without a cache, checks them against `dist.sha256`, creates the GitHub release with the changelog section and the source archive ([`scripts/release.ts`](packages/ffmpeg/scripts/release.ts)), and publishes to npm with provenance through [trusted publishing](https://docs.npmjs.com/trusted-publishers), so no npm token exists anywhere.
+[`release.yml`](.github/workflows/release.yml) then rebuilds the modules without a cache, checks them against `dist.sha256`, creates the GitHub release with the changelog section, the npm tarball and the source archive ([`scripts/release.ts`](packages/ffmpeg/scripts/release.ts), which also checks the tarball holds exactly the files it should), and publishes that tarball to npm with provenance through [trusted publishing](https://docs.npmjs.com/trusted-publishers), so no npm token exists anywhere.
 
 ## Licensing
 

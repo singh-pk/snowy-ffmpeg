@@ -1,14 +1,14 @@
 # SPDX-FileCopyrightText: 2026 The Snowy Authors
 # SPDX-License-Identifier: MIT
 #
-# A tag vX.Y.Z on main publishes @snowy-media/ffmpeg X.Y.Z (CONTRIBUTING.md#releasing). The
+# A tag @snowy-media/ffmpeg@X.Y.Z on main publishes that version (CONTRIBUTING.md#releasing). The
 # modules are rebuilt from scratch, without any cache a pull request could have written, and
 # must be byte-identical to dist.sha256, the build CI tested.
 name: release
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["@snowy-media/ffmpeg@*"]
 
 permissions:
   contents: read
@@ -42,19 +42,20 @@ jobs:
           no-cache: true
       - run: bun install --frozen-lockfile
       - run: bun scripts/gen-dts.ts
-      - name: Release notes and source archive
+      - name: Release notes, npm package and source archive
         run: bun scripts/release.ts "$TAG"
         env:
           TAG: ${{ github.ref_name }}
       - name: GitHub release
-        run: gh release create "$TAG" --verify-tag --title "$TAG" --notes-file release/notes.md release/*-source.tar.xz dist.sha256
+        run: gh release create "$TAG" --verify-tag --title "$TAG" --notes-file release/notes.md release/*-source.tar.xz release/*.tgz dist.sha256
         env:
           TAG: ${{ github.ref_name }}
           GH_TOKEN: ${{ github.token }}
-      # npm, not bun, publishes: only npm signs provenance. Node 24.21.0 ships npm 11.19.0,
-      # which authenticates through trusted publishing (OIDC), so no token is stored.
+      # npm, not bun, publishes the tarball bun packed and release.ts checked: only npm signs
+      # provenance. Node 24.21.0 ships npm 11.19.0, which authenticates through trusted
+      # publishing (OIDC), so no token is stored.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24.21.0
           package-manager-cache: false
-      - run: npm publish
+      - run: npm publish release/*.tgz
