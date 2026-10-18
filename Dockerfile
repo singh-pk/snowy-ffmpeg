@@ -11,6 +11,11 @@ ARG MODULE_LDFLAGS="-sENVIRONMENT=worker -sMODULARIZE -sEXPORT_ES6 \
   -sPTHREAD_POOL_SIZE=0 -sALLOW_MEMORY_GROWTH -sINITIAL_MEMORY=64MB -sMAXIMUM_MEMORY=4GB -sSTACK_SIZE=1MB \
   -sEXPORTED_FUNCTIONS=_malloc,_free \
   -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAP32,HEAPF32,UTF8ToString,stringToNewUTF8"
+# Video decoders create their threads while opening, which a WebAssembly worker can't wait
+# for: the pool starts with the module, one thread per core up to 8, and asking a decoder
+# for more fails instead of hanging.
+ARG VIDEO_LDFLAGS="-sPTHREAD_POOL_SIZE=Math.min(navigator.hardwareConcurrency,8) \
+  -sPTHREAD_POOL_SIZE_STRICT=2"
 ARG EMSDK_IMAGE=emscripten/emsdk:6.0.12@sha256:77638e6c215a65f25a704c0c831d5c2463a8c0468a58c6cb82489dbe621dfa05
 
 FROM ${EMSDK_IMAGE} AS base
@@ -69,6 +74,22 @@ RUN emmake make libbz2.a CC=emcc AR=emar RANLIB=emranlib CFLAGS="$CFLAGS -D_FILE
  && install -Dm644 libbz2.a "$SYSROOT/lib/libbz2.a" \
  && install -Dm644 bzlib.h "$SYSROOT/include/bzlib.h"
 
+# Ubuntu 24.04's release versions, which its archive keeps: meson sets dav1d's compile flags.
+# Their Python dependencies are not pinned; dist.sha256 catches any change they make.
+FROM base AS dav1d
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends meson=1.3.2-1ubuntu1 ninja-build=1.11.1-2 \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=sources /src/dav1d /src/dav1d
+WORKDIR /src/dav1d
+# No dav1d assembly exists for WebAssembly; simd128 comes from the compiler.
+RUN args="$(printf "'%s'," $CFLAGS)" \
+ && printf "[binaries]\nc = 'emcc'\nar = 'emar'\n[built-in options]\nc_args = [%s]\nc_link_args = [%s]\n[host_machine]\nsystem = 'emscripten'\ncpu_family = 'wasm32'\ncpu = 'wasm32'\nendian = 'little'\n" "$args" "$args" > /tmp/cross.txt \
+ && meson setup build --cross-file /tmp/cross.txt --prefix="$SYSROOT" --libdir=lib \
+      --buildtype=release -Ddefault_library=static -Denable_asm=false \
+      -Denable_tools=false -Denable_tests=false -Denable_examples=false \
+ && ninja -C build install
+
 FROM base AS ffmpeg-core
 COPY --from=zlib /opt/sysroot /opt/sysroot
 COPY --from=bzip2 /opt/sysroot /opt/sysroot
@@ -83,14 +104,33 @@ COPY build/configure.sh /build/
 WORKDIR /src/ffmpeg
 RUN sh /build/configure.sh audio-ext && emmake make -j"$(nproc)" install
 
+FROM base AS ffmpeg-video
+COPY --from=dav1d /opt/sysroot /opt/sysroot
+COPY --from=sources /src/ffmpeg /src/ffmpeg
+COPY build/configure.sh /build/
+WORKDIR /src/ffmpeg
+# Extra configure flags for a benchmark variant of this module (bench/variants.ts).
+ARG EXTRA_CONFIGURE=""
+RUN EM_PKG_CONFIG_PATH="$SYSROOT/lib/pkgconfig" sh /build/configure.sh video \
+ && emmake make -j"$(nproc)" install
+
+FROM base AS ffmpeg-video-ext
+COPY --from=zlib /opt/sysroot /opt/sysroot
+COPY --from=bzip2 /opt/sysroot /opt/sysroot
+COPY --from=sources /src/ffmpeg /src/ffmpeg
+COPY build/configure.sh /build/
+WORKDIR /src/ffmpeg
+RUN sh /build/configure.sh video-ext && emmake make -j"$(nproc)" install
+
 # Link flags are benchmarked (bench/README.md). EXTRA_LDFLAGS is for
 # bench/variants.ts only. The API files of each module are listed in src/sny.h.
 FROM ffmpeg-core AS core
 COPY src /build/src
 ARG MODULE_LDFLAGS
 ARG EXTRA_LDFLAGS=""
-RUN mkdir -p /out/core && emcc $CFLAGS $LDFLAGS $EXTRA_LDFLAGS $MODULE_LDFLAGS \
-      /build/src/common.c /build/src/demux.c /build/src/decode.c \
+RUN sh /build/configure.sh video-codecs > /build/src/video_codecs.h \
+ && mkdir -p /out/core && emcc $CFLAGS $LDFLAGS $EXTRA_LDFLAGS $MODULE_LDFLAGS \
+      /build/src/common.c /build/src/demux.c /build/src/decode.c /build/src/audio.c \
       -I"$SYSROOT/include" -L"$SYSROOT/lib" \
       -lavformat -lavcodec -lswresample -lavutil -lz -lbz2 \
       --js-library /build/src/io.js -sEXPORT_NAME=createCore \
@@ -102,12 +142,38 @@ COPY src /build/src
 ARG MODULE_LDFLAGS
 ARG EXTRA_LDFLAGS=""
 RUN mkdir -p /out/audio-ext && emcc $CFLAGS $LDFLAGS $EXTRA_LDFLAGS $MODULE_LDFLAGS \
-      /build/src/common.c /build/src/decode.c \
+      /build/src/common.c /build/src/decode.c /build/src/audio.c \
       -I"$SYSROOT/include" -L"$SYSROOT/lib" \
       -lavcodec -lswresample -lavutil -sEXPORT_NAME=createAudioExt \
       -o /out/audio-ext/audio-ext.js \
  && ls -l /out/audio-ext
 
+FROM ffmpeg-video AS video
+COPY src /build/src
+ARG MODULE_LDFLAGS
+ARG VIDEO_LDFLAGS
+ARG EXTRA_LDFLAGS=""
+RUN mkdir -p /out/video && emcc $CFLAGS $LDFLAGS $EXTRA_LDFLAGS $MODULE_LDFLAGS $VIDEO_LDFLAGS \
+      /build/src/common.c /build/src/decode.c /build/src/video.c \
+      -I"$SYSROOT/include" -L"$SYSROOT/lib" \
+      -lavcodec -lswscale -lavutil -ldav1d -sEXPORT_NAME=createVideo \
+      -o /out/video/video.js \
+ && ls -l /out/video
+
+FROM ffmpeg-video-ext AS video-ext
+COPY src /build/src
+ARG MODULE_LDFLAGS
+ARG VIDEO_LDFLAGS
+ARG EXTRA_LDFLAGS=""
+RUN mkdir -p /out/video-ext && emcc $CFLAGS $LDFLAGS $EXTRA_LDFLAGS $MODULE_LDFLAGS $VIDEO_LDFLAGS \
+      /build/src/common.c /build/src/decode.c /build/src/video.c \
+      -I"$SYSROOT/include" -L"$SYSROOT/lib" \
+      -lavcodec -lswscale -lavutil -lz -lbz2 -sEXPORT_NAME=createVideoExt \
+      -o /out/video-ext/video-ext.js \
+ && ls -l /out/video-ext
+
 FROM scratch AS dist
 COPY --from=core /out /
 COPY --from=audio-ext /out /
+COPY --from=video /out /
+COPY --from=video-ext /out /

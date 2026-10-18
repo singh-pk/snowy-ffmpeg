@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 //
 // Generates large benchmark files in bench/media (gitignored): one 5-minute 1080p30
-// H.264 (20 Mb/s) + AAC encode, remuxed losslessly into each container we benchmark, and
-// one minute of audio in each codec the decode benchmark measures.
+// H.264 (20 Mb/s) + AAC encode, remuxed losslessly into each container we benchmark, one
+// minute of audio in each codec the decode benchmark measures, and 10 seconds of 1080p30
+// in each codec the video benchmark measures.
 // Usage: bun scripts/gen-bench-media.ts
 
 import { $ } from "bun";
@@ -63,6 +64,50 @@ for (const [name, args] of Object.entries(audio)) {
   if (!exists) await $`ffmpeg -hide_banner -loglevel error ${args} ${out}`;
 }
 
-for (const name of [...Object.keys(outputs), ...Object.keys(audio)]) {
+// Moving test pattern with film grain at a streaming bit rate (8 Mb/s): the grain leaves
+// residuals in every block, so decoders do real work, unlike on a clean synthetic source.
+const SCENE = [
+  "-f",
+  "lavfi",
+  "-i",
+  "testsrc2=size=1920x1080:rate=30:duration=10,noise=alls=12:allf=t",
+  "-b:v",
+  "8M",
+  "-g",
+  "60",
+];
+
+const video: Record<string, string[]> = {
+  "video-h264.mkv": [...SCENE, "-c:v", "libx264", "-preset", "medium"],
+  "video-hevc.mkv": [
+    ...SCENE,
+    "-c:v",
+    "libx265",
+    "-preset",
+    "fast",
+    "-x265-params",
+    "log-level=none",
+  ],
+  "video-vp9.mkv": [
+    ...SCENE,
+    "-c:v",
+    "libvpx-vp9",
+    "-deadline",
+    "good",
+    "-cpu-used",
+    "4",
+    "-row-mt",
+    "1",
+  ],
+  "video-av1.mkv": [...SCENE, "-c:v", "libsvtav1", "-preset", "8"],
+};
+
+for (const [name, args] of Object.entries(video)) {
+  const out = dir + name;
+  const exists = await Bun.file(out).exists();
+  if (!exists) await $`ffmpeg -hide_banner -loglevel error ${args} ${out}`;
+}
+
+for (const name of [...Object.keys(outputs), ...Object.keys(audio), ...Object.keys(video)]) {
   console.log(name, `${(Bun.file(dir + name).size / 2 ** 20).toFixed(1)} MiB`);
 }

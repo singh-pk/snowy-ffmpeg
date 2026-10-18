@@ -36,7 +36,48 @@
           "0",
           "10",
           "20"
-        ]
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "10",
+            "20"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "bgra",
+          "rotation": 0,
+          "sha256": "cd24091e8575a54cdea78a7ccdabdae25d03b2897fcc9d75514d0637ab165737"
+        }
+      }
+    ]
+  },
+  "bgr0.nut": {
+    "format": "nut",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "rawvideo",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "8192",
+          "16384"
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "8192",
+            "16384"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "bgr0",
+          "rotation": 0,
+          "sha256": "1fb6e8a9b83eada12527e56c8250f0ff4cb0d69e6df617604921d329e86f0c78"
+        }
       }
     ]
   },
@@ -91,7 +132,24 @@
           "0",
           "1024",
           "2048"
-        ]
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "1024",
+            "2048"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv422p10le",
+          "rotation": 0,
+          "sha256": "36cb248c56be303cefb6c73412cbff926d7fbb2d5a1d9d471a4eebd8ab6afb8b",
+          "converted": {
+            "pixFmt": "yuv420p",
+            "sha256": "6de8f9b901eea15865bf603cb7a8f18812751df89a734b70539e9e7d2aa07f64"
+          }
+        }
       },
       {
         "type": "audio",
@@ -127,7 +185,52 @@
           "0",
           "10000",
           "20000"
-        ]
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "10000",
+            "20000"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "rgb24",
+          "rotation": 0,
+          "sha256": "52c2762a622e0104266e7265c3be40f2db048acd119833673faa7091571f35bb",
+          "converted": {
+            "pixFmt": "rgb0",
+            "sha256": "f0ec9fef9a561b8becbd2ace205a08f9859740c8382fe98d5e6b0367f6500deb"
+          }
+        }
+      }
+    ]
+  },
+  "vp8.webm": {
+    "format": "matroska,webm",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "vp8",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "100",
+          "200"
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "100",
+            "200"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p",
+          "rotation": 0,
+          "sha256": "3c0f660f8b473bfc4464cec7349cb92114c6a9307098f178f7bd5ee075dfa20f"
+        }
       }
     ]
   },
@@ -158,6 +261,70 @@
       }
     ]
   },
+  "h264-10.mkv": {
+    "format": "matroska,webm",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "h264",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "300",
+          "100"
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "100",
+            "200"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p10le",
+          "rotation": 0,
+          "sha256": "aef56e94f19f613af1ea35d930bad84bb5c07853ee68e492cdf6dbc6052cb379",
+          "converted": {
+            "pixFmt": "yuv420p",
+            "sha256": "497ed70305291f8b4338e755568dd70415571292072b31538fd9b4430426e223"
+          }
+        }
+      }
+    ]
+  },
+  "h264-10-full.mkv": {
+    "format": "matroska,webm",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "h264",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "300",
+          "100"
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "100",
+            "200"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p10le",
+          "rotation": 0,
+          "sha256": "c9c043c000c151bb4323493a9002db88b1e24d8d1d51e269d7ef323501ebeccb",
+          "converted": {
+            "pixFmt": "yuv420p",
+            "sha256": "8edb4d7bde629c225bd67f77e31cb86b64159985132c48836bb60d90d5e40b9c"
+          }
+        }
+      }
+    ]
+  },
   "h264-ac3.ts": {
     "format": "mpegts",
     "streams": [
@@ -169,7 +336,20 @@
           "144000",
           "171000",
           "153000"
-        ]
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "144000",
+            "153000",
+            "162000"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p",
+          "rotation": 0,
+          "sha256": "683114efc791fa1370b09ad35cb0a47de7862e86d742e8d27edfbaa6a991c8ee"
+        }
       },
       {
         "type": "audio",
@@ -206,7 +386,20 @@
           "0",
           "1",
           "2"
-        ]
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "1",
+            "2"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p",
+          "rotation": 0,
+          "sha256": "c16590f5d428dd38e29ba8d38b76b22fd8b5266fb8f1a40772e58482ab6ce54b"
+        }
       }
     ]
   },
@@ -221,7 +414,20 @@
           "54000",
           "63000",
           "72000"
-        ]
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "54000",
+            "63000",
+            "72000"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p",
+          "rotation": 0,
+          "sha256": "d249309dfd5ab6f1c903afa34322c89550aeb68acf42fee09afe8437cc0c0678"
+        }
       },
       {
         "type": "audio",
@@ -283,7 +489,20 @@
           "0",
           "300",
           "100"
-        ]
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "100",
+            "200"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p",
+          "rotation": 0,
+          "sha256": "683114efc791fa1370b09ad35cb0a47de7862e86d742e8d27edfbaa6a991c8ee"
+        }
       },
       {
         "type": "audio",
@@ -327,6 +546,38 @@
           ],
           "sha256": "da46261cb93470b2879b2c45e7d5f59758ca175cc5b40ece3bac233b92c78c15",
           "exact": true
+        }
+      }
+    ]
+  },
+  "prores-4444.mov": {
+    "format": "mov,mp4,m4a,3gp,3g2,mj2",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "prores",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "1024",
+          "2048"
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "1024",
+            "2048"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuva444p12le",
+          "rotation": 0,
+          "sha256": "83952ad750dd494cd9107427432efd44fa498085e913aee07aaee8c1a7a6b432",
+          "converted": {
+            "pixFmt": "yuva420p",
+            "sha256": "f00ded860e348e723b61655ba2d79a67c0ca8c50cbfec459f61b54fc45c504c5"
+          }
         }
       }
     ]
@@ -410,7 +661,20 @@
           "0",
           "1024",
           "2048"
-        ]
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "1024",
+            "2048"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p",
+          "rotation": 0,
+          "sha256": "b7ec21780cb77f6a2ea4826d88bb241373babaa017ee62da91b6096be116916c"
+        }
       },
       {
         "type": "audio",
@@ -528,7 +792,20 @@
           null,
           null,
           null
-        ]
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            null,
+            null,
+            null
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p",
+          "rotation": 0,
+          "sha256": "4d252bb762a7cdd0c663d26a670efa05734a521efcceee79070100ba504229eb"
+        }
       }
     ]
   },
@@ -543,7 +820,20 @@
           "0",
           "300",
           "100"
-        ]
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "100",
+            "200"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p",
+          "rotation": 0,
+          "sha256": "683114efc791fa1370b09ad35cb0a47de7862e86d742e8d27edfbaa6a991c8ee"
+        }
       },
       {
         "type": "audio",
@@ -589,7 +879,20 @@
           "0",
           "100",
           "200"
-        ]
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "100",
+            "200"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p",
+          "rotation": 0,
+          "sha256": "7e8e4ca0f70adabc5a8203e1038f59e4435cce45a27e5675ecd898dc6a7d5af2"
+        }
       },
       {
         "type": "audio",
@@ -705,7 +1008,112 @@
           "0",
           "48000",
           "96000"
-        ]
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "48000",
+            "96000"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p",
+          "rotation": 0,
+          "sha256": "ba48a4b3a450cbbc22eef415b0f66579cf1c41b49fa454e995fbabfaec885bea"
+        }
+      }
+    ]
+  },
+  "gray.nut": {
+    "format": "nut",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "ffv1",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "8192",
+          "16384"
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "8192",
+            "16384"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "gray",
+          "rotation": 0,
+          "sha256": "26799741161c509cba5daadfc278fd976f7195afc4c893fb71e844046c034d4f",
+          "converted": {
+            "pixFmt": "rgb0",
+            "sha256": "657bc992530089ddf046c039c42d1f99bf873883f1bc18b5e4a1a38a4d579588"
+          }
+        }
+      }
+    ]
+  },
+  "mjpeg.avi": {
+    "format": "avi",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "mjpeg",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "1",
+          "2"
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "1",
+            "2"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuvj420p",
+          "rotation": 0,
+          "sha256": "b74bad2b9599f2433c5e925960f797eb93c63ee4f7daf9667fc7d2290a4d9424"
+        }
+      }
+    ]
+  },
+  "mjpeg-422.avi": {
+    "format": "avi",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "mjpeg",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "1",
+          "2"
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "1",
+            "2"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuvj422p",
+          "rotation": 0,
+          "sha256": "4a39c06ff5c1ce012a6e38b6cf7d0d5068f494f26d600736c8500b2ceaed6a38",
+          "converted": {
+            "pixFmt": "yuv420p",
+            "sha256": "d0ed5bf7fcb21c12e4cf8b9505018cfb2c867dd98dca8b4b5c897a4af9dc27ec"
+          }
+        }
       }
     ]
   },
@@ -720,7 +1128,20 @@
           "0",
           "300",
           "100"
-        ]
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "100",
+            "200"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p",
+          "rotation": 0,
+          "sha256": "683114efc791fa1370b09ad35cb0a47de7862e86d742e8d27edfbaa6a991c8ee"
+        }
       },
       {
         "type": "audio",
@@ -786,6 +1207,34 @@
       }
     ]
   },
+  "rotated.mp4": {
+    "format": "mov,mp4,m4a,3gp,3g2,mj2",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "h264",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "3072",
+          "1024"
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "1024",
+            "2048"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p",
+          "rotation": 90,
+          "sha256": "683114efc791fa1370b09ad35cb0a47de7862e86d742e8d27edfbaa6a991c8ee"
+        }
+      }
+    ]
+  },
   "wmv2-wmav2.wmv": {
     "format": "asf",
     "streams": [
@@ -797,7 +1246,20 @@
           "43",
           "143",
           "243"
-        ]
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "43",
+            "143",
+            "243"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p",
+          "rotation": 0,
+          "sha256": "6b67f48e1ed9e7622bc9a7a8271f70523de0da0b4593a65f10f88d17a1259b8a"
+        }
       },
       {
         "type": "audio",
@@ -861,7 +1323,20 @@
           "0",
           "1",
           "2"
-        ]
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "1",
+            "2"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p",
+          "rotation": 0,
+          "sha256": "ba48a4b3a450cbbc22eef415b0f66579cf1c41b49fa454e995fbabfaec885bea"
+        }
       }
     ]
   },
@@ -876,7 +1351,20 @@
           null,
           null,
           null
-        ]
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            null,
+            null,
+            null
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p",
+          "rotation": 0,
+          "sha256": "d249309dfd5ab6f1c903afa34322c89550aeb68acf42fee09afe8437cc0c0678"
+        }
       }
     ]
   },
@@ -907,6 +1395,34 @@
       }
     ]
   },
+  "rgba.nut": {
+    "format": "nut",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "rawvideo",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "8192",
+          "16384"
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "8192",
+            "16384"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "rgba",
+          "rotation": 0,
+          "sha256": "f0ec9fef9a561b8becbd2ace205a08f9859740c8382fe98d5e6b0367f6500deb"
+        }
+      }
+    ]
+  },
   "audio.flac": {
     "format": "flac",
     "streams": [
@@ -933,6 +1449,34 @@
       }
     ]
   },
+  "nv12.nut": {
+    "format": "nut",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "rawvideo",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "8192",
+          "16384"
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "8192",
+            "16384"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "nv12",
+          "rotation": 0,
+          "sha256": "411bc6cfef4dba93b40e00e7fb125c90618fb4bbd4c3590b11df671b19c013f7"
+        }
+      }
+    ]
+  },
   "ra144.rm": {
     "format": "rm",
     "streams": [
@@ -955,6 +1499,34 @@
           ],
           "sha256": "8329361a646b5d3e9412e3d0e45153c9014fcc39746d7120f47d9b36d6cb7263",
           "exact": true
+        }
+      }
+    ]
+  },
+  "alpha.nut": {
+    "format": "nut",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "ffv1",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "8192",
+          "16384"
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "8192",
+            "16384"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuva420p",
+          "rotation": 0,
+          "sha256": "2a1ee9dae2c23a30b7a2b42e2c11a623ed1a7670bae230a3a420d8037c3feb56"
         }
       }
     ]
@@ -997,7 +1569,20 @@
           null,
           null,
           null
-        ]
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            null,
+            null,
+            null
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p",
+          "rotation": 0,
+          "sha256": "683114efc791fa1370b09ad35cb0a47de7862e86d742e8d27edfbaa6a991c8ee"
+        }
       }
     ]
   },
@@ -1012,7 +1597,20 @@
           "0",
           "8192",
           "16384"
-        ]
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "8192",
+            "16384"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p",
+          "rotation": 0,
+          "sha256": "c16590f5d428dd38e29ba8d38b76b22fd8b5266fb8f1a40772e58482ab6ce54b"
+        }
       },
       {
         "type": "audio",
@@ -1126,7 +1724,20 @@
           "0",
           "2",
           "3"
-        ]
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "2",
+            "3"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p",
+          "rotation": 0,
+          "sha256": "6d09e3bbece7ae55e10a61a8505aa3a36e7b76c70faf7b122cd29538862165ab"
+        }
       },
       {
         "type": "audio",
@@ -1231,6 +1842,38 @@
       }
     ]
   },
+  "odd.y4m": {
+    "format": "yuv4mpegpipe",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "rawvideo",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "1",
+          "2"
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "1",
+            "2"
+          ],
+          "width": 127,
+          "height": 95,
+          "pixFmt": "yuv420p",
+          "rotation": 0,
+          "sha256": "394b00e87ce1e37cc4f908564b12b703b08f4cfcee052ee07bc165053c4cf905",
+          "converted": {
+            "pixFmt": "rgb0",
+            "sha256": "e3958541c2644870ddbc09dccaf3bf8a6cd852cdc577195956588012ffd2c6b6"
+          }
+        }
+      }
+    ]
+  },
   "h264-aac.flv": {
     "format": "flv",
     "streams": [
@@ -1242,7 +1885,20 @@
           "200",
           "500",
           "300"
-        ]
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "200",
+            "300",
+            "400"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p",
+          "rotation": 0,
+          "sha256": "683114efc791fa1370b09ad35cb0a47de7862e86d742e8d27edfbaa6a991c8ee"
+        }
       },
       {
         "type": "audio",
@@ -1279,7 +1935,20 @@
           "0",
           "3072",
           "2048"
-        ]
+        ],
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "1024",
+            "2048"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p",
+          "rotation": 0,
+          "sha256": "4d252bb762a7cdd0c663d26a670efa05734a521efcceee79070100ba504229eb"
+        }
       },
       {
         "type": "audio",

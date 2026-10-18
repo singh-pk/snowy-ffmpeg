@@ -7,13 +7,13 @@
 
 FFmpeg 9 compiled to WebAssembly as small, lazily loaded modules for playing and editing video in the browser. It powers [Snowy](https://github.com/singh-pk/snowy).
 
-- **Every format.** The `core` module opens every single-file container FFmpeg knows (350 demuxers) and decodes every common audio codec and every subtitle codec; `audio-ext`, loaded only when a file needs it, decodes the remaining audio codecs.
+- **Every format.** The `core` module opens every single-file container FFmpeg knows (350 demuxers) and decodes every common audio codec and every subtitle codec. Video is decoded by `video` (H.264, HEVC, VP9, AV1 through dav1d, ProRes, MPEG-2 and the other codecs real files use) and the remaining codecs by `video-ext` and `audio-ext`, each loaded only when a file needs it.
 - **Fast.** It demuxes a 750 MB 1080p file in 0.25–1 s in Chromium, Firefox and WebKit alike, where other browser demuxers slow down by up to 100× in some engines ([benchmarks](bench/README.md)).
-- **Exact.** Every fixture demuxes to the same streams, packets and timestamps as native `ffprobe`, and decodes to the same audio as native `ffmpeg`.
+- **Exact.** Every fixture demuxes to the same streams, packets and timestamps as native `ffprobe`, and decodes to the same audio and the same video frames, byte for byte, as native `ffmpeg`.
 - **Reproducible.** Pinned, checksummed and GPG-verified sources; CI checks that the output is byte-identical.
 
 > [!NOTE]
-> Pre-release. The `core` and `audio-ext` modules work; video decoding and muxing modules are in development, and nothing is published to npm yet.
+> Pre-release. The demuxing and decoding modules work; the muxing module is in development, and nothing is published to npm yet.
 
 ## What it is, and isn't
 
@@ -107,9 +107,38 @@ core._sny_converter_free(swr);
 core._sny_decoder_close(dec);
 ```
 
-`_sny_decoder_open` returns `AVERROR_DECODER_NOT_FOUND` for a long-tail codec (ATRAC, RealAudio, speech codecs and the like): decode it with `audio-ext` instead. [`test/support/audio-decoder.js`](test/support/audio-decoder.js) is the complete loop, including the case where the decoder is full and handing a stream to `audio-ext`. Integer decoders produce exactly what native FFmpeg does; float decoders match within 10⁻⁶.
+`_sny_decoder_open` returns `AVERROR_DECODER_NOT_FOUND` for a long-tail codec (ATRAC, RealAudio, speech codecs and the like): decode it with `audio-ext` instead. [`test/support/decoder.js`](test/support/decoder.js) is the complete loop, including the case where the decoder is full and handing a stream to another module. Integer decoders produce exactly what native FFmpeg does; float decoders match within 10⁻⁶.
 
-Every `_sny_*` call that can fail returns a negative AVERROR code, and `_sny_strerror` describes it. The full API is in [`src/`](src): [`demux.c`](src/demux.c), [`decode.c`](src/decode.c) and [`common.c`](src/common.c); `dist/core/index.d.ts` types every function and constant. [docs/architecture.md](docs/architecture.md) explains the design.
+### Decoding video
+
+Video decoders live in `video` and `video-ext`; `core._sny_codec_module(ctx, stream)` names the one a stream needs, so a page loads only that. Copy the stream's codec parameters across with `_sny_params_export` and open the decoder with `_sny_decoder_open_params(buf, size, threads, out)` on up to one thread per core, at most 8: the module's thread pool, shared by every decoder open in it; then copy each packet across with `_sny_packet_make`, and run the same send/receive loop as for audio. [`test/support/decoder.js`](test/support/decoder.js) does all of it.
+
+Each decoded frame becomes a WebCodecs `VideoFrame` with one copy out of the WASM heap:
+
+```js
+import { createVideo } from "./dist/video/index.js";
+
+const video = await createVideo();
+const sws = video._sny_scaler_alloc();
+const out = video._sny_frame_alloc();
+
+// For each frame the decoder returns:
+if (video._sny_to_video_format(sws, frame, out) < 0) throw new Error("convert");
+const size = video._sny_frame_pack_size(out);
+const dst = video._malloc(size);
+video._sny_frame_pack(out, dst, size);
+const picture = new VideoFrame(video.HEAPU8.slice(dst, dst + size), {
+  format: video.UTF8ToString(video._sny_frame_video_format(out)), // "I420", "NV12", "RGBA", …
+  codedWidth: video._sny_frame_width(out),
+  codedHeight: video._sny_frame_height(out),
+  timestamp: Number(video._sny_rescale(video._sny_frame_pts(out), tbNum, tbDen, 1, 1_000_000)),
+});
+video._free(dst);
+```
+
+`_sny_to_video_format` passes a frame through untouched when Chromium, Firefox and WebKit all accept its pixel format, and otherwise converts it with libswscale (10-bit to 8-bit, 4:2:2 and 4:4:4 to I420 or RGB). The decoder's own frame stays available, planes and all, through `_sny_frame_data` and `_sny_frame_linesize`, for a WebGL or WebGPU renderer that wants full precision. Every decoder produces exactly what native FFmpeg does.
+
+Every `_sny_*` call that can fail returns a negative AVERROR code, and `_sny_strerror` describes it. The full API is in [`src/`](src): [`demux.c`](src/demux.c), [`decode.c`](src/decode.c), [`audio.c`](src/audio.c), [`video.c`](src/video.c) and [`common.c`](src/common.c); `dist/core/index.d.ts` types every function and constant. [docs/architecture.md](docs/architecture.md) explains the design.
 
 ## Modules
 
@@ -117,8 +146,8 @@ Every `_sny_*` call that can fail returns a negative AVERROR code, and `_sny_str
 | --- | --- | --- |
 | `core` | every single-file demuxer, every parser, every common audio decoder, every subtitle decoder | available |
 | `audio-ext` | the long-tail audio decoders (speech, game, legacy and niche lossless codecs) | available |
-| `video` | common software video decoders, dav1d, swscale | in development |
-| `video-ext` | the remaining FFmpeg video decoders | in development |
+| `video` | the video decoders real files use (H.264, HEVC, VP8, VP9, AV1 through dav1d, MPEG-1/2/4, VC-1, ProRes, DNxHD, MJPEG, …), libswscale | available |
+| `video-ext` | every other FFmpeg video decoder (images, screen capture, game and legacy codecs), libswscale | available |
 | `mux` | muxers and audio encoders | in development |
 
 ## Building
@@ -127,7 +156,7 @@ Requires Docker with buildx, and [Bun](https://bun.sh).
 
 ```sh
 bun install
-bun run build   # dist/core/ and dist/audio-ext/: module .js, .wasm, index.js, index.d.ts
+bun run build   # dist/<module>/ for each module: module .js, .wasm, index.js, index.d.ts
 bun test        # Chromium, Firefox, WebKit (run `bunx playwright install` once)
 ```
 

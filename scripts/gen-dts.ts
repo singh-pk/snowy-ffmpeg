@@ -8,8 +8,25 @@
 const root = new URL("../", import.meta.url).pathname;
 
 const modules = [
-  { dir: "core", factory: "createCore", iface: "Core", files: ["common", "demux", "decode"] },
-  { dir: "audio-ext", factory: "createAudioExt", iface: "AudioExt", files: ["common", "decode"] },
+  {
+    dir: "core",
+    factory: "createCore",
+    iface: "Core",
+    files: ["common", "demux", "decode", "audio"],
+  },
+  {
+    dir: "audio-ext",
+    factory: "createAudioExt",
+    iface: "AudioExt",
+    files: ["common", "decode", "audio"],
+  },
+  { dir: "video", factory: "createVideo", iface: "Video", files: ["common", "decode", "video"] },
+  {
+    dir: "video-ext",
+    factory: "createVideoExt",
+    iface: "VideoExt",
+    files: ["common", "decode", "video"],
+  },
 ];
 
 function tsType(cType: string): string {

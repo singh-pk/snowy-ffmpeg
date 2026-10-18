@@ -17,5 +17,5 @@ Every native dependency is pinned in the `Dockerfile` `ARG`s by version and sha2
 5. **Verify:**
    - `bun test` in all three browsers. For an FFmpeg bump, regenerate fixtures with the matching native `ffprobe` (`bun run fixtures`) and review every changed expectation.
    - `bun run bench --runs 3` before and after; report any change above 5%.
-   - `shasum -a 256 dist/core/core.{js,wasm} dist/audio-ext/audio-ext.{js,wasm} > dist.sha256`.
+   - `shasum -a 256 dist/{core/core,audio-ext/audio-ext,video/video,video-ext/video-ext}.{js,wasm} > dist.sha256`.
 6. **Document** the bump in `CHANGELOG.md` and the README's version badge, and title the pull request `build(deps): ffmpeg 9.0.3`.

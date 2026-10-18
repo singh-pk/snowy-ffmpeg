@@ -6,7 +6,7 @@
 // frame out of the WASM heap as a hand-off to an AudioWorklet would.
 
 import { AVERROR_EOF, AVMEDIA_TYPE_AUDIO, createCore } from "/dist/core/index.js";
-import { createAudioDecoders } from "/test/support/audio-decoder.js";
+import { createDecoders } from "/test/support/decoder.js";
 import { attachFileSource } from "/test/support/file-source.js";
 
 const ready = createCore();
@@ -79,7 +79,7 @@ async function run({ files }) {
     const core = await ready;
     core._sny_set_log_level(16);
     const source = attachFileSource(core);
-    const openAudioDecoder = createAudioDecoders(core);
+    const openAudioDecoder = createDecoders(core);
     const results = {};
 
     for (const file of files) {

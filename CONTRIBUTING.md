@@ -15,7 +15,7 @@ You need Docker with buildx, and [Bun](https://bun.sh) (the version in `package.
 
 ```sh
 bun install                 # also enables the pre-commit hook
-bun run build               # FFmpeg → dist/core, dist/audio-ext (the first build takes a while)
+bun run build               # FFmpeg → dist/<module> for each module (the first build takes a while)
 bunx playwright install     # browsers for the tests, once
 bun test                    # Chromium, Firefox, WebKit
 ```
@@ -37,7 +37,7 @@ actionlint && zizmor --offline .github && shellcheck build/*.sh .githooks/* \
 
 ### Updating a pinned dependency
 
-FFmpeg, Emscripten, dav1d, zlib and bzip2 are pinned in the [Dockerfile](Dockerfile) by version and sha256 (FFmpeg also by signing key; Emscripten by image digest). To bump one, change the version and checksum together, rebuild, run the tests and the benchmark, and update `dist.sha256` with `shasum -a 256 dist/core/core.{js,wasm} dist/audio-ext/audio-ext.{js,wasm} > dist.sha256`. The `update-dependency` skill in `.agents/skills` walks through it.
+FFmpeg, Emscripten, dav1d, zlib and bzip2 are pinned in the [Dockerfile](Dockerfile) by version and sha256 (FFmpeg also by signing key; Emscripten by image digest). To bump one, change the version and checksum together, rebuild, run the tests and the benchmark, and update `dist.sha256` with `shasum -a 256 dist/{core/core,audio-ext/audio-ext,video/video,video-ext/video-ext}.{js,wasm} > dist.sha256`. The `update-dependency` skill in `.agents/skills` walks through it.
 
 ## Commits and pull requests
 
