@@ -45,13 +45,16 @@
         "do_not_enforce_on_create": false,
         "required_status_checks": [
           {
-            "context": "ci-ok"
+            "context": "ci-ok",
+            "integration_id": 15368
           },
           {
-            "context": "conventional"
+            "context": "conventional",
+            "integration_id": 15368
           },
           {
-            "context": "changelog"
+            "context": "changelog",
+            "integration_id": 15368
           }
         ]
       }

@@ -59,14 +59,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 0
+          fetch-depth: 2
       # A file counts for a package if it is in the package or outside packages/ (lockfile,
-      # shared configuration, workflows). Markdown never changes a build.
+      # shared configuration, workflows). Markdown never changes a build. On a pull request
+      # HEAD is the merge commit, so HEAD^1 is the base it merges into; --no-renames also
+      # lists the old path of a file moved out of a package.
       - id: diff
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" = push ] || git diff --name-only "$BASE" HEAD \
+          files=$(git diff --name-only --no-renames HEAD^1 HEAD)
+          if [ "$GITHUB_EVENT_NAME" = push ] || printf '%s\n' "$files" \
             | awk '!/\.md$/ && (!/^packages\// || /^packages\/ffmpeg\//) { found = 1 } END { exit !found }'; then
             echo ffmpeg=true >> "$GITHUB_OUTPUT"
           else
@@ -105,7 +106,8 @@ jobs:
       - run: bun test
 
   # The one check the main ruleset requires, so adding, renaming or skipping a job never
-  # needs a ruleset change. Skipped jobs pass; failed or cancelled ones do not.
+  # needs a ruleset change; a new job must be added to needs below. Skipped jobs pass;
+  # failed or cancelled ones do not.
   ci-ok:
     name: ci-ok
     if: always()
