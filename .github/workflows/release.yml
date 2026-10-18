@@ -1,0 +1,57 @@
+# SPDX-FileCopyrightText: 2026 The Snowy Authors
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# A tag vX.Y.Z on main publishes @snowy-media/ffmpeg X.Y.Z (CONTRIBUTING.md#releasing). The
+# modules are rebuilt from scratch, without any cache a pull request could have written, and
+# must be byte-identical to dist.sha256, the build CI tested.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: npm and GitHub release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # the GitHub release
+      id-token: write # npm trusted publishing and provenance
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: dist
+          outputs: type=local,dest=dist
+          no-cache: true
+      - name: Reproducible build
+        run: sha256sum -c dist.sha256
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+          no-cache: true
+      - run: bun install --frozen-lockfile
+      - run: bun scripts/gen-dts.ts
+      - name: Release notes and source archive
+        run: bun scripts/release.ts "$TAG"
+        env:
+          TAG: ${{ github.ref_name }}
+      - name: GitHub release
+        run: gh release create "$TAG" --verify-tag --title "$TAG" --notes-file release/notes.md release/*-source.tar.xz dist.sha256
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+      # npm, not bun, publishes: only npm signs provenance. Node 24.21.0 ships npm 11.19.0,
+      # which authenticates through trusted publishing (OIDC), so no token is stored.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - run: npm publish

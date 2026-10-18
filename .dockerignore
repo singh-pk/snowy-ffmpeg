@@ -3,3 +3,4 @@ dist
 bench
 node_modules
 test
+release

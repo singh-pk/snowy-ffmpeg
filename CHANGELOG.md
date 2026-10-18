@@ -8,6 +8,7 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 
 ### Added
 
+- The npm package `@snowy-media/ffmpeg`, one entry point per module, published from CI with provenance from a build byte-identical to `dist.sha256`. It carries the third-party licences in `dist/licenses`; the GitHub release attaches the complete source.
 - `core` module: FFmpeg 9.0.2 with every single-file demuxer, every parser and every audio and subtitle decoder, built with SIMD, threads and LTO.
 - A typed JavaScript API generated from `src/`: open, stream info, packet reading, seeking and the keyframe index.
 - Tests against native `ffprobe` and `ffmpeg` on 62 fixtures in Chromium, Firefox and WebKit.

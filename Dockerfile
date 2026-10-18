@@ -177,3 +177,13 @@ COPY --from=core /out /
 COPY --from=audio-ext /out /
 COPY --from=video /out /
 COPY --from=video-ext /out /
+# The licences of the code in the modules, as their sources ship them (NOTICE).
+COPY --from=sources /src/ffmpeg/COPYING.LGPLv2.1 /src/ffmpeg/LICENSE.md /licenses/ffmpeg/
+COPY --from=sources /src/dav1d/COPYING /licenses/dav1d/
+COPY --from=sources /src/zlib/LICENSE /licenses/zlib/
+COPY --from=sources /src/bzip2/LICENSE /licenses/bzip2/
+
+# The third-party sources as the build uses them, unmodified: half of each release's source
+# archive (scripts/release.ts), which the LGPL requires next to the modules.
+FROM scratch AS source
+COPY --from=sources /src /

@@ -1,10 +1,57 @@
 {
-  "name": "snowy-ffmpeg-dev",
-  "private": true,
-  "description": "Build, test and benchmark tooling for snowy-ffmpeg",
+  "name": "@snowy-media/ffmpeg",
+  "version": "0.0.0",
+  "description": "FFmpeg 9 compiled to WebAssembly as small, lazily loaded modules for playing and editing video in the browser",
+  "keywords": [
+    "audio",
+    "decoder",
+    "demuxer",
+    "ffmpeg",
+    "video",
+    "wasm",
+    "webassembly",
+    "webcodecs"
+  ],
+  "homepage": "https://github.com/singh-pk/snowy-ffmpeg#readme",
+  "bugs": "https://github.com/singh-pk/snowy-ffmpeg/issues",
   "license": "LGPL-2.1-or-later",
-  "repository": "github:singh-pk/snowy-ffmpeg",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/singh-pk/snowy-ffmpeg.git"
+  },
+  "files": [
+    "dist/*/*.js",
+    "dist/*/*.d.ts",
+    "dist/*/*.wasm",
+    "dist/licenses",
+    "NOTICE",
+    "LICENSES",
+    "CHANGELOG.md"
+  ],
   "type": "module",
+  "exports": {
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "default": "./dist/core/index.js"
+    },
+    "./audio-ext": {
+      "types": "./dist/audio-ext/index.d.ts",
+      "default": "./dist/audio-ext/index.js"
+    },
+    "./video": {
+      "types": "./dist/video/index.d.ts",
+      "default": "./dist/video/index.js"
+    },
+    "./video-ext": {
+      "types": "./dist/video-ext/index.d.ts",
+      "default": "./dist/video-ext/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "prepare": "git config core.hooksPath .githooks",
     "build": "docker buildx build --target dist --output type=local,dest=dist . && bun scripts/gen-dts.ts",

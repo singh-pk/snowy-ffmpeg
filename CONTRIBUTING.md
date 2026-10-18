@@ -49,6 +49,15 @@ Fill in the pull request template. Every pull request needs green CI and a revie
 
 Welcome, on the same terms as any other: you are responsible for every line, and you must understand and be able to explain it. Say in the pull request which parts an agent wrote. The repository ships agent instructions ([AGENTS.md](AGENTS.md)), task skills (`.agents/skills`) and a reviewer agent (`.claude/agents/code-reviewer.md`) so agents follow the same rules people do.
 
+## Releasing
+
+Maintainers release from `main`, in a pull request and then a tag:
+
+1. In a pull request, set `version` in `package.json` and rename `## [Unreleased]` in `CHANGELOG.md` to `## [X.Y.Z] - date`, with a new empty `## [Unreleased]` above it and the links at the bottom updated. Merge it.
+2. Tag the merge commit and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+
+[`release.yml`](.github/workflows/release.yml) then rebuilds the modules without a cache, checks them against `dist.sha256`, creates the GitHub release with the changelog section and the source archive ([`scripts/release.ts`](scripts/release.ts)), and publishes to npm with provenance through [trusted publishing](https://docs.npmjs.com/trusted-publishers), so no npm token exists anywhere.
+
 ## Licensing
 
 By contributing you agree that your contribution is licensed under [LGPL-2.1-or-later](LICENSES/LGPL-2.1-or-later.txt). Every new source file starts with SPDX headers:
