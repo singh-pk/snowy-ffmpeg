@@ -13,7 +13,7 @@ FFmpeg 9 compiled to WebAssembly as small, lazily loaded modules for playing and
 - **Reproducible.** Pinned, checksummed and GPG-verified sources; CI checks that the output is byte-identical.
 
 > [!NOTE]
-> Pre-release: until 1.0, a minor version may change the API. The demuxing and decoding modules work; the muxing module is in development.
+> Pre-release: nothing is published to npm yet, and until 1.0 a minor version may change the API. The demuxing and decoding modules work; the muxing module is in development.
 
 ## What it is, and isn't
 
@@ -26,7 +26,7 @@ FFmpeg 9 compiled to WebAssembly as small, lazily loaded modules for playing and
 npm install @snowy-media/ffmpeg
 ```
 
-Each module is its own entry point: `@snowy-media/ffmpeg/core`, `/audio-ext`, `/video` and `/video-ext`, typed by its `index.d.ts`. A module loads its `.wasm` and starts its threads from the URL of its own `.js` file (`import.meta.url`), so serve the two side by side, unchanged. Every release is published from CI with [npm provenance](https://docs.npmjs.com/generating-provenance-statements), from a build byte-identical to `dist.sha256`, and its GitHub release attaches the complete source ([NOTICE](NOTICE)).
+Each module is its own entry point: `@snowy-media/ffmpeg/core`, `/audio-ext`, `/video` and `/video-ext`, typed by its `index.d.ts`. A module loads its `.wasm` and starts its threads from the URL of its own `.js` file (`import.meta.url`), so serve the two side by side, unchanged. With Vite, add `optimizeDeps: { exclude: ["@snowy-media/ffmpeg"] }`: its development server otherwise moves the `.js` away from its `.wasm`. Every release is published from CI with [npm provenance](https://docs.npmjs.com/generating-provenance-statements), from a build byte-identical to `dist.sha256`, and its GitHub release attaches the complete source ([NOTICE](NOTICE)).
 
 ## Requirements
 
