@@ -55,12 +55,31 @@ Welcome, on the same terms as any other: you are responsible for every line, and
 
 ## Releasing
 
-Maintainers release `@snowy-media/ffmpeg` from `main`, in a pull request and then a tag:
+Maintainers release a package from `main`, in a pull request and then a tag. For `@snowy-media/ffmpeg`:
 
-1. In a pull request, set `version` in `packages/ffmpeg/package.json` and rename `## [Unreleased]` in `packages/ffmpeg/CHANGELOG.md` to `## [X.Y.Z] - date`, with a new empty `## [Unreleased]` above it and the links at the bottom updated. Merge it.
-2. Tag the merge commit with the package name and version, and push the tag: `git tag @snowy-media/ffmpeg@X.Y.Z && git push origin @snowy-media/ffmpeg@X.Y.Z`.
+1. In a pull request titled `chore(release): release @snowy-media/ffmpeg X.Y.Z` (the summary must start with a lowercase letter), set `version` in `packages/ffmpeg/package.json` and rename `## [Unreleased]` in `packages/ffmpeg/CHANGELOG.md` to `## [X.Y.Z] - date`, with a new empty `## [Unreleased]` above it and the links at the bottom updated. Merge it.
+2. Tag the merge commit with the package name and version, and push the tag: `git tag @snowy-media/ffmpeg@X.Y.Z && git push origin @snowy-media/ffmpeg@X.Y.Z`. Only admins can create, move or delete `@snowy-media/*` tags.
 
-[`release.yml`](.github/workflows/release.yml) then rebuilds the modules without a cache, checks them against `dist.sha256`, creates the GitHub release with the changelog section, the npm tarball and the source archive ([`scripts/release.ts`](packages/ffmpeg/scripts/release.ts), which also checks the tarball holds exactly the files it should), and publishes that tarball to npm with provenance through [trusted publishing](https://docs.npmjs.com/trusted-publishers), so no npm token exists anywhere.
+[`release.yml`](.github/workflows/release.yml) then:
+
+1. checks that the tag is on `main`;
+2. rebuilds the modules without a cache and checks them against `dist.sha256`;
+3. packs the npm tarball and checks it holds exactly the files it should ([`scripts/release.ts`](packages/ffmpeg/scripts/release.ts));
+4. creates a draft GitHub release with the changelog section, the tarball and the source archive;
+5. publishes that tarball to npm with provenance through [trusted publishing](https://docs.npmjs.com/trusted-publishers), so no npm token exists anywhere;
+6. publishes the GitHub release. Releases are immutable once published, which is why this comes last.
+
+If a run fails, nothing has reached npm and the GitHub release is still a draft: fix the cause, delete the draft, and re-run the workflow. If the fix changes the repository, merge it and move the tag to the new commit on `main` instead.
+
+### The first release of a new package
+
+npm only lets a package that already exists trust a workflow, so a new package starts with a placeholder. The maintainer, signed in with `npm login`:
+
+1. Publishes a placeholder holding only `package.json` (name, version `0.0.0`, licence, repository with `directory`) and a short README: `npm stage publish --access public` in its directory, then `npm stage approve <id>` with 2FA.
+2. Creates the trusted publisher: `npm trust github @snowy-media/<name> --file release.yml --repo singh-pk/snowy-media --allow-publish`. Without `--allow-publish`, npm accepts only staged publishes from CI. Check it with `npm trust list @snowy-media/<name>`.
+3. Under the package's settings on npmjs.com, sets publishing access to "Require two-factor authentication and disallow bypass 2fa tokens".
+4. Pushes the first real release tag within 48 hours of step 2, as above, once `release.yml` has a job for the package.
+5. Deprecates the placeholders: `npm deprecate "@snowy-media/<name>@0.0.0 || 0.0.0-stage" "Placeholder; install X.Y.Z or later"`.
 
 ## Licensing
 
