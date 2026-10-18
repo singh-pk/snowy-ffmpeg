@@ -1,14 +1,15 @@
 # Benchmarks
 
-Demux benchmark for the `core` module against [libav.js](https://github.com/Yahweasel/libav.js) 6.10.9 (`webcodecs` variant) and [mediabunny](https://github.com/Vanilagy/mediabunny) 1.61.6, in real browsers, reading disk-backed `File`s from `<input type=file>`.
+Demux and audio decode benchmarks for the `core` module. The demux benchmark compares against [libav.js](https://github.com/Yahweasel/libav.js) 6.10.9 (`webcodecs` variant) and [mediabunny](https://github.com/Vanilagy/mediabunny) 1.61.6, in real browsers, reading disk-backed `File`s from `<input type=file>`.
 
 ```sh
 bun scripts/gen-bench-media.ts       # bench/media: 5 min 1080p30 H.264 20 Mb/s + AAC, ~750 MB per container
 bun bench/run.ts --out bench/results/baseline.json
 bun bench/variants.ts [name ...]     # build-flag variants (Dockerfile OPT / EXTRA_LDFLAGS) → bench/results/variants
+bun bench/decode.ts --out bench/results/audio.json   # audio decode, one minute per codec
 ```
 
-Each run is a fresh worker; numbers are the median of 3 runs. Per file: `open` (open + stream info), 10 seeks to fixed timestamps (the first is cold; `seekErr` checks the landed keyframe is in the right GOP), and a full demux with every packet copied out of the WASM heap. Measured on an Apple M-series laptop, so treat small differences as noise; shared CI runners are too noisy to gate on.
+Each run is a fresh worker; numbers are the median of 3 runs. Per demux file: `open` (open + stream info), 10 seeks to fixed timestamps (the first is cold; `seekErr` checks the landed keyframe is in the right GOP), and a full demux with every packet copied out of the WASM heap. Measured on an Apple M-series laptop, so treat small differences as noise; shared CI runners are too noisy to gate on.
 
 ## Results (2026-10-17, [baseline.json](results/baseline.json))
 
@@ -33,8 +34,24 @@ Shipped size:
 | | raw | gzip | brotli |
 |---|---|---|---|
 | snowy `core` (every demuxer, audio + subtitle decoder) | 5,688 KB | 2,576 KB | 2,111 KB |
+| snowy `core` with audio decoding (libswresample, decode API) | 5,847 KB | 2,639 KB | 2,161 KB |
 | libav.js `webcodecs` (5 demuxers) | 2,583 KB | 946 KB | 748 KB |
 | mediabunny (≈10 formats, no decoders) | 678 KB | 174 KB | 142 KB |
+
+## Audio decode
+
+One minute of 48 kHz pink noise per codec (a different seed per channel, harder than music for every decoder), demuxed from Matroska and decoded to float planar with every frame copied out of the WASM heap. Median of 3 runs, 2026-10-17, [audio.json](results/audio.json), same machine. Milliseconds, and multiple of real time:
+
+| Codec | Chromium 156 | Firefox 157 | WebKit 27.2 |
+|---|---|---|---|
+| E-AC-3 5.1, 640 kb/s | 73 ms, 818× | 85 ms, 710× | 74 ms, 812× |
+| TrueHD 5.1, 24-bit | 321 ms, 187× | 371 ms, 162× | 357 ms, 168× |
+| AC-3 5.1, 640 kb/s | 78 ms, 766× | 91 ms, 656× | 81 ms, 740× |
+| DTS 5.1 | 171 ms, 350× | 192 ms, 312× | 184 ms, 327× |
+| AAC stereo, 256 kb/s | 44 ms, 1,349× | 44 ms, 1,376× | 43 ms, 1,380× |
+| Opus stereo, 160 kb/s | 88 ms, 684× | 100 ms, 602× | 90 ms, 667× |
+| MP3 stereo, 320 kb/s | 54 ms, 1,117× | 63 ms, 948× | 59 ms, 1,024× |
+| FLAC stereo, 24-bit | 78 ms, 773× | 83 ms, 720× | 87 ms, 691× |
 
 ## Findings
 

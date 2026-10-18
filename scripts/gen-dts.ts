@@ -55,6 +55,7 @@ export type Ptr = number;
 export interface CoreModule {
   readonly HEAPU8: Uint8Array;
   readonly HEAP32: Int32Array;
+  readonly HEAPF32: Float32Array;
   UTF8ToString(ptr: Ptr, maxBytesToRead?: number): string;
   stringToNewUTF8(s: string): Ptr;
   _malloc(size: number): Ptr;

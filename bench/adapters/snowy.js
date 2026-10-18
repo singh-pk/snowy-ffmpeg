@@ -23,11 +23,13 @@ export async function create({ core: base = "/dist/core", avioBuffer = 1 << 22 }
   async function open(file) {
     source.open(file);
     const out = core._malloc(4);
+    const name = core.stringToNewUTF8(file.name);
 
     try {
-      check(core._sny_open(1, avioBuffer, out), "open");
+      check(core._sny_open(1, avioBuffer, name, out), "open");
       state.ctx = core.HEAP32[out >> 2];
     } finally {
+      core._free(name);
       core._free(out);
     }
 

@@ -11,8 +11,11 @@
 #include <emscripten/emscripten.h>
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavutil/channel_layout.h>
 #include <libavutil/error.h>
+#include <libavutil/frame.h>
 #include <libavutil/mathematics.h>
+#include <libswresample/swresample.h>
 
 #define API EMSCRIPTEN_KEEPALIVE
 
@@ -23,6 +26,7 @@
 SNY_CONST(AVERROR_EOF, -541478725)
 SNY_CONST(AVERROR(EAGAIN), -6)
 SNY_CONST(AVERROR(EIO), -29)
+SNY_CONST(AVERROR_DECODER_NOT_FOUND, -1128613112)
 SNY_CONST64(AV_NOPTS_VALUE, INT64_MIN)
 SNY_CONST(AV_TIME_BASE, 1000000)
 SNY_CONST(AVSEEK_SIZE, 0x10000)
@@ -57,8 +61,10 @@ static int64_t seek_cb(void *opaque, int64_t offset, int whence) {
 // ---- Open / close ----
 
 // Opens input `io` (an id the JS hooks understand) with an AVIO buffer of `buffer_size`
-// bytes. Returns 0 and stores the context in *out, or a negative AVERROR.
-API int sny_open(int io, int buffer_size, AVFormatContext **out) {
+// bytes. `name` is the file name, or NULL: FFmpeg identifies formats without a recognisable
+// header (raw TrueHD, for one) by its extension. Returns 0 and stores the context in *out,
+// or a negative AVERROR.
+API int sny_open(int io, int buffer_size, const char *name, AVFormatContext **out) {
   uint8_t *buf = av_malloc(buffer_size);
   if (!buf)
     return AVERROR(ENOMEM);
@@ -76,7 +82,7 @@ API int sny_open(int io, int buffer_size, AVFormatContext **out) {
   }
   ctx->pb = pb;
   ctx->flags |= AVFMT_FLAG_CUSTOM_IO;
-  int ret = avformat_open_input(&ctx, NULL, NULL, NULL); // frees ctx on failure, not pb
+  int ret = avformat_open_input(&ctx, name, NULL, NULL); // frees ctx on failure, not pb
   if (ret < 0) {
     av_freep(&pb->buffer);
     avio_context_free(&pb);
@@ -188,6 +194,102 @@ API int64_t sny_packet_pos(const AVPacket *pkt) { return pkt->pos; }
 API int sny_packet_flags(const AVPacket *pkt) { return pkt->flags; }
 API uint8_t *sny_packet_data(const AVPacket *pkt) { return pkt->data; }
 API int sny_packet_size(const AVPacket *pkt) { return pkt->size; }
+
+// ---- Decoding ----
+
+// Opens a decoder for stream `stream`. Frame timestamps are in the stream's time base.
+// Returns 0 and stores the decoder in *out, or a negative AVERROR.
+API int sny_decoder_open(const AVFormatContext *ctx, int stream, AVCodecContext **out) {
+  const AVStream *st = ctx->streams[stream];
+  const AVCodec *codec = avcodec_find_decoder(st->codecpar->codec_id);
+  if (!codec)
+    return AVERROR_DECODER_NOT_FOUND;
+  AVCodecContext *dec = avcodec_alloc_context3(codec);
+  if (!dec)
+    return AVERROR(ENOMEM);
+  int ret = avcodec_parameters_to_context(dec, st->codecpar);
+  if (ret >= 0) {
+    dec->pkt_timebase = st->time_base;
+    ret = avcodec_open2(dec, codec, NULL);
+  }
+  if (ret < 0) {
+    avcodec_free_context(&dec);
+    return ret;
+  }
+  *out = dec;
+  return 0;
+}
+
+API void sny_decoder_close(AVCodecContext *dec) { avcodec_free_context(&dec); }
+
+// Sends a packet, or NULL (0) to drain at the end of the stream. AVERROR(EAGAIN) means
+// the decoder is full: receive its frames, then send the packet again.
+API int sny_decoder_send(AVCodecContext *dec, const AVPacket *pkt) {
+  return avcodec_send_packet(dec, pkt);
+}
+
+// Receives the next frame into frame, releasing whatever frame held. AVERROR(EAGAIN) means
+// send more packets; AVERROR_EOF means the decoder is drained.
+API int sny_decoder_receive(AVCodecContext *dec, AVFrame *frame) {
+  return avcodec_receive_frame(dec, frame);
+}
+
+// Drops buffered packets and frames; call after every seek.
+API void sny_decoder_flush(AVCodecContext *dec) { avcodec_flush_buffers(dec); }
+
+// ---- Frames ----
+
+API AVFrame *sny_frame_alloc(void) { return av_frame_alloc(); }
+API void sny_frame_free(AVFrame *frame) { av_frame_free(&frame); }
+API int64_t sny_frame_pts(const AVFrame *frame) { return frame->pts; }
+API int64_t sny_frame_duration(const AVFrame *frame) { return frame->duration; }
+// An AVSampleFormat for audio.
+API int sny_frame_format(const AVFrame *frame) { return frame->format; }
+
+// audio
+API int sny_frame_samples(const AVFrame *frame) { return frame->nb_samples; }
+API int sny_frame_sample_rate(const AVFrame *frame) { return frame->sample_rate; }
+API int sny_frame_channels(const AVFrame *frame) { return frame->ch_layout.nb_channels; }
+// The AVChannel (speaker position) of channel i, e.g. 3 = low-frequency effects.
+API int sny_frame_channel(const AVFrame *frame, int i) {
+  return av_channel_layout_channel_from_index(&frame->ch_layout, i);
+}
+// Plane i: channel i of planar audio. extended_data, because audio can have more than
+// AV_NUM_DATA_POINTERS channels.
+API uint8_t *sny_frame_plane(const AVFrame *frame, int i) { return frame->extended_data[i]; }
+
+// ---- Audio output ----
+
+// JavaScript always gets audio as 32-bit float planar: per channel, one plane of
+// nb_samples floats. A converter holds the libswresample state between frames.
+API SwrContext *sny_converter_alloc(void) { return swr_alloc(); }
+API void sny_converter_free(SwrContext *swr) { swr_free(&swr); }
+
+static int convert(SwrContext *swr, const AVFrame *in, AVFrame *out) {
+  av_frame_unref(out);
+  out->format = AV_SAMPLE_FMT_FLTP;
+  out->sample_rate = in->sample_rate;
+  int ret = av_channel_layout_copy(&out->ch_layout, &in->ch_layout);
+  return ret < 0 ? ret : swr_convert_frame(swr, out, in);
+}
+
+// Makes out the float planar copy of in: same samples, rate and channels, no resampling,
+// so the values are exactly what native FFmpeg produces. A frame that is already float
+// planar (AAC, Opus, AC-3, Vorbis, MP3) is referenced, not copied. Returns 0 or a
+// negative AVERROR.
+API int sny_to_float_planar(SwrContext *swr, const AVFrame *in, AVFrame *out) {
+  if (in->format == AV_SAMPLE_FMT_FLTP) {
+    av_frame_unref(out);
+    return av_frame_ref(out, in);
+  }
+
+  int ret = convert(swr, in, out);
+  if (ret == AVERROR_INPUT_CHANGED || ret == AVERROR_OUTPUT_CHANGED) {
+    swr_close(swr); // the stream changed format mid-way: reconfigure from this frame
+    ret = convert(swr, in, out);
+  }
+  return ret < 0 ? ret : av_frame_copy_props(out, in);
+}
 
 // ---- Seeking and index ----
 
