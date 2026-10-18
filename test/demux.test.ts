@@ -45,6 +45,7 @@ for (const [engine, type] of [
     let browser: Browser;
     let isolated = false;
     let results: Record<string, Result> = {};
+    let transferred: Record<string, Result> = {};
 
     beforeAll(async () => {
       browser = await type.launch();
@@ -53,16 +54,20 @@ for (const [engine, type] of [
       page.on("pageerror", (e) => console.error(`[${engine}]`, e.message));
       await page.goto(server.url.href);
       isolated = await page.evaluate(() => crossOriginIsolated);
-      results = await page.evaluate(
-        (list) =>
-          new Promise<Record<string, Result>>((resolve) => {
-            const worker = new Worker("/test/demux.worker.js", { type: "module" });
-            worker.addEventListener("message", (e) => resolve(e.data));
-            worker.addEventListener("error", (e) => resolve({ worker: { error: e.message } }));
-            worker.postMessage(list);
-          }),
-        names,
-      );
+      const run = (url: string) =>
+        page.evaluate(
+          ({ worker: src, list }) =>
+            new Promise<Record<string, Result>>((resolve) => {
+              const worker = new Worker(src, { type: "module" });
+              worker.addEventListener("message", (e) => resolve(e.data));
+              worker.addEventListener("error", (e) => resolve({ worker: { error: e.message } }));
+              worker.postMessage(list);
+            }),
+          { worker: url, list: names },
+        );
+
+      results = await run("/test/demux.worker.js");
+      transferred = await run("/test/demux.worker.js?transfer");
     }, 120_000);
     afterAll(() => browser?.close());
 
@@ -79,6 +84,9 @@ for (const [engine, type] of [
           const w = want[i]?.audio;
           if (s.audio && w) expect(audioDiff(s.audio, w)).toBeLessThanOrEqual(FLOAT_TOLERANCE);
         }
+
+        // Copying a stream to another module must not change a single sample.
+        expect(transferred[name]).toEqual(results[name]);
       });
     }
   });

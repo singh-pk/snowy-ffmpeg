@@ -20,16 +20,17 @@ FFmpeg is split into modules so a page downloads only what a file needs:
 
 | Module | Contents | Status |
 | --- | --- | --- |
-| `core` | every single-file demuxer, every parser, every audio and subtitle decoder, libswresample, zlib, bzip2 | available |
+| `core` | every single-file demuxer, every parser, every common audio decoder, every subtitle decoder, libswresample, zlib, bzip2 | available |
+| `audio-ext` | the long-tail audio decoders: speech, game, legacy and niche lossless codecs (ATRAC, RealAudio, TwinVQ, QDM2, Musepack, G.72x, …), libswresample | available |
 | `video` | common software video decoders, dav1d, swscale | in development |
 | `video-ext` | the remaining FFmpeg video decoders | in development |
 | `mux` | muxers and audio encoders | in development |
 
-Network and playlist demuxers (HLS, DASH, RTSP, concat, image sequences) are excluded: they open other URLs, which a page does better itself. The demuxer list lives in [`build/configure-core.sh`](../build/configure-core.sh); the decoder list is read from FFmpeg's own `allcodecs.c` sections, so new FFmpeg codecs are picked up automatically.
+Network and playlist demuxers (HLS, DASH, RTSP, concat, image sequences) are excluded: they open other URLs, which a page does better itself. The demuxer list lives in [`build/configure.sh`](../build/configure.sh); the decoder list is read from FFmpeg's own `allcodecs.c` sections, so new FFmpeg codecs are picked up automatically. One list in the same script sends the long-tail audio decoders to `audio-ext`, and another drops decoders FFmpeg never selects; together they take `core` from 2.1 MB to 1.3 MB brotli, and a file with a common codec downloads nothing else. Without the decoder, `core`'s stream info for an `audio-ext` codec is what the demuxer and parser report: the sample format, for one, stays unknown until a frame is decoded.
 
 ## The JavaScript boundary
 
-[`src/helpers.c`](../src/helpers.c) is the entire API of a module:
+The files in [`src/`](../src) are the entire API of the modules: [`common.c`](../src/common.c) is in every module, [`demux.c`](../src/demux.c) only in `core`, and [`decode.c`](../src/decode.c) in every module that decodes, as [`sny.h`](../src/sny.h) lists.
 
 - JavaScript never computes an offset into an FFmpeg struct. Every field it needs is a one-line getter, so an FFmpeg upgrade either compiles or fails loudly instead of reading the wrong bytes. Getters inline away under LTO.
 - Constants that JavaScript needs are declared with `SNY_CONST`, which `_Static_assert`s the value against FFmpeg's headers.
@@ -43,9 +44,10 @@ For local files the caller reads with `FileReaderSync` in a worker. Each call co
 
 ## Audio
 
-Audio is always decoded by FFmpeg in `core`, right after demuxing in the same worker, never by WebCodecs. That gives one code path for every codec (E-AC-3, DTS and TrueHD included), identical output in every browser, and exact sample positions.
+Audio is always decoded by FFmpeg, right after demuxing in the same worker, never by WebCodecs. That gives one code path for every codec (E-AC-3, DTS and TrueHD included), identical output in every browser, and exact sample positions.
 
-- `sny_decoder_open` opens a decoder for a stream; `sny_decoder_send` and `sny_decoder_receive` are FFmpeg's send/receive loop, and `sny_decoder_flush` follows a seek. [`test/support/audio-decoder.js`](../test/support/audio-decoder.js) is the reference loop.
+- `sny_decoder_open` opens a decoder for a stream. For a codec in `audio-ext` it returns `AVERROR_DECODER_NOT_FOUND`: the caller loads `audio-ext`, copies the stream's codec parameters across with `sny_params_export` and `sny_decoder_open_params`, and copies each packet with `sny_packet_make` and `sny_packet_side_data_add`. Modules don't share memory, so this is the one way a decoder in another module is fed, and the video modules will use it too. The stream's coded side data is not copied; no audio decoder reads it.
+- `sny_decoder_send` and `sny_decoder_receive` are FFmpeg's send/receive loop, and `sny_decoder_flush` follows a seek. [`test/support/audio-decoder.js`](../test/support/audio-decoder.js) is the reference loop.
 - `sny_to_float_planar` hands every frame to JavaScript as 32-bit float planar, the format of Web Audio: one plane of samples per channel, read through `HEAPF32`. A frame that is already float planar (AAC, Opus, AC-3, Vorbis, MP3) is referenced, not copied; others are converted by libswresample with no resampling, so the values are exactly what native FFmpeg produces.
 - Decoding is far from the bottleneck: one minute of 5.1 E-AC-3 takes 73–85 ms and TrueHD 320–370 ms, including demuxing ([benchmarks](../bench/README.md#audio-decode)).
 

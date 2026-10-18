@@ -1,48 +1,20 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: LGPL-2.1-or-later
 //
-// The whole JS boundary of the core module, and the single source of truth for it:
-// scripts/gen-dts.ts turns every `API` function and `SNY_CONST*` below into index.js + index.d.ts.
-//
-// Rules (docs/architecture.md): JS never computes an offset into an FFmpeg struct. Every
-// field is a one-line getter here, so FFmpeg upgrades either compile or fail loudly.
-// Wrappers inline away under LTO.
+// Demuxing: the API only core has. sny.h lists the files of each module.
 
-#include <emscripten/emscripten.h>
-#include <libavcodec/avcodec.h>
+#include "sny.h"
+
 #include <libavformat/avformat.h>
-#include <libavutil/channel_layout.h>
-#include <libavutil/error.h>
-#include <libavutil/frame.h>
-#include <libavutil/mathematics.h>
-#include <libswresample/swresample.h>
+#include <stdlib.h>
+#include <string.h>
 
-#define API EMSCRIPTEN_KEEPALIVE
-
-// Constants mirrored into TS. The compiler checks every value, so the TS copy can't drift.
-#define SNY_CONST(name, value) _Static_assert((name) == (value), #name);
-#define SNY_CONST64(name, value) _Static_assert((name) == (value), #name);
-
-SNY_CONST(AVERROR_EOF, -541478725)
-SNY_CONST(AVERROR(EAGAIN), -6)
-SNY_CONST(AVERROR(EIO), -29)
-SNY_CONST(AVERROR_DECODER_NOT_FOUND, -1128613112)
-SNY_CONST64(AV_NOPTS_VALUE, INT64_MIN)
-SNY_CONST(AV_TIME_BASE, 1000000)
 SNY_CONST(AVSEEK_SIZE, 0x10000)
 SNY_CONST(AVSEEK_FORCE, 0x20000)
 SNY_CONST(AVSEEK_FLAG_BACKWARD, 1)
 SNY_CONST(AVSEEK_FLAG_BYTE, 2)
 SNY_CONST(AVSEEK_FLAG_ANY, 4)
-SNY_CONST(AV_PKT_FLAG_KEY, 1)
-SNY_CONST(AV_PKT_FLAG_CORRUPT, 2)
-SNY_CONST(AV_PKT_FLAG_DISCARD, 4)
 SNY_CONST(AVINDEX_KEYFRAME, 1)
-SNY_CONST(AVMEDIA_TYPE_VIDEO, 0)
-SNY_CONST(AVMEDIA_TYPE_AUDIO, 1)
-SNY_CONST(AVMEDIA_TYPE_DATA, 2)
-SNY_CONST(AVMEDIA_TYPE_SUBTITLE, 3)
-SNY_CONST(AVMEDIA_TYPE_ATTACHMENT, 4)
 
 // ---- I/O: implemented in src/io.js, called by FFmpeg through AVIO ----
 
@@ -177,118 +149,47 @@ API int sny_codec_trailing_padding(const AVStream *st) { return st->codecpar->tr
 
 // ---- Packets ----
 
-API AVPacket *sny_packet_alloc(void) { return av_packet_alloc(); }
-API void sny_packet_free(AVPacket *pkt) { av_packet_free(&pkt); }
-
 // Reads the next packet into pkt, releasing whatever pkt held. Returns 0 or a negative AVERROR.
 API int sny_read(AVFormatContext *ctx, AVPacket *pkt) {
   av_packet_unref(pkt);
   return av_read_frame(ctx, pkt);
 }
 
-API int sny_packet_stream(const AVPacket *pkt) { return pkt->stream_index; }
-API int64_t sny_packet_pts(const AVPacket *pkt) { return pkt->pts; }
-API int64_t sny_packet_dts(const AVPacket *pkt) { return pkt->dts; }
-API int64_t sny_packet_duration(const AVPacket *pkt) { return pkt->duration; }
-API int64_t sny_packet_pos(const AVPacket *pkt) { return pkt->pos; }
-API int sny_packet_flags(const AVPacket *pkt) { return pkt->flags; }
-API uint8_t *sny_packet_data(const AVPacket *pkt) { return pkt->data; }
-API int sny_packet_size(const AVPacket *pkt) { return pkt->size; }
-
 // ---- Decoding ----
 
 // Opens a decoder for stream `stream`. Frame timestamps are in the stream's time base.
-// Returns 0 and stores the decoder in *out, or a negative AVERROR.
+// Returns 0 and stores the decoder in *out, or a negative AVERROR; AVERROR_DECODER_NOT_FOUND
+// when the codec is in another module (open it there with sny_params_export).
 API int sny_decoder_open(const AVFormatContext *ctx, int stream, AVCodecContext **out) {
   const AVStream *st = ctx->streams[stream];
-  const AVCodec *codec = avcodec_find_decoder(st->codecpar->codec_id);
-  if (!codec)
-    return AVERROR_DECODER_NOT_FOUND;
-  AVCodecContext *dec = avcodec_alloc_context3(codec);
-  if (!dec)
+  return sny_open_codec(st->codecpar, st->time_base, out);
+}
+
+// Writes stream `stream`'s codec parameters and time base as SnyParams bytes for
+// sny_decoder_open_params in another module. Returns their size and stores them in *out
+// (free with _free), or a negative AVERROR. Coded side data is not carried over.
+API int sny_params_export(const AVFormatContext *ctx, int stream, uint8_t **out) {
+  const AVStream *st = ctx->streams[stream];
+  SnyParams p = {*st->codecpar, st->time_base};
+  size_t map = 0;
+  if (p.par.ch_layout.order == AV_CHANNEL_ORDER_CUSTOM) {
+    map = p.par.ch_layout.nb_channels * sizeof(AVChannelCustom);
+    p.par.ch_layout.u.map = NULL;
+  }
+  p.par.ch_layout.opaque = NULL;
+  p.par.extradata = NULL;
+  p.par.coded_side_data = NULL;
+  p.par.nb_coded_side_data = 0;
+  uint8_t *buf = malloc(sizeof p + map + p.par.extradata_size);
+  if (!buf)
     return AVERROR(ENOMEM);
-  int ret = avcodec_parameters_to_context(dec, st->codecpar);
-  if (ret >= 0) {
-    dec->pkt_timebase = st->time_base;
-    ret = avcodec_open2(dec, codec, NULL);
-  }
-  if (ret < 0) {
-    avcodec_free_context(&dec);
-    return ret;
-  }
-  *out = dec;
-  return 0;
-}
-
-API void sny_decoder_close(AVCodecContext *dec) { avcodec_free_context(&dec); }
-
-// Sends a packet, or NULL (0) to drain at the end of the stream. AVERROR(EAGAIN) means
-// the decoder is full: receive its frames, then send the packet again.
-API int sny_decoder_send(AVCodecContext *dec, const AVPacket *pkt) {
-  return avcodec_send_packet(dec, pkt);
-}
-
-// Receives the next frame into frame, releasing whatever frame held. AVERROR(EAGAIN) means
-// send more packets; AVERROR_EOF means the decoder is drained.
-API int sny_decoder_receive(AVCodecContext *dec, AVFrame *frame) {
-  return avcodec_receive_frame(dec, frame);
-}
-
-// Drops buffered packets and frames; call after every seek.
-API void sny_decoder_flush(AVCodecContext *dec) { avcodec_flush_buffers(dec); }
-
-// ---- Frames ----
-
-API AVFrame *sny_frame_alloc(void) { return av_frame_alloc(); }
-API void sny_frame_free(AVFrame *frame) { av_frame_free(&frame); }
-API int64_t sny_frame_pts(const AVFrame *frame) { return frame->pts; }
-API int64_t sny_frame_duration(const AVFrame *frame) { return frame->duration; }
-// An AVSampleFormat for audio.
-API int sny_frame_format(const AVFrame *frame) { return frame->format; }
-
-// audio
-API int sny_frame_samples(const AVFrame *frame) { return frame->nb_samples; }
-API int sny_frame_sample_rate(const AVFrame *frame) { return frame->sample_rate; }
-API int sny_frame_channels(const AVFrame *frame) { return frame->ch_layout.nb_channels; }
-// The AVChannel (speaker position) of channel i, e.g. 3 = low-frequency effects.
-API int sny_frame_channel(const AVFrame *frame, int i) {
-  return av_channel_layout_channel_from_index(&frame->ch_layout, i);
-}
-// Plane i: channel i of planar audio. extended_data, because audio can have more than
-// AV_NUM_DATA_POINTERS channels.
-API uint8_t *sny_frame_plane(const AVFrame *frame, int i) { return frame->extended_data[i]; }
-
-// ---- Audio output ----
-
-// JavaScript always gets audio as 32-bit float planar: per channel, one plane of
-// nb_samples floats. A converter holds the libswresample state between frames.
-API SwrContext *sny_converter_alloc(void) { return swr_alloc(); }
-API void sny_converter_free(SwrContext *swr) { swr_free(&swr); }
-
-static int convert(SwrContext *swr, const AVFrame *in, AVFrame *out) {
-  av_frame_unref(out);
-  out->format = AV_SAMPLE_FMT_FLTP;
-  out->sample_rate = in->sample_rate;
-  int ret = av_channel_layout_copy(&out->ch_layout, &in->ch_layout);
-  return ret < 0 ? ret : swr_convert_frame(swr, out, in);
-}
-
-// Makes out the float planar copy of in: same samples, rate and channels, no resampling,
-// so the values are exactly what native FFmpeg produces. A frame that is already float
-// planar (AAC, Opus, AC-3, Vorbis, MP3) is referenced, not copied. Returns 0 or a
-// negative AVERROR.
-API int sny_to_float_planar(SwrContext *swr, const AVFrame *in, AVFrame *out) {
-  if (in->format == AV_SAMPLE_FMT_FLTP) {
-    av_frame_unref(out);
-    return av_frame_ref(out, in);
-  }
-
-  int ret = convert(swr, in, out);
-  if (ret == AVERROR_INPUT_CHANGED || ret == AVERROR_OUTPUT_CHANGED) {
-    swr_close(swr); // the stream changed format mid-way: reconfigure from this frame
-    ret = convert(swr, in, out);
-  }
-  return ret < 0 ? ret : av_frame_copy_props(out, in);
+  memcpy(buf, &p, sizeof p);
+  if (map)
+    memcpy(buf + sizeof p, st->codecpar->ch_layout.u.map, map);
+  if (p.par.extradata_size)
+    memcpy(buf + sizeof p + map, st->codecpar->extradata, p.par.extradata_size);
+  *out = buf;
+  return sizeof p + map + p.par.extradata_size;
 }
 
 // ---- Seeking and index ----
@@ -308,22 +209,3 @@ API int64_t sny_index_ts(const AVIndexEntry *e) { return e->timestamp; }
 // A C bitfield, so JS must read it through this getter, never by masking memory.
 API int sny_index_flags(const AVIndexEntry *e) { return e->flags; }
 API int sny_index_size(const AVIndexEntry *e) { return e->size; }
-
-// ---- Utilities ----
-
-// Exact time-base conversion (round to nearest); AV_NOPTS_VALUE passes through.
-API int64_t sny_rescale(int64_t ts, int from_num, int from_den, int to_num, int to_den) {
-  if (ts == AV_NOPTS_VALUE)
-    return ts;
-  return av_rescale_q_rnd(ts, (AVRational){from_num, from_den}, (AVRational){to_num, to_den},
-                          AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX);
-}
-
-// AV_LOG_* level (e.g. 16 = error, 24 = warning, 32 = info). Logs go to the console.
-API void sny_set_log_level(int level) { av_log_set_level(level); }
-
-API const char *sny_strerror(int err) {
-  static char buf[AV_ERROR_MAX_STRING_SIZE];
-  av_strerror(err, buf, sizeof buf);
-  return buf;
-}

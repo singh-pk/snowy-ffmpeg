@@ -10,8 +10,8 @@ description: Reproduce and fix a media file that fails to open, is missing strea
    - Native fails too: it's an FFmpeg bug or a damaged file. Say so in the issue and link FFmpeg's tracker; do not patch FFmpeg here.
 3. **Reproduce in the browser.** Add a line to `scripts/gen-fixtures.ts` that synthesises the same structure with native `ffmpeg` (the script recreates `test/fixtures/` from scratch, so files copied in by hand are lost), run `bun run fixtures`, then `bun test`. The failing test is the reproduction. If only the reporter's file shows the problem, debug with it locally and do not commit it unless its licence allows and a maintainer agrees.
 4. **Classify the cause:**
-   - **Demuxer or decoder not built:** check `build/configure-core.sh`. Network, playlist and multi-file demuxers are excluded on purpose; explain that rather than enabling them.
-   - **I/O:** seeks past the end, short reads or `AVSEEK_SIZE` handling in `test/support/file-source.js` and `src/helpers.c` `read_cb`/`seek_cb`.
+   - **Demuxer or decoder not built:** check `build/configure.sh`. Network, playlist and multi-file demuxers are excluded on purpose; explain that rather than enabling them.
+   - **I/O:** seeks past the end, short reads or `AVSEEK_SIZE` handling in `test/support/file-source.js` and `src/demux.c` `read_cb`/`seek_cb`.
    - **Probing:** `sny_set_probe_limits` too small for the file.
    - **API gap:** JavaScript needs a value the module doesn't export; use the `add-api` skill.
 5. **Fix, then prove it:** the new fixture passes in all three browsers, every other fixture still passes, and `bun run check` is clean. Keep fixtures under 100 KB.

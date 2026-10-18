@@ -33,8 +33,8 @@ Shipped size:
 
 | | raw | gzip | brotli |
 |---|---|---|---|
-| snowy `core` (every demuxer, audio + subtitle decoder) | 5,688 KB | 2,576 KB | 2,111 KB |
-| snowy `core` with audio decoding (libswresample, decode API) | 5,847 KB | 2,639 KB | 2,161 KB |
+| snowy `core` (every demuxer, common audio decoders, subtitle decoders) | 4,169 KB | 1,672 KB | 1,325 KB |
+| snowy `audio-ext` (long-tail audio decoders, loaded on demand) | 2,215 KB | 1,186 KB | 1,007 KB |
 | libav.js `webcodecs` (5 demuxers) | 2,583 KB | 946 KB | 748 KB |
 | mediabunny (≈10 formats, no decoders) | 678 KB | 174 KB | 142 KB |
 
@@ -57,6 +57,6 @@ One minute of 48 kHz pink noise per codec (a different seed per channel, harder 
 
 - **I/O dominates.** `FileReaderSync` + the heap copy is ~255 ms of every 750 MB pass, and each call costs ~0.1 ms. At a 64 KiB AVIO buffer, MKV/TS demux took 4× longer. A 4 MiB AVIO buffer is the default; a JS read-ahead block over a small buffer was tried and was slower (more JS↔WASM crossings).
 - **Build flags** (Chromium/Firefox/WebKit, [variants](results/variants)): `-O3 -flto` beats no-LTO by 5–14%, `-O2` by 15–30%, `-Os` by 30–100%, with no brotli win. `GROWABLE_ARRAYBUFFERS=2` is up to 45% slower in Chromium. mimalloc, emmalloc, closure and a 16 MB initial heap are noise or worse. The release flags are unchanged.
-- **Size** (no-LTO link map): long-tail audio decoders are 30% of `core`, the TX/FFT templates 1.2 MB, and parser/BSF-pulled video code (CBS, VC-1/H.264 DSP) 0.6 MB.
+- **Size** (no-LTO link map): long-tail audio decoders were 30% of `core`; moving them to `audio-ext` took `core` from 2,161 KB to 1,325 KB brotli, with demux and decode speed unchanged. Of the rest, the TX/FFT templates are 1.2 MB and parser/BSF-pulled video code (CBS, VC-1/H.264 DSP) 0.6 MB.
 - **Reproducible:** two from-scratch builds produce identical bytes; CI checks [dist.sha256](../dist.sha256).
 - **Gap:** FFmpeg's Matroska demuxer is ~200 ms slower than mediabunny's in Chromium only.

@@ -15,7 +15,7 @@ You need Docker with buildx, and [Bun](https://bun.sh) (the version in `package.
 
 ```sh
 bun install                 # also enables the pre-commit hook
-bun run build               # FFmpeg → dist/core (the first build takes a while)
+bun run build               # FFmpeg → dist/core, dist/audio-ext (the first build takes a while)
 bunx playwright install     # browsers for the tests, once
 bun test                    # Chromium, Firefox, WebKit
 ```
@@ -30,14 +30,14 @@ actionlint && zizmor --offline .github && shellcheck build/*.sh .githooks/* \
 ## Make the change
 
 - **Keep it small.** One concern per pull request. A focused 50-line PR is reviewed the same day; a 1,000-line one waits.
-- **Follow the boundary rules** in [docs/architecture.md](docs/architecture.md): JavaScript reads FFmpeg data only through getters in `src/helpers.c`, never by offset.
+- **Follow the boundary rules** in [docs/architecture.md](docs/architecture.md): JavaScript reads FFmpeg data only through getters in `src/*.c`, never by offset.
 - **Prove it.** A behaviour change comes with a test. A demuxing fix adds a fixture to `scripts/gen-fixtures.ts`, so its expectation comes from native `ffprobe`. A performance change shows `bun run bench` numbers before and after.
 - **Format and lint** with `bun run format` and `bun run check`. The pre-commit hook runs the same check as CI. Besides oxlint's own rules, [`tooling/oxlint-rules`](tooling/oxlint-rules) enforces a few house rules; AGENTS.md lists them.
 - **Update [CHANGELOG.md](CHANGELOG.md)** under *Unreleased* for anything a user would notice. CI requires an entry for `feat`, `fix` and `perf` pull requests; a maintainer adds the `no-changelog` label when nobody outside the repository would notice.
 
 ### Updating a pinned dependency
 
-FFmpeg, Emscripten, dav1d, zlib and bzip2 are pinned in the [Dockerfile](Dockerfile) by version and sha256 (FFmpeg also by signing key; Emscripten by image digest). To bump one, change the version and checksum together, rebuild, run the tests and the benchmark, and update `dist.sha256` with `shasum -a 256 dist/core/core.js dist/core/core.wasm > dist.sha256`. The `update-dependency` skill in `.agents/skills` walks through it.
+FFmpeg, Emscripten, dav1d, zlib and bzip2 are pinned in the [Dockerfile](Dockerfile) by version and sha256 (FFmpeg also by signing key; Emscripten by image digest). To bump one, change the version and checksum together, rebuild, run the tests and the benchmark, and update `dist.sha256` with `shasum -a 256 dist/core/core.{js,wasm} dist/audio-ext/audio-ext.{js,wasm} > dist.sha256`. The `update-dependency` skill in `.agents/skills` walks through it.
 
 ## Commits and pull requests
 

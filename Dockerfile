@@ -5,6 +5,12 @@
 # Every version and checksum lives here; nothing is fetched unpinned.
 # Build: docker buildx build --target dist --output type=local,dest=dist .
 
+# Link flags of every module, used only by the link stages so changing them only relinks.
+ARG MODULE_LDFLAGS="-sENVIRONMENT=worker -sMODULARIZE -sEXPORT_ES6 \
+  -sFILESYSTEM=0 -sASSERTIONS=0 -sDYNAMIC_EXECUTION=0 -sTEXTDECODER=2 \
+  -sPTHREAD_POOL_SIZE=0 -sALLOW_MEMORY_GROWTH -sINITIAL_MEMORY=64MB -sMAXIMUM_MEMORY=4GB -sSTACK_SIZE=1MB \
+  -sEXPORTED_FUNCTIONS=_malloc,_free \
+  -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAP32,HEAPF32,UTF8ToString,stringToNewUTF8"
 ARG EMSDK_IMAGE=emscripten/emsdk:6.0.12@sha256:77638e6c215a65f25a704c0c831d5c2463a8c0468a58c6cb82489dbe621dfa05
 
 FROM ${EMSDK_IMAGE} AS base
@@ -67,26 +73,41 @@ FROM base AS ffmpeg-core
 COPY --from=zlib /opt/sysroot /opt/sysroot
 COPY --from=bzip2 /opt/sysroot /opt/sysroot
 COPY --from=sources /src/ffmpeg /src/ffmpeg
-COPY build/configure-core.sh /build/
+COPY build/configure.sh /build/
 WORKDIR /src/ffmpeg
-RUN sh /build/configure-core.sh && emmake make -j"$(nproc)" install
+RUN sh /build/configure.sh core && emmake make -j"$(nproc)" install
 
+FROM base AS ffmpeg-audio-ext
+COPY --from=sources /src/ffmpeg /src/ffmpeg
+COPY build/configure.sh /build/
+WORKDIR /src/ffmpeg
+RUN sh /build/configure.sh audio-ext && emmake make -j"$(nproc)" install
+
+# Link flags are benchmarked (bench/README.md). EXTRA_LDFLAGS is for
+# bench/variants.ts only. The API files of each module are listed in src/sny.h.
 FROM ffmpeg-core AS core
 COPY src /build/src
-# Link flags are benchmarked (bench/README.md). EXTRA_LDFLAGS is for
-# bench/variants.ts only.
+ARG MODULE_LDFLAGS
 ARG EXTRA_LDFLAGS=""
-RUN mkdir -p /out/core && emcc $CFLAGS $LDFLAGS $EXTRA_LDFLAGS \
-      /build/src/helpers.c -I"$SYSROOT/include" -L"$SYSROOT/lib" \
+RUN mkdir -p /out/core && emcc $CFLAGS $LDFLAGS $EXTRA_LDFLAGS $MODULE_LDFLAGS \
+      /build/src/common.c /build/src/demux.c /build/src/decode.c \
+      -I"$SYSROOT/include" -L"$SYSROOT/lib" \
       -lavformat -lavcodec -lswresample -lavutil -lz -lbz2 \
-      --js-library /build/src/io.js \
-      -sENVIRONMENT=worker -sMODULARIZE -sEXPORT_ES6 -sEXPORT_NAME=createCore \
-      -sFILESYSTEM=0 -sASSERTIONS=0 -sDYNAMIC_EXECUTION=0 -sTEXTDECODER=2 \
-      -sPTHREAD_POOL_SIZE=0 -sALLOW_MEMORY_GROWTH -sINITIAL_MEMORY=64MB -sMAXIMUM_MEMORY=4GB -sSTACK_SIZE=1MB \
-      -sEXPORTED_FUNCTIONS=_malloc,_free \
-      -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAP32,HEAPF32,UTF8ToString,stringToNewUTF8 \
+      --js-library /build/src/io.js -sEXPORT_NAME=createCore \
       -o /out/core/core.js \
  && ls -l /out/core
 
+FROM ffmpeg-audio-ext AS audio-ext
+COPY src /build/src
+ARG MODULE_LDFLAGS
+ARG EXTRA_LDFLAGS=""
+RUN mkdir -p /out/audio-ext && emcc $CFLAGS $LDFLAGS $EXTRA_LDFLAGS $MODULE_LDFLAGS \
+      /build/src/common.c /build/src/decode.c \
+      -I"$SYSROOT/include" -L"$SYSROOT/lib" \
+      -lavcodec -lswresample -lavutil -sEXPORT_NAME=createAudioExt \
+      -o /out/audio-ext/audio-ext.js \
+ && ls -l /out/audio-ext
+
 FROM scratch AS dist
 COPY --from=core /out /
+COPY --from=audio-ext /out /
