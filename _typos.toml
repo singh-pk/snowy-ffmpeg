@@ -1,7 +1,13 @@
 # SPDX-FileCopyrightText: 2026 The Snowy Authors
-# SPDX-License-Identifier: LGPL-2.1-or-later
+# SPDX-License-Identifier: MIT
 [files]
-extend-exclude = ["test/fixtures/", "bench/results/", "LICENSES/", "keys/", "*.lock"]
+extend-exclude = [
+  "packages/ffmpeg/test/fixtures/",
+  "packages/ffmpeg/bench/results/",
+  "packages/ffmpeg/keys/",
+  "LICENSES/",
+  "*.lock",
+]
 
 [default.extend-words]
 caf = "caf" # Core Audio Format

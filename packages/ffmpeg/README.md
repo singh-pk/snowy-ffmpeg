@@ -1,11 +1,11 @@
-# snowy-ffmpeg
+# \-media/ffmpeg
 
-[![ci](https://github.com/singh-pk/snowy-ffmpeg/actions/workflows/ci.yml/badge.svg)](https://github.com/singh-pk/snowy-ffmpeg/actions/workflows/ci.yml)
+[![ci](https://github.com/singh-pk/snowy-media/actions/workflows/ci.yml/badge.svg)](https://github.com/singh-pk/snowy-media/actions/workflows/ci.yml)
 [![REUSE compliant](https://img.shields.io/badge/REUSE-compliant-green)](https://reuse.software)
-[![License: LGPL-2.1-or-later](https://img.shields.io/badge/license-LGPL--2.1--or--later-blue)](LICENSES/LGPL-2.1-or-later.txt)
+[![License: LGPL-2.1-or-later](https://img.shields.io/badge/license-LGPL--2.1--or--later-blue)](https://github.com/singh-pk/snowy-media/blob/main/LICENSES/LGPL-2.1-or-later.txt)
 [![FFmpeg 9.0.2](https://img.shields.io/badge/FFmpeg-9.0.2-green)](https://ffmpeg.org)
 
-FFmpeg 9 compiled to WebAssembly as small, lazily loaded modules for playing and editing video in the browser. It powers [Snowy](https://github.com/singh-pk/snowy).
+FFmpeg 9 compiled to WebAssembly as small, lazily loaded modules for playing and editing video in the browser. It is the media engine of [Snowy](https://github.com/singh-pk/snowy-media).
 
 - **Every format.** The `core` module opens every single-file container FFmpeg knows (350 demuxers) and decodes every common audio codec and every subtitle codec. Video is decoded by `video` (H.264, HEVC, VP9, AV1 through dav1d, ProRes, MPEG-2 and the other codecs real files use) and the remaining codecs by `video-ext` and `audio-ext`, each loaded only when a file needs it.
 - **Fast.** It demuxes a 750 MB 1080p file in 0.25–1 s in Chromium, Firefox and WebKit alike, where other browser demuxers slow down by up to 100× in some engines ([benchmarks](bench/README.md)).
@@ -170,12 +170,12 @@ bun test        # Chromium, Firefox, WebKit (run `bunx playwright install` once)
 
 ## Contributing
 
-Issues and pull requests are welcome, from people and from AI agents. Read [CONTRIBUTING.md](CONTRIBUTING.md) first; agents start at [AGENTS.md](AGENTS.md). To report a vulnerability, see [SECURITY.md](SECURITY.md).
+Issues and pull requests are welcome, from people and from AI agents. Read [CONTRIBUTING.md](https://github.com/singh-pk/snowy-media/blob/main/CONTRIBUTING.md) first; agents start at [AGENTS.md](AGENTS.md). To report a vulnerability, see [SECURITY.md](https://github.com/singh-pk/snowy-media/blob/main/SECURITY.md).
 
 ## Acknowledgements
 
-snowy-ffmpeg grew out of [ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpeg.wasm) by Jerome Wu and contributors, whose Docker-based Emscripten build showed the way. [libav.js](https://github.com/Yahweasel/libav.js) and [web-demuxer](https://github.com/bilibili/web-demuxer) are prior art for module variants and demux-only builds. And of course [FFmpeg](https://ffmpeg.org) itself.
+It grew out of [ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpeg.wasm) by Jerome Wu and contributors, whose Docker-based Emscripten build showed the way. [libav.js](https://github.com/Yahweasel/libav.js) and [web-demuxer](https://github.com/bilibili/web-demuxer) are prior art for module variants and demux-only builds. And of course [FFmpeg](https://ffmpeg.org) itself.
 
 ## License
 
-[LGPL-2.1-or-later](LICENSES/LGPL-2.1-or-later.txt), like FFmpeg. [NOTICE](NOTICE) lists the bundled third-party code and its licences.
+[LGPL-2.1-or-later](https://github.com/singh-pk/snowy-media/blob/main/LICENSES/LGPL-2.1-or-later.txt), like FFmpeg. [NOTICE](NOTICE) lists the bundled third-party code and its licences.

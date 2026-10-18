@@ -1,9 +1,11 @@
 ---
-name: benchmark
+name: ffmpeg-benchmark
 description: Measure the speed or size effect of a change with bench/run.ts (demux) or bench/decode.ts (audio decode) and report it honestly. Use for any change that can affect performance or module size, and before claiming a speed-up.
 ---
 
 # Benchmark a change
+
+Paths and commands are relative to `packages/ffmpeg/`.
 
 1. **Media:** `bun scripts/gen-bench-media.ts` once (about 3 GB in `bench/media`, gitignored).
 2. **Baseline first.** On the base commit: `bun run build && bun run bench --libs snowy --runs 5 --out bench/results/before.json`. Close other heavy apps; on laptops, stay on power.

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 The Snowy Authors
-# SPDX-License-Identifier: LGPL-2.1-or-later
+# SPDX-License-Identifier: MIT
 #
 # A tag vX.Y.Z on main publishes @snowy-media/ffmpeg X.Y.Z (CONTRIBUTING.md#releasing). The
 # modules are rebuilt from scratch, without any cache a pull request could have written, and
@@ -17,6 +17,9 @@ jobs:
   release:
     name: npm and GitHub release
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/ffmpeg
     permissions:
       contents: write # the GitHub release
       id-token: write # npm trusted publishing and provenance
@@ -27,9 +30,9 @@ jobs:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
-          context: .
+          context: packages/ffmpeg
           target: dist
-          outputs: type=local,dest=dist
+          outputs: type=local,dest=packages/ffmpeg/dist
           no-cache: true
       - name: Reproducible build
         run: sha256sum -c dist.sha256

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: LGPL-2.1-or-later
+// SPDX-License-Identifier: MIT
 //
 // Applies .github/settings.yml (repository settings, security features, topics, labels) and
 // .github/rulesets/*.json (in the format GitHub exports) to the GitHub repository of the

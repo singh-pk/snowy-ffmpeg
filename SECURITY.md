@@ -1,10 +1,10 @@
 # Security policy
 
-snowy-ffmpeg runs FFmpeg's parsers on untrusted files inside the browser's WebAssembly sandbox. Memory bugs in FFmpeg cannot escape that sandbox, but they can still crash a page, hang it, or corrupt what it shows or saves.
+Snowy runs FFmpeg's parsers on untrusted files inside the browser's WebAssembly sandbox. Memory bugs in FFmpeg cannot escape that sandbox, but they can still crash a page, hang it, or corrupt what it shows or saves.
 
 ## Reporting a vulnerability
 
-Report privately through [GitHub security advisories](https://github.com/singh-pk/snowy-ffmpeg/security/advisories/new). Do not open a public issue. Include the file or steps that trigger it and the browser you used. You will get an answer within 7 days.
+Report privately through [GitHub security advisories](https://github.com/singh-pk/snowy-media/security/advisories/new). Do not open a public issue. Include the file or steps that trigger it and the browser you used. You will get an answer within 7 days.
 
 What to report here:
 

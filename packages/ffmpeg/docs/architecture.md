@@ -1,6 +1,6 @@
 # Architecture
 
-How snowy-ffmpeg is built and why. For using it, start with the [README](../README.md).
+How @snowy-media/ffmpeg is built and why. For using it, start with the [README](../README.md).
 
 ## Requirements
 

@@ -1,9 +1,11 @@
 ---
-name: add-api
+name: ffmpeg-add-api
 description: Expose a new FFmpeg field, function or constant to JavaScript through the API files in src/. Use when JavaScript needs data or behaviour from FFmpeg that the module does not export yet.
 ---
 
 # Add to the JavaScript API
+
+Paths and commands are relative to `packages/ffmpeg/`.
 
 The whole API of a module is its files in `src/`, listed in `src/sny.h`: `common.c` (every module), `demux.c` (core), `decode.c` (every module that decodes), `audio.c` (modules that decode audio) and `video.c` (modules that decode video). JavaScript must never read FFmpeg structs by offset, so every value goes through a function there.
 

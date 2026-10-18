@@ -12,11 +12,11 @@
     "worker": true
   },
   "ignorePatterns": [
-    "dist/**",
-    "bench/variants/**",
-    "bench/media/**",
-    "test/fixtures/**",
-    "bench/results/**"
+    "packages/*/dist/**",
+    "packages/ffmpeg/bench/variants/**",
+    "packages/ffmpeg/bench/media/**",
+    "packages/ffmpeg/test/fixtures/**",
+    "packages/ffmpeg/bench/results/**"
   ],
   "rules": {
     "eqeqeq": "error",
@@ -50,7 +50,7 @@
   ],
   "overrides": [
     {
-      "files": ["src/io.js"],
+      "files": ["packages/ffmpeg/src/io.js"],
       "globals": {
         "addToLibrary": "readonly",
         "Module": "readonly"

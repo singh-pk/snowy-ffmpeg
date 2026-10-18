@@ -1,9 +1,11 @@
 ---
-name: update-dependency
+name: ffmpeg-update-dependency
 description: Bump a pinned native dependency (FFmpeg, Emscripten, dav1d, zlib, bzip2) in the Dockerfile with verified checksums, then rebuild, test and benchmark. Use when a new upstream release is out.
 ---
 
 # Update a pinned dependency
+
+Paths and commands are relative to `packages/ffmpeg/`.
 
 Every native dependency is pinned in the `Dockerfile` `ARG`s by version and sha256. Dependabot does not touch them.
 
