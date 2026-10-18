@@ -9,7 +9,7 @@ repository:
   description: "Snowy: browser-native media playback and editing, built on FFmpeg 9 compiled to WebAssembly"
   has_wiki: false
   has_projects: false
-  # Squash only; the pull request title becomes the commit on main (CONTRIBUTING.md#commits).
+  # Squash only; the pull request title becomes the commit on main (CONTRIBUTING.md#commits-and-pull-requests).
   allow_squash_merge: true
   allow_merge_commit: false
   allow_rebase_merge: false

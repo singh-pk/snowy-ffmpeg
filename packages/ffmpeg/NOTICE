@@ -1,6 +1,6 @@
 @snowy-media/ffmpeg (packages/ffmpeg in https://github.com/singh-pk/snowy-media)
 Copyright 2026 The Snowy Authors
-Licensed under the GNU Lesser General Public License v2.1 or later (LICENSE).
+Licensed under the GNU Lesser General Public License v2.1 or later (LICENSE in the npm package, LICENSES/LGPL-2.1-or-later.txt in the repository).
 
 The WebAssembly modules built by this package contain code from:
 

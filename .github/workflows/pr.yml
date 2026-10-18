@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 #
 # Pull requests are squash-merged, so the title becomes the commit message on main and
-# must follow Conventional Commits (CONTRIBUTING.md#commits).
+# must follow Conventional Commits (CONTRIBUTING.md#commits-and-pull-requests).
 name: pr
 
 on:

@@ -65,10 +65,14 @@ Maintainers release `@snowy-media/ffmpeg` from `main`, in a pull request and the
 
 Each package states its licence in its `package.json`: `packages/ffmpeg` is [LGPL-2.1-or-later](LICENSES/LGPL-2.1-or-later.txt), like FFmpeg; everything else, including the repository tooling, is [MIT](LICENSES/MIT.txt). By contributing you agree that your contribution is licensed under the licence of the files it changes. Every new source file starts with SPDX headers naming that licence:
 
+<!-- REUSE-IgnoreStart -->
+
 ```c
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: LGPL-2.1-or-later
 ```
+
+<!-- REUSE-IgnoreEnd -->
 
 CI runs [REUSE](https://reuse.software) to check this.
 

@@ -12,7 +12,6 @@
         "oxfmt": "0.73.0",
         "oxlint": "1.88.0",
         "oxlint-tsgolint": "7.0.2004",
-        "playwright": "1.64.1",
         "typescript": "7.0.2",
       },
     },
@@ -22,6 +21,7 @@
       "devDependencies": {
         "libav.js": "6.10.9",
         "mediabunny": "1.61.6",
+        "playwright": "1.64.1",
       },
     },
   },
