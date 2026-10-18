@@ -63,7 +63,8 @@ jobs:
         with:
           node-version: 24.21.0
           package-manager-cache: false
-      - run: npm publish release/*.tgz
+      # ./ makes npm read a file path; release/x.tgz alone is a GitHub user/repo shorthand.
+      - run: npm publish ./release/*.tgz
       # Releases are immutable once published, so the release stays a draft until npm has the
       # package; a failed publish leaves a draft that can be deleted and re-run.
       - name: Publish the GitHub release
