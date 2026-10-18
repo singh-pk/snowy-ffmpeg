@@ -13,12 +13,20 @@ FFmpeg 9 compiled to WebAssembly as small, lazily loaded modules for playing and
 - **Reproducible.** Pinned, checksummed and GPG-verified sources; CI checks that the output is byte-identical.
 
 > [!NOTE]
-> Pre-release. The demuxing and decoding modules work; the muxing module is in development, and nothing is published to npm yet.
+> Pre-release: until 1.0, a minor version may change the API. The demuxing and decoding modules work; the muxing module is in development.
 
 ## What it is, and isn't
 
 - **It is** FFmpeg's libraries (demuxing and decoding) as WebAssembly modules that JavaScript calls directly, reading files through a worker's `FileReaderSync` instead of a virtual filesystem.
 - **It isn't** the `ffmpeg` command line in a browser. For that, use [ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpeg.wasm).
+
+## Install
+
+```sh
+npm install @snowy-media/ffmpeg
+```
+
+Each module is its own entry point: `@snowy-media/ffmpeg/core`, `/audio-ext`, `/video` and `/video-ext`, typed by its `index.d.ts`. A module loads its `.wasm` and starts its threads from the URL of its own `.js` file (`import.meta.url`), so serve the two side by side, unchanged. Every release is published from CI with [npm provenance](https://docs.npmjs.com/generating-provenance-statements), from a build byte-identical to `dist.sha256`, and its GitHub release attaches the complete source ([NOTICE](NOTICE)).
 
 ## Requirements
 
@@ -28,7 +36,7 @@ A [cross-origin isolated](https://developer.mozilla.org/docs/Web/API/Window/cros
 
 ```js
 // In a module worker on a cross-origin isolated page.
-import { AVERROR_EOF, AVSEEK_SIZE, createCore } from "./dist/core/index.js";
+import { AVERROR_EOF, AVSEEK_SIZE, createCore } from "@snowy-media/ffmpeg/core";
 
 const ready = createCore(); // start loading now; awaited per message so none is lost
 const reader = new FileReaderSync();
@@ -116,7 +124,7 @@ Video decoders live in `video` and `video-ext`; `core._sny_codec_module(ctx, str
 Each decoded frame becomes a WebCodecs `VideoFrame` with one copy out of the WASM heap:
 
 ```js
-import { createVideo } from "./dist/video/index.js";
+import { createVideo } from "@snowy-media/ffmpeg/video";
 
 const video = await createVideo();
 const sws = video._sny_scaler_alloc();

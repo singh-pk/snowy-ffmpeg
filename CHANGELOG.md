@@ -6,8 +6,13 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-18
+
+First release.
+
 ### Added
 
+- The npm package `@snowy-media/ffmpeg`, one entry point per module, published from CI with provenance from a build byte-identical to `dist.sha256`. It carries the third-party licences in `dist/licenses`; the GitHub release attaches the complete source.
 - `core` module: FFmpeg 9.0.2 with every single-file demuxer, every parser and every audio and subtitle decoder, built with SIMD, threads and LTO.
 - A typed JavaScript API generated from `src/`: open, stream info, packet reading, seeking and the keyframe index.
 - Tests against native `ffprobe` and `ffmpeg` on 62 fixtures in Chromium, Firefox and WebKit.
@@ -30,4 +35,5 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 - Decoders are sorted into modules by their codec's media type instead of their section in FFmpeg's `allcodecs.c`. `core` gains six audio decoders filed elsewhere there (S302M, Speex, RKA, DV audio and the two 8SVX variants); the HDR image decoder moves to `video-ext`. Nine decoders FFmpeg builds only under the GPL (eight ADPCM variants and AHX) are left out of every module, as the LGPL build always did.
 - `core` no longer includes the long-tail audio decoders, now in `audio-ext`, or decoders FFmpeg never selects because another decodes the same codec (`aac_fixed`, `ac3_fixed`, fixed-point MP3, float MP1/MP2): 1.3 MB brotli instead of 2.1 MB. `sny_decoder_open` returns `AVERROR_DECODER_NOT_FOUND` for those codecs, and their stream info is what the demuxer reports (the sample format is unknown until a frame is decoded).
 
-[Unreleased]: https://github.com/singh-pk/snowy-ffmpeg/commits/main
+[Unreleased]: https://github.com/singh-pk/snowy-ffmpeg/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/singh-pk/snowy-ffmpeg/releases/tag/v0.1.0
