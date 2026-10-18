@@ -2,6 +2,15 @@ name: Bug
 description: Something in the build, the API or the tooling is broken.
 labels: [bug]
 body:
+  - type: dropdown
+    id: package
+    attributes:
+      label: Package
+      options:
+        - "@snowy-media/ffmpeg"
+        - Repository, CI or docs
+    validations:
+      required: true
   - type: textarea
     id: what
     attributes:

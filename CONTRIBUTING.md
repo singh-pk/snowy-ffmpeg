@@ -7,6 +7,7 @@ Thanks for helping. This guide is for people and AI agents alike; agents also re
 - **A file that won't open, or opens wrong:** use the [format issue form](https://github.com/singh-pk/snowy-media/issues/new?template=format.yml). A small sample file is the most useful thing you can attach.
 - **A bug in the build, API or tooling:** use the [bug form](https://github.com/singh-pk/snowy-media/issues/new?template=bug.yml).
 - **An idea:** open a [feature request](https://github.com/singh-pk/snowy-media/issues/new?template=feature.yml) before writing code, so we can agree on the shape first.
+- **A question:** ask in [Discussions](https://github.com/singh-pk/snowy-media/discussions).
 - **A security problem:** never in a public issue. See [SECURITY.md](SECURITY.md).
 
 ## Set up

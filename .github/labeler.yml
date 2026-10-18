@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: 2026 The Snowy Authors
+# SPDX-License-Identifier: MIT
+#
+# Labels pull requests by the files they change (.github/workflows/labeler.yml). Every label
+# here is defined in settings.yml.
+"package:ffmpeg":
+  - changed-files:
+      - any-glob-to-any-file: packages/ffmpeg/**
+"area:ci":
+  - changed-files:
+      - any-glob-to-any-file: [.github/**, .githooks/**, scripts/**, tooling/**]
+"area:docs":
+  - changed-files:
+      - any-glob-to-any-file: ["**/*.md", "packages/*/docs/**"]

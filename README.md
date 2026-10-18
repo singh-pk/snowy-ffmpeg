@@ -2,6 +2,7 @@
 
 [![ci](https://github.com/singh-pk/snowy-media/actions/workflows/ci.yml/badge.svg)](https://github.com/singh-pk/snowy-media/actions/workflows/ci.yml)
 [![REUSE compliant](https://img.shields.io/badge/REUSE-compliant-green)](https://reuse.software)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/singh-pk/snowy-media/badge)](https://scorecard.dev/viewer/?uri=github.com/singh-pk/snowy-media)
 
 Snowy is a frontend-only media toolkit for the browser: a video player that plays every format, and later an editor, running entirely on the page with no server. This repository holds its packages, published on npm under `@snowy-media/`.
 

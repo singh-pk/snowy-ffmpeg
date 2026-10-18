@@ -3,3 +3,6 @@ contact_links:
   - name: Report a security vulnerability
     url: https://github.com/singh-pk/snowy-media/security/advisories/new
     about: Report privately, never in a public issue.
+  - name: Ask a question
+    url: https://github.com/singh-pk/snowy-media/discussions
+    about: Questions and ideas that are not yet a concrete proposal.
