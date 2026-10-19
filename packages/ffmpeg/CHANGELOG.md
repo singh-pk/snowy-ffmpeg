@@ -6,6 +6,10 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 
 ## [Unreleased]
 
+### Fixed
+
+- `sny_decoder_send` and `sny_decoder_receive` return `AVERROR(EINVAL)`, now exported as `AVERROR_EINVAL`, for a subtitle decoder instead of corrupting memory: FFmpeg hands such a decoder an `AVFrame` where it expects an `AVSubtitle`.
+
 ## [0.1.0] - 2026-10-18
 
 ### Added

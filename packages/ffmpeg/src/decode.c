@@ -88,14 +88,21 @@ API int sny_decoder_open_params(const uint8_t *buf, int size, int threads, AVCod
 API void sny_decoder_close(AVCodecContext *dec) { avcodec_free_context(&dec); }
 
 // Sends a packet, or NULL (0) to drain at the end of the stream. AVERROR(EAGAIN) means
-// the decoder is full: receive its frames, then send the packet again.
+// the decoder is full: receive its frames, then send the packet again. A subtitle decoder
+// returns AVERROR(EINVAL): FFmpeg does not check the media type here and would call its
+// decode callback with an AVFrame where it expects an AVSubtitle, corrupting the frame.
 API int sny_decoder_send(AVCodecContext *dec, const AVPacket *pkt) {
+  if (dec->codec_type == AVMEDIA_TYPE_SUBTITLE)
+    return AVERROR(EINVAL);
   return avcodec_send_packet(dec, pkt);
 }
 
 // Receives the next frame into frame, releasing whatever frame held. AVERROR(EAGAIN) means
-// send more packets; AVERROR_EOF means the decoder is drained.
+// send more packets; AVERROR_EOF means the decoder is drained. A subtitle decoder returns
+// AVERROR(EINVAL), as in sny_decoder_send.
 API int sny_decoder_receive(AVCodecContext *dec, AVFrame *frame) {
+  if (dec->codec_type == AVMEDIA_TYPE_SUBTITLE)
+    return AVERROR(EINVAL);
   return avcodec_receive_frame(dec, frame);
 }
 
