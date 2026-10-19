@@ -1,6 +1,6 @@
 {
   "name": "@snowy-media/ffmpeg",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "FFmpeg 9 compiled to WebAssembly as small, lazily loaded modules for playing and editing video in the browser",
   "keywords": [
     "audio",
