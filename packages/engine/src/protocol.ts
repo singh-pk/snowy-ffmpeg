@@ -36,9 +36,14 @@ export interface MediaInfo {
   tracks: Track[];
 }
 
-// `id` pairs each reply with its request.
-export type ToMedia = { type: "open"; id: number; file: File };
+// `id` pairs each reply with its request. A demux request writes the packets of `streams`
+// into `ring` (src/ring.ts) and replies once it has written the END record, or once the
+// consumer has closed the ring. On an error it writes the FAILED record and replies with it.
+export type ToMedia =
+  | { type: "open"; id: number; file: File }
+  | { type: "demux"; id: number; ring: SharedArrayBuffer; streams: number[] };
 
 export type FromMedia =
   | { type: "opened"; id: number; info: MediaInfo }
+  | { type: "demuxed"; id: number }
   | { type: "error"; id: number; message: string };

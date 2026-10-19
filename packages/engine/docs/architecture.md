@@ -25,12 +25,24 @@ The WebGPU check asks for an adapter, a device and a canvas context and then imp
 | Thread | Does | Blocks |
 | --- | --- | --- |
 | Main | the API, starting and stopping workers | never |
-| Media worker | reading the file, demuxing it with the FFmpeg core | yes, on reads |
+| Media worker | reading the file, demuxing it with the FFmpeg core | yes, on reads and on a full packet ring |
 | Render worker | WebGPU, WebCodecs | never |
 
 Each worker is an entry point of its own in `dist/`, loaded by URL, so a thread downloads only its own code. The engine starts both at once, so the FFmpeg core loads while the render worker checks the GPU.
 
 The media worker is the one thread allowed to block. FFmpeg reads its input through synchronous callbacks, and the worker answers them with `FileReaderSync` (`src/io.ts`), straight from the `File`: FFmpeg reads only what the demuxer asks for, in reads of up to 4 MiB, never the whole file. Copying the file into WebAssembly memory first would cap it at that memory, and asynchronous reads would need Asyncify or JSPI around every FFmpeg call.
+
+## Packet ring
+
+The media worker demuxes ahead of playback into a ring in a `SharedArrayBuffer` (`src/ring.ts`), from which another thread reads the packets: one producer, one consumer, and no message per packet. Each packet is one record, a 32-byte header (stream, flags, pts, dts, duration, size) followed by its bytes, padded to 32 bytes. Each record is copied once into the ring from the WebAssembly heap, and read in place unless it wraps around the end of the ring.
+
+- **Variable-length records that may wrap.** A packet of any size up to the capacity fits, with no space lost at the end of the ring and no size class to tune. The 32-byte alignment keeps every header in one piece. A record that wraps is joined in a buffer the consumer reuses.
+- **Positions that only grow.** The write and read positions are 32-bit integers that wrap, and the bytes in use are their difference. Each side writes only its own position, so neither takes a lock.
+- **The ring being full is the backpressure.** The producer blocks in `Atomics.wait` until the consumer frees room. The consumer never blocks: it waits with `Atomics.waitAsync`. Each side raises a waiting flag before it checks the other's position, and the other notifies only when that flag is up, so a wake-up is never lost and a busy ring makes no `notify` calls.
+- **Ending and closing.** A record with stream `END` follows the last packet, and one with stream `FAILED` ends the packets when the producer fails, so the consumer never waits for packets that will not come; the error itself goes to whoever started the producer. The consumer closes the ring to stop the producer, whose next write returns false; a closed ring holds no packets.
+- **Capacity: 8 MiB.** That holds seconds of the highest bitrates a browser plays (4K HEVC at 100 Mbit/s is 12.5 MB a second) and any single packet. Moving packets through the ring takes far less time than decoding them: under 0.5 µs per packet, and over 20 GB/s for large packets. A wake-up takes under 0.2 ms at the 99th percentile in every browser (`bench/run.ts`, the `ring` benchmark).
+
+The tests check the ring between two threads in Bun, and check, in every browser, that the packets of every fixture pass through a 64 KiB ring exactly as native `ffprobe` lists them.
 
 ## Bundling
 

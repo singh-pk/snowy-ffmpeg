@@ -23,11 +23,12 @@ The tests and benchmarks build what they run, and need `@snowy-media/ffmpeg` bui
 | `src/platform.ts` | the platform check on the main thread, and `UnsupportedPlatformError` |
 | `src/media.worker.ts` | the media worker: reads and demuxes the file with the FFmpeg core |
 | `src/io.ts` | the media worker's synchronous reads from a `File` |
+| `src/ring.ts` | the packet ring between two threads |
 | `src/render.worker.ts` | the render worker: WebGPU and WebCodecs |
 | `src/protocol.ts` | the messages between threads |
 | `scripts/build.ts` | bundles each thread's entry point into `dist/`, or for the tests into `test/dist/` |
 | `scripts/gen-fixtures.ts` | builds `test/fixtures` and `expected.json` from native FFmpeg |
-| `test/` | Playwright tests; `test/support/` is shared with `bench/`, and `serve.ts` builds and serves the engine for both |
+| `test/` | Playwright tests; `test/support/` is shared with `bench/`, and `serve.ts` builds and serves the engine for both, and `page.ts` is the code their pages import |
 | `bench/` | benchmarks ([README](bench/README.md)) |
 | `docs/architecture.md` | design and the reasons behind it |
 

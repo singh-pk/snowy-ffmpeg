@@ -1,0 +1,203 @@
+// SPDX-FileCopyrightText: 2026 The Snowy Authors
+// SPDX-License-Identifier: MIT
+//
+// A ring of packets in a SharedArrayBuffer, from one producer thread to one consumer thread,
+// with no message per packet. It is a byte stream of records: a 32-byte header, then the
+// payload, padded to 32 bytes. A record may wrap around the end of the ring, so a packet of
+// any size up to the capacity fits without wasting the space at the end. The producer blocks
+// (Atomics.wait) while the ring is full; the consumer never blocks, and waits with
+// Atomics.waitAsync.
+//
+// Positions only grow, as 32-bit integers that wrap; the distance between them is the bytes
+// in use. Each side writes only its own position, so neither needs a lock.
+
+// Control words, then the records from byte 64, on a cache line of their own.
+const WRITE = 0;
+const READ = 1;
+/** The control word that is 1 while the producer waits for room; for tests. */
+export const PRODUCER_WAITING = 2;
+const CONSUMER_WAITING = 3;
+const CLOSED = 4;
+const DATA = 64;
+// A header, and the alignment of every record, so a header never wraps.
+const HEADER = 32;
+
+/**
+ * The engine's ring size: room for seconds of the highest bitrates a browser plays, and for
+ * any single packet (docs/architecture.md#packet-ring).
+ */
+export const RING_CAPACITY = 1 << 23;
+
+/** The stream of the record that follows the last packet. */
+export const END = -1;
+/** The stream of the record that ends the packets early, because the producer failed. */
+export const FAILED = -2;
+
+/** A packet as the consumer sees it. `data` is valid until `release`. */
+export interface Packet {
+  /** The stream index, END or FAILED. */
+  stream: number;
+  /** AV_PKT_FLAG_* bits. */
+  flags: number;
+  /** Timestamps in the stream's time base; AV_NOPTS_VALUE when unknown. */
+  pts: bigint;
+  dts: bigint;
+  /** In the stream's time base, a 32-bit integer. */
+  duration: number;
+  data: Uint8Array;
+}
+
+const padded = (size: number) => HEADER + ((size + HEADER - 1) & -HEADER);
+
+/** A ring of `capacity` bytes of records, a power of two of at least 64. */
+export function createRing(capacity: number) {
+  if (capacity < 2 * HEADER || (capacity & (capacity - 1)) !== 0) {
+    throw new RangeError(`ring capacity ${capacity} is not a power of two of at least 64`);
+  }
+
+  return new SharedArrayBuffer(DATA + capacity);
+}
+
+function views(ring: SharedArrayBuffer) {
+  const capacity = ring.byteLength - DATA;
+  return {
+    capacity,
+    control: new Int32Array(ring, 0, DATA / 4),
+    bytes: new Uint8Array(ring, DATA, capacity),
+    words: new Int32Array(ring, DATA, capacity / 4),
+    longs: new BigInt64Array(ring, DATA, capacity / 8),
+  };
+}
+
+/** The producer's side of `ring`, for a thread that may block. */
+export function createProducer(ring: SharedArrayBuffer) {
+  const { capacity, control, bytes, words, longs } = views(ring);
+
+  // Waits until `need` bytes are free; false once the consumer has closed the ring.
+  function reserve(need: number) {
+    const written = control[WRITE] ?? 0;
+
+    for (;;) {
+      const read = Atomics.load(control, READ);
+      if (Atomics.load(control, CLOSED)) return false;
+      if (capacity - ((written - read) | 0) >= need) return true;
+      // Raised before waiting, so a release after the check above notifies this wait or
+      // changes READ before it starts.
+      Atomics.store(control, PRODUCER_WAITING, 1);
+      Atomics.wait(control, READ, read);
+      Atomics.store(control, PRODUCER_WAITING, 0);
+    }
+  }
+
+  /**
+   * Copies `size` bytes of `src` from `offset` into a record, waiting for room. False once the
+   * consumer has closed the ring, so the producer stops.
+   */
+  function write(
+    stream: number,
+    flags: number,
+    pts: bigint,
+    dts: bigint,
+    duration: number,
+    src: Uint8Array,
+    offset: number,
+    size: number,
+  ) {
+    const need = padded(size);
+    if (need > capacity) throw new RangeError(`a ${size}-byte packet exceeds the ring`);
+    if ((duration | 0) !== duration) throw new RangeError(`packet duration ${duration}`);
+    if (!reserve(need)) return false;
+    const written = control[WRITE] ?? 0;
+    const at = written & (capacity - 1);
+    words[at >> 2] = size;
+    words[(at >> 2) + 1] = stream;
+    words[(at >> 2) + 2] = flags;
+    words[(at >> 2) + 3] = duration;
+    longs[(at >> 3) + 2] = pts;
+    longs[(at >> 3) + 3] = dts;
+    // A header in the last 32 bytes has its payload at the start.
+    const start = (at + HEADER) & (capacity - 1);
+    const first = Math.min(size, capacity - start);
+    bytes.set(src.subarray(offset, offset + first), start);
+    if (first < size) bytes.set(src.subarray(offset + first, offset + size), 0);
+    Atomics.store(control, WRITE, (written + need) | 0);
+    if (Atomics.load(control, CONSUMER_WAITING)) Atomics.notify(control, WRITE);
+    return true;
+  }
+
+  /** Writes the END record after the last packet. */
+  function end() {
+    return write(END, 0, 0n, 0n, 0, bytes, 0, 0);
+  }
+
+  /** Writes the FAILED record in place of the remaining packets. */
+  function fail() {
+    return write(FAILED, 0, 0n, 0n, 0, bytes, 0, 0);
+  }
+
+  return { write, end, fail };
+}
+
+/** The consumer's side of `ring`, for a thread that never blocks. */
+export function createConsumer(ring: SharedArrayBuffer) {
+  const { capacity, control, bytes, words, longs } = views(ring);
+  const packet: Packet = { stream: 0, flags: 0, pts: 0n, dts: 0n, duration: 0, data: bytes };
+  // Where a record that wraps is put back together; it grows to the largest such packet.
+  let joined = new Uint8Array(0);
+
+  /** The next packet, valid until `release`; undefined while the ring is empty or closed. */
+  function peek(): Packet | undefined {
+    const read = control[READ] ?? 0;
+    if (Atomics.load(control, CLOSED) || Atomics.load(control, WRITE) === read) return undefined;
+    const at = read & (capacity - 1);
+    const size = words[at >> 2] ?? 0;
+    packet.stream = words[(at >> 2) + 1] ?? 0;
+    packet.flags = words[(at >> 2) + 2] ?? 0;
+    packet.duration = words[(at >> 2) + 3] ?? 0;
+    packet.pts = longs[(at >> 3) + 2] ?? 0n;
+    packet.dts = longs[(at >> 3) + 3] ?? 0n;
+    const start = (at + HEADER) & (capacity - 1);
+    const first = capacity - start;
+
+    if (size <= first) {
+      packet.data = bytes.subarray(start, start + size);
+    } else {
+      if (joined.length < size) joined = new Uint8Array(Math.max(size, 2 * joined.length));
+      joined.set(bytes.subarray(start), 0);
+      joined.set(bytes.subarray(0, size - first), first);
+      packet.data = joined.subarray(0, size);
+    }
+
+    return packet;
+  }
+
+  /** Frees the packet `peek` returned; nothing once the ring is closed. */
+  function release() {
+    if (Atomics.load(control, CLOSED)) return;
+    const read = control[READ] ?? 0;
+    const size = words[(read & (capacity - 1)) >> 2] ?? 0;
+    Atomics.store(control, READ, (read + padded(size)) | 0);
+    if (Atomics.load(control, PRODUCER_WAITING)) Atomics.notify(control, READ);
+  }
+
+  /** Resolves once the ring holds a packet, or at once when it is closed. */
+  async function wait() {
+    if (Atomics.load(control, CLOSED)) return;
+    // Raised before the check, so a write after it notifies this wait or changes WRITE first.
+    Atomics.store(control, CONSUMER_WAITING, 1);
+    const waiting = Atomics.waitAsync(control, WRITE, control[READ] ?? 0);
+    if (waiting.async) await waiting.value;
+    Atomics.store(control, CONSUMER_WAITING, 0);
+  }
+
+  /** Stops the producer: its next write returns false, and a waiting one wakes up. */
+  function close() {
+    Atomics.store(control, CLOSED, 1);
+    // Moving READ wakes a producer that checked CLOSED just before; it is waiting for space,
+    // so READ was not at WRITE.
+    Atomics.store(control, READ, Atomics.load(control, WRITE));
+    Atomics.notify(control, READ);
+  }
+
+  return { peek, release, wait, close };
+}

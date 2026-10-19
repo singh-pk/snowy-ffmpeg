@@ -100,8 +100,12 @@ const fixtures: Record<string, { seconds: number; args: string[]; source?: strin
 
 interface Packet {
   codec_type: string;
-  pts: number;
+  stream_index: number;
+  pts?: number;
+  dts?: number;
+  size: string;
   flags: string;
+  data_hash: string;
 }
 
 interface Stream {
@@ -126,6 +130,23 @@ async function readVideo(file: string, index: number, width: number, height: num
   if (grey.byteLength !== frames.length * size) throw new Error(`${file}: frame count differs`);
   const ids = frames.map((_, i) => readFrameId(new Uint8Array(grey, i * size, size), width));
   return { pts: frames.map((f) => f.pts), ids };
+}
+
+// A stream's packets as the engine's tests hash them: one line `pts,dts,key,size,crc32` per
+// packet, an unknown timestamp empty, crc32 in lowercase hex. dts is left out (`pts,key,...`)
+// unless the container stores it, as MP4 does: where it does not (Matroska), libavformat
+// guesses it from the decoder's delay, and the engine's demuxer has no video decoders, so the
+// guess depends on the build, not the file.
+function hashPackets(packets: Packet[], index: number, dts: boolean) {
+  const lines = packets
+    .filter((p) => p.stream_index === index)
+    .map((p) => {
+      const crc = p.data_hash.replace("CRC32:", "");
+      const times = dts ? `${p.pts ?? ""},${p.dts ?? ""}` : String(p.pts ?? "");
+      return `${times},${p.flags.startsWith("K") ? 1 : 0},${p.size},${crc}`;
+    });
+  const sha256 = new Bun.CryptoHasher("sha256").update(lines.join("\n")).digest("hex");
+  return { packets: lines.length, packetsSha256: sha256 };
 }
 
 // The time each click starts, in seconds on the stream's timeline.
@@ -156,7 +177,7 @@ for (const [name, { seconds, args, source }] of Object.entries(fixtures)) {
   const inputs = [...video(seconds, source), ...clicks(seconds)];
   await $`ffmpeg -hide_banner -loglevel error -y ${inputs} ${args} ${OUT} ${file}`;
   const probe =
-    await $`ffprobe -v error -show_format -show_streams -show_entries packet=codec_type,pts,flags -of json ${file}`.json();
+    await $`ffprobe -v error -show_format -show_streams -show_entries packet=codec_type,stream_index,pts,dts,size,flags,data_hash -show_data_hash crc32 -of json ${file}`.json();
   const streams: Stream[] = probe.streams;
   const packets: Packet[] = probe.packets;
   const v = streams.find((s) => s.codec_type === "video");
@@ -172,8 +193,12 @@ for (const [name, { seconds, args, source }] of Object.entries(fixtures)) {
   if (late >= 0) throw new Error(`${name}: click ${late} starts at ${onsets[late]} s`);
   const keyframes = packets.filter((p) => p.codec_type === "video" && p.flags.startsWith("K"));
 
+  const dts = name.endsWith(".mp4");
+
   expected[name] = {
     format: probe.format.format_name,
+    // Whether the packet hashes include dts (hashPackets).
+    packetDts: dts,
     duration: Number(probe.format.duration),
     video: {
       id: v.index,
@@ -184,6 +209,7 @@ for (const [name, { seconds, args, source }] of Object.entries(fixtures)) {
       // Frame i shows the number i, so this is also every frame's number in order.
       pts,
       keyframes: keyframes.map((p) => p.pts),
+      ...hashPackets(packets, v.index, dts),
     },
     audio: {
       id: a.index,
@@ -191,6 +217,7 @@ for (const [name, { seconds, args, source }] of Object.entries(fixtures)) {
       sampleRate: Number(a.sample_rate),
       channels: a.channels,
       clicks: onsets.length,
+      ...hashPackets(packets, a.index, dts),
     },
   };
   console.log(name, `${pts.length} frames`, `${onsets.length} clicks`);
