@@ -129,6 +129,8 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bunx playwright install chromium firefox webkit
       - run: bun run test
+      # For reading only: shared runners are too noisy to fail on (packages/engine/bench).
+      - run: bun run bench --runs 5 >> "$GITHUB_STEP_SUMMARY"
 
   # The one check the main ruleset requires, so adding, renaming or skipping a job never
   # needs a ruleset change; a new job must be added to needs below. Skipped jobs pass;

@@ -5,15 +5,9 @@
 // is met, and names the missing feature where it is not. Usage: bun run test.
 
 import { afterAll, describe, expect, test } from "bun:test";
-import {
-  type BrowserType,
-  chromium,
-  firefox,
-  type LaunchOptions,
-  type Page,
-  webkit,
-} from "playwright";
+import { type BrowserType, chromium, firefox, type LaunchOptions, type Page } from "playwright";
 import { serve } from "../../../tooling/test-server";
+import { browsers } from "./support/browsers";
 
 const root = new URL("../", import.meta.url);
 const page = "<!doctype html><title>test</title>";
@@ -25,15 +19,7 @@ afterAll(async () => {
   await notIsolated.stop(true);
 });
 
-// WebGPU on, with a real GPU: headless Chromium uses the GPU only when told to, and Firefox
-// has WebGPU only with a window.
-const browsers: [string, BrowserType, LaunchOptions][] = [
-  ["chromium", chromium, { args: ["--enable-gpu", "--ignore-gpu-blocklist"] }],
-  ["firefox", firefox, { headless: false }],
-  ["webkit", webkit, {}],
-];
-
-// The same browsers with WebGPU turned off, where a switch exists.
+// Chromium and Firefox with WebGPU switched off; WebKit has no switch.
 const withoutWebGPU: [string, BrowserType, LaunchOptions][] = [
   ["chromium", chromium, { args: ["--disable-features=WebGPU"] }],
   ["firefox", firefox, { headless: false, firefoxUserPrefs: { "dom.webgpu.enabled": false } }],
@@ -63,7 +49,7 @@ async function start(type: BrowserType, options: LaunchOptions, url: URL) {
   }
 }
 
-for (const [name, type, options] of browsers) {
+for (const [name, [type, options]] of Object.entries(browsers)) {
   describe(name, () => {
     test("starts on a cross-origin isolated page", async () => {
       const result = await start(type, options, isolated.url);

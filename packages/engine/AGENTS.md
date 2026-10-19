@@ -10,6 +10,8 @@ This package is the playback pipeline of Snowy, without any user interface: it r
 | --- | --- |
 | Bundle `src/` into `dist/` | `bun run build` |
 | Build, then the browser tests (Chromium, Firefox, WebKit) | `bun run test` |
+| Benchmarks, after a build | `bun run bench --runs 5` |
+| Regenerate the fixtures (needs native FFmpeg 9.0.2) | `bun run fixtures` |
 
 The tests need WebGPU with a GPU, so they run on macOS (as CI does) or Windows. On Linux only Chromium has it. Firefox runs with a window, because it has no WebGPU when headless.
 
@@ -22,7 +24,9 @@ The tests need WebGPU with a GPU, so they run on macOS (as CI does) or Windows. 
 | `src/render.worker.ts` | the render worker: WebGPU and WebCodecs |
 | `src/protocol.ts` | the messages between threads |
 | `scripts/build.ts` | bundles each thread's entry point into `dist/` |
-| `test/` | Playwright tests |
+| `scripts/gen-fixtures.ts` | builds `test/fixtures` and `expected.json` from native FFmpeg |
+| `test/` | Playwright tests; `test/support/` is shared with `bench/` |
+| `bench/` | benchmarks ([README](bench/README.md)) |
 | `docs/architecture.md` | design and the reasons behind it |
 
 ## Rules
@@ -32,3 +36,5 @@ The tests need WebGPU with a GPU, so they run on macOS (as CI does) or Windows. 
 3. **No allocation per frame or per packet.** Hot paths reuse buffers, shared rings and GPU textures that are allocated once.
 4. **Queues are bounded by bytes,** never by an item count, so memory stays bounded at any resolution.
 5. **No runtime dependencies** besides `@snowy-media/ffmpeg`.
+6. **Expected results come from native FFmpeg.** Never hand-write a timestamp or a frame count: add the case to `scripts/gen-fixtures.ts` and regenerate.
+7. **Performance is measured** with `bun run bench`, before and after, on the same machine.

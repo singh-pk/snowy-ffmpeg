@@ -1,5 +1,5 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
   "printWidth": 100,
-  "ignorePatterns": ["packages/ffmpeg/bench/results/**", "packages/ffmpeg/test/fixtures/**", "*.md"]
+  "ignorePatterns": ["packages/ffmpeg/bench/results/**", "packages/*/test/fixtures/**", "*.md"]
 }
