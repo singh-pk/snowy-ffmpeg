@@ -11,7 +11,7 @@
 import { Glob } from "bun";
 import { parseArgs } from "node:util";
 import { type BrowserType, chromium, firefox, webkit } from "playwright";
-import { serve } from "../test/support/server";
+import { serve } from "../../../tooling/test-server";
 
 const { values: args } = parseArgs({
   options: {
@@ -31,7 +31,10 @@ interface Run {
 }
 
 const median = (xs: number[]) => xs.toSorted((a, b) => a - b)[xs.length >> 1] ?? 0;
-const server = serve('<!doctype html><title>bench</title><input type="file" multiple>');
+const server = serve(
+  new URL("../", import.meta.url),
+  '<!doctype html><title>bench</title><input type="file" multiple>',
+);
 const result = {
   date: new Date().toISOString(),
   runs: Number(args.runs),

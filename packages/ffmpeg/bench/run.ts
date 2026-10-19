@@ -11,7 +11,7 @@
 import { parseArgs } from "node:util";
 import { brotliCompressSync, constants } from "node:zlib";
 import { type BrowserType, chromium, firefox, webkit } from "playwright";
-import { serve } from "../test/support/server";
+import { serve } from "../../../tooling/test-server";
 
 const { values: args } = parseArgs({
   options: {
@@ -81,7 +81,10 @@ function merge(runs: Json[]): Json {
   );
 }
 
-const server = serve('<!doctype html><title>bench</title><input type="file" multiple>');
+const server = serve(
+  new URL("../", import.meta.url),
+  '<!doctype html><title>bench</title><input type="file" multiple>',
+);
 
 const libs = args.libs.split(",");
 const result = {

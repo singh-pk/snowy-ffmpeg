@@ -3,6 +3,9 @@
 #
 # Labels pull requests by the files they change (.github/workflows/labeler.yml). Every label
 # here is defined in settings.yml.
+"package:engine":
+  - changed-files:
+      - any-glob-to-any-file: packages/engine/**
 "package:ffmpeg":
   - changed-files:
       - any-glob-to-any-file: packages/ffmpeg/**

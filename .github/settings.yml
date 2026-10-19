@@ -70,6 +70,7 @@ labels:
       description: "Skips the CHANGELOG.md check on feat, fix and perf pull requests",
     }
   - { name: dependencies, color: "0366d6", description: Dependency updates }
+  - { name: "package:engine", color: "0e8a16", description: "packages/engine, @snowy-media/engine" }
   - { name: "package:ffmpeg", color: "0e8a16", description: "packages/ffmpeg, @snowy-media/ffmpeg" }
   - {
       name: "area:core",

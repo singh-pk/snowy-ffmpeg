@@ -7,6 +7,7 @@ body:
     attributes:
       label: Package
       options:
+        - "@snowy-media/engine"
         - "@snowy-media/ffmpeg"
         - Repository, CI or docs
     validations:

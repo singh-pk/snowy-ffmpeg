@@ -7,9 +7,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { type Browser, type BrowserType, chromium, firefox, webkit } from "playwright";
 import expected from "./fixtures/expected.json";
-import { serve } from "./support/server";
+import { serve } from "../../../tooling/test-server";
 
-const server = serve("<!doctype html><title>test</title>");
+const server = serve(new URL("../", import.meta.url), "<!doctype html><title>test</title>");
 afterAll(() => server.stop(true));
 
 // Float decoders differ from native FFmpeg in the last bits: native builds fuse multiply-adds
