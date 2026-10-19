@@ -48,7 +48,7 @@ function createMedia() {
     const call = pending.get(data.id);
     pending.delete(data.id);
     if (data.type === "opened") call?.resolve(data.info);
-    else call?.reject(new Error(data.message));
+    else if (data.type === "error") call?.reject(new Error(data.message));
   });
 
   function fail(error: Error) {

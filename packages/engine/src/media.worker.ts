@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: MIT
 //
 // The media worker: it reads the file and demuxes it with the FFmpeg core module. It is the
-// one thread that may block, so it reads the file synchronously (src/io.ts).
+// one thread that may block, so it reads the file synchronously (src/io.ts) and waits for
+// room in the packet ring (src/ring.ts).
 
 import {
   AV_TIME_BASE,
+  AVERROR_EOF,
   AVMEDIA_TYPE_ATTACHMENT,
   AVMEDIA_TYPE_AUDIO,
   AVMEDIA_TYPE_SUBTITLE,
@@ -15,6 +17,7 @@ import {
   type Ptr,
 } from "@snowy-media/ffmpeg/core";
 import { createFileSource } from "./io";
+import { createProducer } from "./ring";
 import type { FromMedia, MediaInfo, ToMedia, Track } from "./protocol";
 
 // The kinds of the other streams; data and an unknown type (-1) are "data".
@@ -39,6 +42,7 @@ function createMedia(core: CoreModule) {
   const str = (ptr: Ptr) => (ptr ? core.UTF8ToString(ptr) : "");
   // The open file's demuxer, or 0.
   const state = { ctx: 0 };
+  const pkt = core._sny_packet_alloc();
 
   function check(ret: number, what: string) {
     if (ret < 0) throw new Error(`${what}: ${str(core._sny_strerror(ret))}`);
@@ -93,7 +97,54 @@ function createMedia(core: CoreModule) {
     };
   }
 
-  return { open };
+  // Writes the packets of `streams` into `ring`, from where the demuxer is to the end of the
+  // file, then the END record. Returns early once the consumer closes the ring.
+  function pump(ring: ReturnType<typeof createProducer>, streams: number[]) {
+    const { ctx } = state;
+    if (!ctx) throw new Error("demux: no file is open");
+    const selected = new Uint8Array(core._sny_nb_streams(ctx));
+
+    for (const s of streams) {
+      if (!Number.isInteger(s) || s < 0 || s >= selected.length) {
+        throw new RangeError(`demux: no stream ${s}`);
+      }
+
+      selected[s] = 1;
+    }
+
+    for (;;) {
+      const ret = core._sny_read(ctx, pkt);
+      if (ret === AVERROR_EOF) break;
+      check(ret, "read");
+      const stream = core._sny_packet_stream(pkt);
+      if (!selected[stream]) continue;
+      const pts = core._sny_packet_pts(pkt);
+      const dts = core._sny_packet_dts(pkt);
+      const duration = Number(core._sny_packet_duration(pkt));
+      const data = core._sny_packet_data(pkt);
+      const size = core._sny_packet_size(pkt);
+      const flags = core._sny_packet_flags(pkt);
+      // HEAPU8 is read for each packet: the heap's buffer changes when memory grows.
+      if (!ring.write(stream, flags, pts, dts, duration, core.HEAPU8, data, size)) return;
+    }
+
+    ring.end();
+  }
+
+  // pump, and on an error the FAILED record, so the thread reading the ring stops too; the
+  // error itself goes to whoever asked.
+  function demux(ring: SharedArrayBuffer, streams: number[]) {
+    const producer = createProducer(ring);
+
+    try {
+      pump(producer, streams);
+    } catch (e) {
+      producer.fail();
+      throw e;
+    }
+  }
+
+  return { open, demux };
 }
 
 async function startMedia() {
@@ -101,10 +152,18 @@ async function startMedia() {
   return createMedia(core);
 }
 
-async function handle({ id, file }: ToMedia) {
+async function handle(message: ToMedia) {
+  const { id } = message;
+
   try {
     const media = await ready;
-    post({ type: "opened", id, info: media.open(file) });
+
+    if (message.type === "open") {
+      post({ type: "opened", id, info: media.open(message.file) });
+    } else {
+      media.demux(message.ring, message.streams);
+      post({ type: "demuxed", id });
+    }
   } catch (e) {
     post({ type: "error", id, message: e instanceof Error ? e.message : String(e) });
   }

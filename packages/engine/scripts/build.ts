@@ -10,18 +10,20 @@
 
 import { dirname } from "node:path";
 
-const src = new URL("../src/", import.meta.url).pathname;
+const pkg = new URL("../", import.meta.url).pathname;
 
 interface Options {
   /** Where the bundles go. */
   outdir: string;
   /** The URL path the ffmpeg package is served under, instead of leaving it to a bundler. */
   ffmpeg?: string;
+  /** Other entry points, relative to the package, in place of the engine's; each keeps its path. */
+  entrypoints?: string[];
 }
 
 // Points each @snowy-media/ffmpeg import at its file under the URL path `prefix`.
 function ffmpegAt(prefix: string): Bun.BunPlugin {
-  const root = `${dirname(Bun.resolveSync("@snowy-media/ffmpeg/package.json", src))}/`;
+  const root = `${dirname(Bun.resolveSync("@snowy-media/ffmpeg/package.json", pkg))}/`;
 
   return {
     name: "ffmpeg-url",
@@ -34,10 +36,12 @@ function ffmpegAt(prefix: string): Bun.BunPlugin {
   };
 }
 
-export async function build({ outdir, ffmpeg }: Options) {
+export async function build({ outdir, ffmpeg, entrypoints }: Options) {
   await Bun.build({
-    entrypoints: ["index.ts", "media.worker.ts", "render.worker.ts"].map((f) => src + f),
-    root: src,
+    entrypoints: entrypoints
+      ? entrypoints.map((f) => pkg + f)
+      : ["index.ts", "media.worker.ts", "render.worker.ts"].map((f) => `${pkg}src/${f}`),
+    root: entrypoints ? pkg : `${pkg}src/`,
     outdir,
     target: "browser",
     format: "esm",

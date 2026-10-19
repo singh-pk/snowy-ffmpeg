@@ -6,7 +6,14 @@
       "project": ["scripts/**/*.ts", "tooling/**/*.{ts,js}"]
     },
     "packages/engine": {
-      "entry": ["scripts/*.ts", "src/index.ts", "src/*.worker.ts"],
+      "entry": [
+        "scripts/*.ts",
+        "src/index.ts",
+        "src/*.worker.ts",
+        "bench/*.worker.ts",
+        "test/support/page.ts",
+        "test/support/ring-producer.ts"
+      ],
       "project": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts", "bench/**/*.ts"],
       "ignoreBinaries": ["ffmpeg", "ffprobe"]
     },

@@ -15,8 +15,25 @@ const ffmpeg = Bun.pathToFileURL(
 );
 
 export const ENTRY = "/test/dist/index.js";
+/** The media worker, for a test that drives it directly. */
+export const MEDIA_WORKER = "/test/dist/media.worker.js";
+/** test/support/page.ts. */
+export const PAGE = "/test/dist/test/support/page.js";
+/** bench/ring.worker.ts. */
+export const RING_WORKER = "/test/dist/bench/ring.worker.js";
+
+async function buildAll() {
+  const outdir = `${pkg.pathname}test/dist/`;
+  await build({ outdir, ffmpeg: "/ffmpeg/" });
+  await build({
+    outdir,
+    ffmpeg: "/ffmpeg/",
+    entrypoints: ["test/support/page.ts", "bench/ring.worker.ts"],
+  });
+}
+
 // Once, however many servers a test starts.
-const built = build({ outdir: `${pkg.pathname}test/dist/`, ffmpeg: "/ffmpeg/" });
+const built = buildAll();
 
 export async function serveEngine(page: string, { isolated = true } = {}) {
   await built;
