@@ -21,9 +21,12 @@ The tests and benchmarks build what they run, and need `@snowy-media/ffmpeg` bui
 | --- | --- |
 | `src/index.ts` | the public API |
 | `src/platform.ts` | the platform check on the main thread, and `UnsupportedPlatformError` |
-| `src/media.worker.ts` | the media worker: reads and demuxes the file with the FFmpeg core |
+| `src/media.worker.ts` | the media worker: reads and demuxes the file, and decodes and resamples its audio, with the FFmpeg core |
 | `src/io.ts` | the media worker's synchronous reads from a `File` |
 | `src/ring.ts` | the packet ring between two threads |
+| `src/pcm.ts` | the PCM ring from the media worker to the AudioWorklet, and the clock |
+| `src/audio.ts` | the audio output on the main thread |
+| `src/audio.worklet.ts` | the AudioWorklet: plays the PCM ring and publishes the clock |
 | `src/render.worker.ts` | the render worker: WebGPU and WebCodecs |
 | `src/protocol.ts` | the messages between threads |
 | `scripts/build.ts` | bundles each thread's entry point into `dist/`, or for the tests into `test/dist/` |
@@ -34,7 +37,7 @@ The tests and benchmarks build what they run, and need `@snowy-media/ffmpeg` bui
 
 ## Rules
 
-1. **Know which thread you are on.** Each thread has one job and its own entry point in `scripts/build.ts`. The main thread and the render worker never block. A worker file ends in `.worker.ts` and is typechecked against the worker globals (`tsconfig.worker.json`).
+1. **Know which thread you are on.** Each thread has one job and its own entry point in `scripts/build.ts`. The main thread and the render worker never block. A worker file ends in `.worker.ts` and is typechecked against the worker globals (`tsconfig.worker.json`), and the AudioWorklet in `.worklet.ts` against its own (`tsconfig.worklet.json`).
 2. **The platform check is the only feature check.** A new requirement is a new `PlatformFeature`, checked in `src/platform.ts` or the render worker. Code elsewhere assumes the baseline and never tests for a feature.
 3. **No allocation per frame or per packet.** Hot paths reuse buffers, shared rings and GPU textures that are allocated once.
 4. **Queues are bounded by bytes,** never by an item count, so memory stays bounded at any resolution.

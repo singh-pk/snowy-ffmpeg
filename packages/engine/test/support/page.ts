@@ -2,12 +2,23 @@
 // SPDX-License-Identifier: MIT
 //
 // Code for the test and benchmark pages, bundled by serve.ts and imported from PAGE: the
-// packet ring, and the hash test/fixtures/expected.json records for a stream's packets.
+// packet ring and the hash test/fixtures/expected.json records for a stream's packets, and
+// the audio output with a player that renders it offline.
 
 import { AV_NOPTS_VALUE, AV_PKT_FLAG_KEY } from "@snowy-media/ffmpeg/core";
+import { createAudioOutput } from "../../src/audio";
+import { createPcmControl, createPcmRing } from "../../src/pcm";
 import type { FromMedia, ToMedia } from "../../src/protocol";
-import { createConsumer, END, FAILED } from "../../src/ring";
+import { createConsumer, createRing, END, FAILED } from "../../src/ring";
+import { PCM_CHANNELS, PCM_RATE, probe } from "./audio";
 
+export { createAudioOutput } from "../../src/audio";
+export {
+  createPcmConsumer,
+  createPcmControl,
+  createPcmProducer,
+  createPcmRing,
+} from "../../src/pcm";
 export { createRing, RING_CAPACITY } from "../../src/ring";
 
 const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
@@ -63,6 +74,73 @@ export async function hashRing(ring: SharedArrayBuffer, dts: boolean) {
   }
 
   return hashes;
+}
+
+const tick = () => new Promise((resolve) => setTimeout(resolve, 1));
+
+/**
+ * Plays audio stream `stream` of the file open in `media` through the engine's worklet (at
+ * `worklet`) into an OfflineAudioContext of `seconds`, resampled to `channels` channels. The
+ * ring holds `frames` frames, room for all of the audio, which is decoded before rendering
+ * starts, so it underruns only at the end. Returns the media time of the first frame; the
+ * clock's media time less its context time, at each poll while it runs; the clock at the
+ * end; when channel 0 clicks, in context time; and, in stereo, the probe of what played
+ * (test/support/audio.ts).
+ */
+export async function play(
+  media: ReturnType<typeof startMedia>,
+  stream: number,
+  {
+    worklet,
+    seconds,
+    channels,
+    frames,
+  }: Record<"seconds" | "channels" | "frames", number> & {
+    worklet: string;
+  },
+) {
+  const pcm = createPcmRing(2 ** Math.ceil(Math.log2(frames)), channels, PCM_RATE);
+  const control = createPcmControl(pcm);
+  const length = seconds * PCM_RATE;
+  const context = new OfflineAudioContext({
+    numberOfChannels: channels,
+    length,
+    sampleRate: PCM_RATE,
+  });
+  await createAudioOutput(context, pcm, worklet);
+  // No packets: the ring only gets the END record.
+  await media.request({ type: "demux", ring: createRing(64), streams: [], audio: { stream, pcm } });
+  const offsets: number[] = [];
+  const rendering = { done: false };
+
+  async function poll() {
+    while (!rendering.done) {
+      const clock = control.read();
+      if (clock.playing) offsets.push(clock.pts - clock.time);
+      await tick();
+    }
+  }
+
+  const polling = poll();
+  const buffer = await context.startRendering();
+  rendering.done = true;
+  await polling;
+  const { pts, playing } = control.read();
+  const left = buffer.getChannelData(0);
+  const clicks: number[] = [];
+
+  for (let i = 0; i < left.length; i++) {
+    if (Math.abs(left[i] ?? 0) < 0.3) continue;
+    clicks.push(i / PCM_RATE);
+    i += PCM_RATE / 2;
+  }
+
+  const planes = Array.from({ length: channels }, (_, c) => buffer.getChannelData(c));
+  const probed =
+    channels === PCM_CHANNELS
+      ? probe(frames * channels, (i) => planes[i % channels]?.[Math.floor(i / channels)] ?? 0)
+      : [];
+  return { start: control.start(), offsets, end: { pts, playing }, clicks, probe: probed };
 }
 
 /** Starts the media worker at `url`, as a function per request; an error reply rejects. */

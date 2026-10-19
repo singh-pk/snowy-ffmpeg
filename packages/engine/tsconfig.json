@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "include": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts", "bench/**/*.ts"],
-  // Worker-only code: the worker globals (tsconfig.worker.json).
-  "exclude": ["src/**/*.worker.ts", "src/io.ts"]
+  // Worker-only code, against the worker globals (tsconfig.worker.json), and the worklet,
+  // against the AudioWorklet globals (tsconfig.worklet.json).
+  "exclude": ["src/**/*.worker.ts", "src/io.ts", "src/**/*.worklet.ts"]
 }

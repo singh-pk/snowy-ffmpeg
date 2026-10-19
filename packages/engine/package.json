@@ -19,12 +19,13 @@
     "test": "bun test",
     "bench": "bun bench/run.ts",
     "fixtures": "bun scripts/gen-fixtures.ts",
-    "typecheck": "bun --bun tsc && bun --bun tsc -p tsconfig.worker.json"
+    "typecheck": "bun --bun tsc && bun --bun tsc -p tsconfig.worker.json && bun --bun tsc -p tsconfig.worklet.json"
   },
   "dependencies": {
     "@snowy-media/ffmpeg": "workspace:^"
   },
   "devDependencies": {
+    "@types/audioworklet": "0.0.100",
     "playwright": "1.64.1"
   }
 }

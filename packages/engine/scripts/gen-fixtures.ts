@@ -10,6 +10,7 @@
 
 import { $ } from "bun";
 import { mkdir, rm } from "node:fs/promises";
+import { PCM_CHANNELS, PCM_RATE, probe as probeSamples } from "../test/support/audio";
 import { CELL, FRAME_ID_BITS, readFrameId } from "../test/support/frame-id";
 
 const dir = new URL("../test/fixtures/", import.meta.url).pathname;
@@ -168,6 +169,18 @@ async function readClicks(file: string, stream: Stream) {
   return onsets;
 }
 
+// Audio stream `index` as `ffmpeg -ar -ac` resamples it for the tests (test/support/audio.ts):
+// its length in frames, and its probe.
+async function resample(file: string, index: number) {
+  const pcm =
+    await $`ffmpeg -v error -cpuflags 0 -i ${file} -map 0:${index} -ar ${PCM_RATE} -ac ${PCM_CHANNELS} -f f32le -`.arrayBuffer();
+  const samples = new Float32Array(pcm);
+  return {
+    frames: samples.length / PCM_CHANNELS,
+    probe: probeSamples(samples.length, (i) => samples[i] ?? 0),
+  };
+}
+
 await rm(dir, { recursive: true, force: true });
 await mkdir(dir, { recursive: true });
 const expected: Record<string, unknown> = {};
@@ -191,6 +204,7 @@ for (const [name, { seconds, args, source }] of Object.entries(fixtures)) {
   if (onsets.length !== seconds) throw new Error(`${name}: ${onsets.length} clicks`);
   const late = onsets.findIndex((t, k) => Math.abs(t - k) > CLICK_TOLERANCE);
   if (late >= 0) throw new Error(`${name}: click ${late} starts at ${onsets[late]} s`);
+  const resampled = await resample(file, a.index);
   const keyframes = packets.filter((p) => p.codec_type === "video" && p.flags.startsWith("K"));
 
   const dts = name.endsWith(".mp4");
@@ -218,6 +232,8 @@ for (const [name, { seconds, args, source }] of Object.entries(fixtures)) {
       channels: a.channels,
       clicks: onsets.length,
       ...hashPackets(packets, a.index, dts),
+      // As the tests play it (test/support/audio.ts).
+      resampled,
     },
   };
   console.log(name, `${pts.length} frames`, `${onsets.length} clicks`);

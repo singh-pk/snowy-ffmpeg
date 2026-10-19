@@ -1,4 +1,5 @@
-(`wake p50` and `wake p99`). The consumer does not read the payloads, so the throughput is the producer's copy and the bookkeeping |# Benchmarks
+(`wake p50` and `wake p99`). The consumer does not read the payloads, so the throughput is the producer's copy and the bookkeeping |
+| `audio` | the media worker decoding the ten-minute AAC track into the PCM ring, as the page drains it: in stereo at 48 kHz, the track's own rate, and resampled to 44.1 kHz |# Benchmarks
 
 `bun run bench` runs each benchmark in Chromium, Firefox and WebKit on a GPU, in a fresh browser per run, and prints the median of `--runs` runs in milliseconds. `--out bench/results/<name>.json` also writes the numbers, for a pull request that claims a change in speed.
 
