@@ -19,6 +19,7 @@ import {
   createCore,
   type Ptr,
 } from "@snowy-media/ffmpeg/core";
+import type { VideoParams } from "./codec";
 import { createFileSource } from "./io";
 import { createPcmProducer, pcmFormat } from "./pcm";
 import { createProducer } from "./ring";
@@ -83,13 +84,32 @@ function createMedia(core: CoreModule) {
     return { id, kind: OTHER.get(type) ?? "data", codec };
   }
 
+  // What a WebCodecs decoder config is made from (src/codec.ts).
+  function videoParams(id: number): VideoParams {
+    const st = core._sny_stream(state.ctx, id);
+    const data = core._sny_codec_extradata(st);
+    const tag = core._sny_codec_tag(st);
+    return {
+      codec: str(core._sny_codec_name(st)),
+      // A little-endian four-character code, or 0.
+      tag: tag
+        ? String.fromCodePoint(tag & 255, (tag >>> 8) & 255, (tag >>> 16) & 255, tag >>> 24)
+        : "",
+      extradata: core.HEAPU8.slice(data, data + core._sny_codec_extradata_size(st)),
+      width: core._sny_codec_width(st),
+      height: core._sny_codec_height(st),
+      level: core._sny_codec_level(st),
+    };
+  }
+
   function close() {
     if (state.ctx) core._sny_close(state.ctx);
     state.ctx = 0;
   }
 
-  // Opens `file` in place of the open one and describes it.
-  function open(file: File): MediaInfo {
+  // Opens `file` in place of the open one and describes it, with its video streams'
+  // parameters.
+  function open(file: File): { info: MediaInfo; video: Record<number, VideoParams> } {
     close();
     source.open(file);
     const out = core._malloc(4);
@@ -103,12 +123,15 @@ function createMedia(core: CoreModule) {
     check(core._sny_find_stream_info(ctx), "find_stream_info");
     const tracks = Array.from({ length: core._sny_nb_streams(ctx) }, (_, i) => track(i));
     const duration = core._sny_duration(ctx);
+    const video: Record<number, VideoParams> = {};
+    for (const t of tracks) if (t.kind === "video") video[t.id] = videoParams(t.id);
     // AV_NOPTS_VALUE, the only negative duration, is an unknown one.
-    return {
+    const info = {
       format: str(core._sny_format_name(ctx)),
       duration: duration < 0n ? undefined : Number(duration) / AV_TIME_BASE,
       tracks,
     };
+    return { info, video };
   }
 
   // The open file's demuxer, after checking that `streams` are all streams of it.
@@ -287,7 +310,7 @@ async function handle(message: ToMedia) {
     const media = await ready;
 
     if (message.type === "open") {
-      post({ type: "opened", id, info: media.open(message.file) });
+      post({ type: "opened", id, ...media.open(message.file) });
     } else {
       media.demux(message.ring, message.streams, message.audio);
       post({ type: "demuxed", id });

@@ -4,6 +4,8 @@
 // The messages between the engine on the main thread and its workers, and the types they
 // carry that the public API shares.
 
+import type { VideoParams } from "./codec";
+
 /** A platform feature the engine needs (AGENTS.md rule 2). */
 export type PlatformFeature =
   | "cross-origin-isolation"
@@ -52,6 +54,6 @@ export type ToMedia =
     };
 
 export type FromMedia =
-  | { type: "opened"; id: number; info: MediaInfo }
+  | { type: "opened"; id: number; info: MediaInfo; video: Record<number, VideoParams> }
   | { type: "demuxed"; id: number }
   | { type: "error"; id: number; message: string };

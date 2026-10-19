@@ -63,6 +63,18 @@ Decoding and resampling are far from the bottleneck: ten minutes of AAC takes ab
 
 The tests play every fixture through the worklet into an `OfflineAudioContext`, in every browser. They check that what plays equals native `ffmpeg -ar -ac` within 10⁻⁶; that while it plays, the clock is at the media time of what plays, without a gap; that it stops after the last frame, which is native FFmpeg's last; and that over ten minutes every click still starts on its whole second, so the clock has not drifted. Underruns, and a producer thread that waits for room, are tested in Bun against the ring itself.
 
+## Video decoder configs
+
+WebCodecs decodes H.264, HEVC, VP8, VP9 and AV1, given a `VideoDecoderConfig` (`src/codec.ts`). The media worker sends each video stream's parameters when it opens a file (FFmpeg's codec name, the container's four-character code, the extradata, the size and any level the container states), and the config is made from them and the stream's first packet, a keyframe.
+
+- **The codec string is built as its spec defines it,** from the configuration record (avcC, hvcC, av1C), which also becomes the config's `description`. Where the container has no record (MPEG-TS, raw streams), it comes from the parameter sets in band (the SPS, or AV1's sequence header OBU), in the extradata or in the keyframe, and there is no description: packets then carry their parameter sets themselves.
+- **VP9 has no record in WebM,** so its profile and bit depth come from the keyframe's uncompressed header. Its level is the container's, or else the smallest whose picture size fits the stream (VP9 Annex A): browsers decode by the bitstream and the level is only a hint.
+- **The config leaves out rotation and flip.** They are the display matrix's, applied where frames are drawn, the same for every decoder.
+- **Firefox's WebCodecs has no HEVC.** `isConfigSupported` says so, and the tests record it.
+- **WebKit decodes AV1 only in hardware,** on an Apple M3 or later, yet says it supports AV1 on any Mac. Elsewhere the decoder fails on the first frame (`EncodingError`), as it does on CI's runners, and the tests accept that failure, and only that one.
+
+The tests check every fixture in every browser. The decoder takes the config and decodes the first packet to frame 0. The codec string equals the one native FFmpeg writes, where it writes one (H.264 and AV1). The same holds for each stream converted to how a container without a record carries it: Annex B, its parameter sets in band. Bun unit tests cover the spec's HEVC example, VP9 profile 2, and AV1 sequence headers with timing and decoder model information, a high tier, and 10- and 12-bit depths.
+
 ## Bundling
 
 `dist/` keeps `@snowy-media/ffmpeg` as an import, so the app's bundler resolves it and the WebAssembly files it loads by URL, and an app can update it on its own. The tests have no bundler: `scripts/build.ts` builds them into `test/dist/` with the imports pointing at `/ffmpeg/`, where the test server serves the ffmpeg package.
