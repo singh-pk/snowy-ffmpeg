@@ -3,6 +3,7 @@
     "default": true,
     "MD013": false, // line length: prose is one line per paragraph
     "MD033": { "allowed_elements": ["picture", "source", "img", "br", "details", "summary"] },
+    "MD024": { "siblings_only": true }, // a changelog repeats "Fixed" under each version
     "MD041": false, // skills and agents start with YAML front matter
     "MD060": false,
   },

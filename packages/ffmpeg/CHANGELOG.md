@@ -6,6 +6,10 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 
 ## [Unreleased]
 
+### Fixed
+
+- The type declarations parse in TypeScript: `sny_to_float_planar` declared a parameter named `in`, a reserved word.
+
 ## [0.1.1] - 2026-10-19
 
 ### Fixed

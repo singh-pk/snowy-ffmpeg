@@ -1,5 +1,5 @@
 {
   "extends": "../../tsconfig.base.json",
-  "include": ["scripts/**/*.ts", "test/**/*.ts", "bench/**/*.ts"],
+  "include": ["scripts/**/*.ts", "test/**/*.ts", "bench/**/*.ts", "dist/*/index.d.ts"],
   "exclude": ["test/fixtures", "bench/media"]
 }

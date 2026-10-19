@@ -26,6 +26,8 @@ jobs:
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
+      # The type declarations, without the Docker build, so typecheck covers them.
+      - run: bun packages/ffmpeg/scripts/gen-dts.ts
       - run: bun run check
 
   repo:
