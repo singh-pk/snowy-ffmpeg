@@ -17,6 +17,8 @@ const ffmpeg = Bun.pathToFileURL(
 export const ENTRY = "/test/dist/index.js";
 /** The media worker, for a test that drives it directly. */
 export const MEDIA_WORKER = "/test/dist/media.worker.js";
+/** The AudioWorklet module. */
+export const AUDIO_WORKLET = "/test/dist/audio.worklet.js";
 /** test/support/page.ts. */
 export const PAGE = "/test/dist/test/support/page.js";
 /** bench/ring.worker.ts. */
