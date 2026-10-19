@@ -23,9 +23,15 @@ interface Audio {
   sha256: string;
 }
 
+// Audio resampled by sny_resample: samples per channel and every PROBE_STRIDE-th value.
+interface Resampled {
+  samples: number;
+  probe: string | number[];
+}
+
 interface Stream {
   [key: string]: unknown;
-  audio?: Audio & { exact?: boolean; probe?: string | number[] };
+  audio?: Audio & { exact?: boolean; probe?: string | number[]; resampled?: Resampled };
   video?: { [key: string]: unknown; videoFrame?: string };
 }
 
@@ -77,6 +83,8 @@ for (const [engine, type] of [
       expect(results.threadPool as unknown).toBe("rejected"));
     test("a subtitle decoder refuses packets and frames", () =>
       expect(results.subtitleDecoder as unknown).toBe("rejected"));
+    test("a flushed resampler starts afresh", () =>
+      expect(results.resampleTwice as unknown).toBe("same"));
 
     for (const name of names) {
       test(name, () => {
@@ -88,6 +96,13 @@ for (const [engine, type] of [
         for (const [i, s] of streams.entries()) {
           const w = want[i]?.audio;
           if (s.audio && w) expect(audioDiff(s.audio, w)).toBeLessThanOrEqual(FLOAT_TOLERANCE);
+
+          if (s.audio?.resampled && w?.resampled) {
+            expect(s.audio.resampled.samples).toBe(w.resampled.samples);
+            const diff = probeDiff(s.audio.resampled.probe, w.resampled.probe);
+            expect(diff).toBeLessThanOrEqual(FLOAT_TOLERANCE);
+          }
+
           // Every decoded frame, converted, must be something WebCodecs can display.
           if (s.video) expect(s.video.videoFrame).toBe("ok");
         }
@@ -117,16 +132,19 @@ function withoutSamples({ audio, video, ...stream }: Stream): Stream {
 function audioDiff(actual: NonNullable<Stream["audio"]>, want: NonNullable<Stream["audio"]>) {
   if (actual.sha256 === want.sha256) return 0;
 
-  if (want.exact || typeof want.probe !== "string" || !Array.isArray(actual.probe)) {
-    return Number.POSITIVE_INFINITY;
-  }
+  if (want.exact || !actual.probe || !want.probe) return Number.POSITIVE_INFINITY;
+  return probeDiff(actual.probe, want.probe);
+}
 
-  const bytes = Buffer.from(want.probe, "base64");
+// The largest difference between probed values and native FFmpeg's, base64 float32.
+function probeDiff(actual: string | number[], want: string | number[]) {
+  if (typeof want !== "string" || !Array.isArray(actual)) return Number.POSITIVE_INFINITY;
+  const bytes = Buffer.from(want, "base64");
   const native = new Float32Array(bytes.buffer, bytes.byteOffset, bytes.length / 4);
-  if (native.length !== actual.probe.length) return Number.POSITIVE_INFINITY;
+  if (native.length !== actual.length) return Number.POSITIVE_INFINITY;
   let max = 0;
 
-  for (const [i, v] of native.entries()) max = Math.max(max, Math.abs(v - (actual.probe[i] ?? 0)));
+  for (const [i, v] of native.entries()) max = Math.max(max, Math.abs(v - (actual[i] ?? 0)));
 
   return max;
 }

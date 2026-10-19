@@ -20,6 +20,9 @@ import { attachFileSource } from "/test/support/file-source.js";
 const TYPES = ["video", "audio", "data", "subtitle", "attachment"];
 // Must match PROBE_STRIDE in scripts/gen-fixtures.ts.
 const PROBE_STRIDE = 127;
+// Must match RESAMPLE_* in scripts/gen-fixtures.ts.
+const RESAMPLE_RATE = 44_100;
+const RESAMPLE_CHANNELS = 2;
 // The video modules' thread pool (VIDEO_LDFLAGS in the Dockerfile). Video decodes on up to 4
 // threads, so frame threading runs in the tests.
 const POOL = Math.min(navigator.hardwareConcurrency, 8);
@@ -43,6 +46,18 @@ function append(d, m, fltp) {
   d.audio.frames++;
   d.audio.samples += n;
   if (d.audio.firstPts.length < 3) d.audio.firstPts.push(timestamp(m._sny_frame_pts(fltp)));
+}
+
+// Resamples a frame decoded in module m, or 0 at the end of the stream, onto d.resampled,
+// as an AudioWorklet would play it.
+function resample(d, m, frame) {
+  d.swr ??= { m, ctx: m._sny_resampler_alloc(), out: m._sny_frame_alloc() };
+  const { ctx, out } = d.swr;
+  const ret = m._sny_resample(ctx, frame, out, RESAMPLE_RATE, RESAMPLE_CHANNELS);
+  if (ret < 0) throw new Error(`resample: ${m.UTF8ToString(m._sny_strerror(ret))}`);
+  const at = m._sny_frame_plane(out, 0) >> 2;
+  const n = m._sny_frame_samples(out) * RESAMPLE_CHANNELS;
+  d.resampled.push(m.HEAPF32.slice(at, at + n));
 }
 
 // The frame's planes packed as native FFmpeg's rawvideo encoder writes them, copied out of
@@ -149,8 +164,13 @@ async function createDemuxer() {
         if (stream.type === "audio") {
           stream.audio = { frames: 0, samples: 0, firstPts: [] };
           const decoder = await openDecoder(ctx, i);
-          const d = { audio: stream.audio, chunks: [], decoder };
-          d.onFrame = (m, fltp) => append(d, m, fltp);
+          const d = { audio: stream.audio, chunks: [], resampled: [], decoder };
+
+          d.onFrame = (m, fltp, frame) => {
+            append(d, m, fltp);
+            resample(d, m, frame);
+          };
+
           decoders.set(i, d);
         } else if (stream.type === "video") {
           stream.video = { frames: 0, firstPts: [], videoFrame: "ok" };
@@ -177,7 +197,9 @@ async function createDemuxer() {
         d.decoder.decode(0, d.onFrame); // drain
 
         if (d.audio) {
+          if (d.swr) resample(d, d.swr.m, 0);
           d.audio.pcm = concat(d.chunks, Float32Array);
+          d.audio.resampled = concat(d.resampled, Float32Array);
         } else {
           d.video.raw = concat(d.chunks, Uint8Array);
           if (d.converted.length > 0) d.video.converted = concat(d.converted, Uint8Array);
@@ -200,7 +222,69 @@ async function createDemuxer() {
 
       return { format: str(core._sny_format_name(ctx)), streams, rewind };
     } finally {
-      for (const d of decoders.values()) d.decoder.close();
+      for (const d of decoders.values()) {
+        d.decoder.close();
+
+        if (d.swr) {
+          d.swr.m._sny_frame_free(d.swr.out);
+          d.swr.m._sny_resampler_free(d.swr.ctx);
+        }
+      }
+
+      core._sny_packet_free(pkt);
+      core._sny_close(ctx);
+    }
+  }
+
+  // Resamples audio stream 0 of `file` to the end, flushes the resampler as a seek does, and
+  // resamples it again from the start: "same" when both passes match, as they must.
+  async function resampleTwice(file) {
+    source.open(file);
+    const out = core._malloc(4);
+    const opened = core._sny_open(1, 1 << 22, 0, out);
+    const ctx = core.HEAP32[out >> 2];
+    core._free(out);
+    check(opened, "open");
+    const pkt = core._sny_packet_alloc();
+    const d = { resampled: [] };
+    const passes = [];
+
+    try {
+      for (let pass = 0; pass < 2; pass++) {
+        if (pass) {
+          check(core._sny_seek(ctx, -1, 0n, AVSEEK_FLAG_BACKWARD), "seek");
+          core._sny_resampler_flush(d.swr.ctx);
+        }
+
+        const decoder = await openDecoder(ctx, 0);
+
+        try {
+          for (;;) {
+            const ret = core._sny_read(ctx, pkt);
+            if (ret === AVERROR_EOF) break;
+            check(ret, "read");
+            decoder.decode(pkt, (m, fltp, frame) => resample(d, m, frame));
+          }
+
+          decoder.decode(0, (m, fltp, frame) => resample(d, m, frame));
+          resample(d, core, 0);
+        } finally {
+          decoder.close();
+        }
+
+        passes.push(concat(d.resampled.splice(0), Float32Array));
+      }
+
+      const [a, b] = passes;
+      return a.length === b.length && a.every((v, i) => v === b[i])
+        ? "same"
+        : `${a.length} then ${b.length} samples`;
+    } finally {
+      if (d.swr) {
+        core._sny_frame_free(d.swr.out);
+        core._sny_resampler_free(d.swr.ctx);
+      }
+
       core._sny_packet_free(pkt);
       core._sny_close(ctx);
     }
@@ -260,7 +344,7 @@ async function createDemuxer() {
     }
   }
 
-  return { demux, openBeyondPool, decodeSubtitles, transferAll };
+  return { demux, openBeyondPool, decodeSubtitles, resampleTwice, transferAll };
 }
 
 function concat(chunks, Type) {
@@ -280,15 +364,21 @@ async function sha256(data) {
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+const probeOf = (pcm) => Array.from(pcm.filter((_, i) => i % PROBE_STRIDE === 0));
+
 // Replaces the decoded output with what the expectations hold: its SHA-256, and for audio
 // every PROBE_STRIDE-th value for comparing float decoders within a tolerance.
 async function summarize(result) {
   for (const s of result.streams ?? []) {
     if (s.audio) {
-      const { pcm, ...audio } = s.audio;
-      const probe = Array.from(pcm.filter((_, i) => i % PROBE_STRIDE === 0));
+      const { pcm, resampled, ...audio } = s.audio;
       const digest = await sha256(pcm);
-      s.audio = { ...audio, sha256: digest, probe };
+      s.audio = {
+        ...audio,
+        sha256: digest,
+        probe: probeOf(pcm),
+        resampled: { samples: resampled.length / RESAMPLE_CHANNELS, probe: probeOf(resampled) },
+      };
     } else if (s.video) {
       const { raw, converted, convertedTo, ...video } = s.video;
       const digest = await sha256(raw);
@@ -308,7 +398,7 @@ async function summarize(result) {
 const ready = createDemuxer();
 
 async function run(names) {
-  const { demux, openBeyondPool, decodeSubtitles, transferAll } = await ready;
+  const { demux, openBeyondPool, decodeSubtitles, resampleTwice, transferAll } = await ready;
   const results = {};
 
   for (const name of names) {
@@ -330,6 +420,9 @@ async function run(names) {
     const subs = await fetch("/test/fixtures/subs.srt");
     const text = await subs.blob();
     results.subtitleDecoder = decodeSubtitles(new File([text], "subs.srt"));
+    const pcm = await fetch("/test/fixtures/pcm.wav");
+    const wav = await pcm.blob();
+    results.resampleTwice = await resampleTwice(new File([wav], "pcm.wav"));
   }
 
   self.postMessage(results);
