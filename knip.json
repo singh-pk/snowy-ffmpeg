@@ -3,7 +3,11 @@
   "workspaces": {
     ".": {
       "entry": ["scripts/*.ts"],
-      "project": ["scripts/**/*.ts", "tooling/**/*.js"]
+      "project": ["scripts/**/*.ts", "tooling/**/*.{ts,js}"]
+    },
+    "packages/engine": {
+      "entry": ["scripts/*.ts", "src/index.ts", "src/*.worker.ts"],
+      "project": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts"]
     },
     "packages/ffmpeg": {
       "entry": [

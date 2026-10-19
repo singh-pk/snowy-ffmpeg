@@ -8,6 +8,7 @@ Snowy is a frontend-only media toolkit for the browser: a video player first, an
 
 | Package | Directory | Licence | What it is |
 | --- | --- | --- | --- |
+| `@snowy-media/engine` | [`packages/engine`](packages/engine) | MIT | The playback pipeline, without a user interface ([AGENTS.md](packages/engine/AGENTS.md)) |
 | `@snowy-media/ffmpeg` | [`packages/ffmpeg`](packages/ffmpeg) | LGPL-2.1-or-later | FFmpeg 9 compiled to WebAssembly modules ([AGENTS.md](packages/ffmpeg/AGENTS.md)) |
 
 ## Commands
