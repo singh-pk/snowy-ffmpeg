@@ -9,7 +9,9 @@
 // PATH, the version @snowy-media/ffmpeg builds. Usage: bun run fixtures
 
 import { $ } from "bun";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PCM_CHANNELS, PCM_RATE, probe as probeSamples } from "../test/support/audio";
 import { CELL, FRAME_ID_BITS, readFrameId } from "../test/support/frame-id";
 
@@ -169,6 +171,24 @@ async function readClicks(file: string, stream: Stream) {
   return onsets;
 }
 
+// The codec string FFmpeg's HLS muxer writes for video stream `index`, for the codecs it
+// builds one from the stream's own data: H.264 and AV1. (Its VP9 level is a placeholder, and
+// it writes none for HEVC.)
+async function hlsCodec(file: string, index: number, codec: string) {
+  if (codec !== "h264" && codec !== "av1") return undefined;
+  const out = await mkdtemp(join(tmpdir(), "snowy-hls-"));
+
+  try {
+    await $`ffmpeg -v error -i ${file} -map 0:${index} -c copy -f hls -hls_segment_type fmp4 -master_pl_name master.m3u8 ${join(out, "media.m3u8")}`;
+    const master = await Bun.file(join(out, "master.m3u8")).text();
+    const codecs = /CODECS="([^"]+)"/.exec(master)?.[1];
+    if (!codecs) throw new Error(`${file}: no CODECS in the HLS playlist`);
+    return codecs;
+  } finally {
+    await rm(out, { recursive: true, force: true });
+  }
+}
+
 // Audio stream `index` as `ffmpeg -ar -ac` resamples it for the tests (test/support/audio.ts):
 // its length in frames, and its probe.
 async function resample(file: string, index: number) {
@@ -205,6 +225,7 @@ for (const [name, { seconds, args, source }] of Object.entries(fixtures)) {
   const late = onsets.findIndex((t, k) => Math.abs(t - k) > CLICK_TOLERANCE);
   if (late >= 0) throw new Error(`${name}: click ${late} starts at ${onsets[late]} s`);
   const resampled = await resample(file, a.index);
+  const codecString = await hlsCodec(file, v.index, v.codec_name);
   const keyframes = packets.filter((p) => p.codec_type === "video" && p.flags.startsWith("K"));
 
   const dts = name.endsWith(".mp4");
@@ -217,6 +238,7 @@ for (const [name, { seconds, args, source }] of Object.entries(fixtures)) {
     video: {
       id: v.index,
       codec: v.codec_name,
+      ...(codecString ? { codecString } : {}),
       timeBase: v.time_base,
       width: v.width,
       height: v.height,

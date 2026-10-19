@@ -24,6 +24,7 @@ The tests and benchmarks build what they run, and need `@snowy-media/ffmpeg` bui
 | `src/media.worker.ts` | the media worker: reads and demuxes the file, and decodes and resamples its audio, with the FFmpeg core |
 | `src/io.ts` | the media worker's synchronous reads from a `File` |
 | `src/ring.ts` | the packet ring between two threads |
+| `src/codec.ts` | WebCodecs decoder configs, with the codec string from a stream's configuration record or parameter sets |
 | `src/pcm.ts` | the PCM ring from the media worker to the AudioWorklet, and the clock |
 | `src/audio.ts` | the audio output on the main thread |
 | `src/audio.worklet.ts` | the AudioWorklet: plays the PCM ring and publishes the clock |

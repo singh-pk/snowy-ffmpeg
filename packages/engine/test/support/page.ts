@@ -3,14 +3,17 @@
 //
 // Code for the test and benchmark pages, bundled by serve.ts and imported from PAGE: the
 // packet ring and the hash test/fixtures/expected.json records for a stream's packets, and
-// the audio output with a player that renders it offline.
+// the audio output with a player that renders it offline; and a video stream's first packet
+// and the check of its decoder config.
 
 import { AV_NOPTS_VALUE, AV_PKT_FLAG_KEY } from "@snowy-media/ffmpeg/core";
 import { createAudioOutput } from "../../src/audio";
+import { type VideoParams, videoConfig } from "../../src/codec";
 import { createPcmControl, createPcmRing } from "../../src/pcm";
 import type { FromMedia, ToMedia } from "../../src/protocol";
 import { createConsumer, createRing, END, FAILED } from "../../src/ring";
 import { PCM_CHANNELS, PCM_RATE, probe } from "./audio";
+import { readFrameId } from "./frame-id";
 
 export { createAudioOutput } from "../../src/audio";
 export {
@@ -166,3 +169,115 @@ export function startMedia(url: string) {
 }
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+/** The first packet of `stream` in the file open in `media`, which stops demuxing after it. */
+export async function firstPacket(media: ReturnType<typeof startMedia>, stream: number) {
+  const ring = createRing(1 << 22);
+  const consumer = createConsumer(ring);
+  const demuxed = media.request({ type: "demux", ring, streams: [stream] });
+
+  for (;;) {
+    const packet = consumer.peek();
+
+    if (!packet) {
+      await consumer.wait();
+      continue;
+    }
+
+    if (packet.stream !== stream) throw new Error(`no packet of stream ${stream}`);
+    const data = packet.data.slice();
+    consumer.close();
+    await demuxed;
+    return data;
+  }
+}
+
+// The keyframe `packet` of a stream with parameters `p` as a stream without a configuration
+// record carries it: for H.264 and HEVC in Annex B, each NAL unit after a start code instead
+// of its length, behind the record's parameter sets. avcC: 4 bytes, the length size, the SPS
+// count, each SPS with its size, the PPS count, each PPS with its size. hvcC: 21 bytes, the
+// length size, then arrays of NAL units. AV1, VP8 and VP9 packets are already the same.
+function inBand(p: VideoParams, packet: Uint8Array) {
+  const d = p.extradata;
+  const units: Uint8Array[] = [];
+  const u16 = (at: number) => ((d[at] ?? 0) << 8) | (d[at + 1] ?? 0);
+  let lengthSize = 0;
+
+  if (p.codec === "h264" && d[0] === 1) {
+    lengthSize = ((d[4] ?? 0) & 3) + 1;
+    let at = 5;
+
+    for (const mask of [31, 255]) {
+      const count = (d[at++] ?? 0) & mask;
+
+      for (let i = 0; i < count; i++) {
+        units.push(d.subarray(at + 2, at + 2 + u16(at)));
+        at += 2 + u16(at);
+      }
+    }
+  } else if (p.codec === "hevc" && d.length >= 23) {
+    lengthSize = ((d[21] ?? 0) & 3) + 1;
+    let at = 23;
+
+    for (let a = 0; a < (d[22] ?? 0); a++) {
+      const count = u16(at + 1);
+      at += 3;
+
+      for (let i = 0; i < count; i++) {
+        units.push(d.subarray(at + 2, at + 2 + u16(at)));
+        at += 2 + u16(at);
+      }
+    }
+  }
+
+  if (!lengthSize) return packet;
+
+  for (let at = 0; at + lengthSize <= packet.length;) {
+    let size = 0;
+    for (let i = 0; i < lengthSize; i++) size = size * 256 + (packet[at + i] ?? 0);
+    units.push(packet.subarray(at + lengthSize, at + lengthSize + size));
+    at += lengthSize + size;
+  }
+
+  const out: number[] = [];
+  for (const unit of units) out.push(0, 0, 0, 1, ...unit);
+  return new Uint8Array(out);
+}
+
+// The frame number (test/support/frame-id.ts) of the frame a decoder configured with
+// `config` decodes from `keyframe`.
+async function decodeFrameId(config: VideoDecoderConfig, keyframe: Uint8Array) {
+  const decoded = Promise.withResolvers<VideoFrame>();
+  const decoder = new VideoDecoder({ output: decoded.resolve, error: decoded.reject });
+  decoder.configure(config);
+  decoder.decode(new EncodedVideoChunk({ type: "key", timestamp: 0, data: keyframe }));
+  const flushed = decoder.flush();
+  const frame = await decoded.promise;
+  await flushed;
+  decoder.close();
+  const canvas = new OffscreenCanvas(frame.displayWidth, frame.displayHeight);
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("no 2D context");
+  context.drawImage(frame, 0, 0);
+  frame.close();
+  const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+  return readFrameId(data, canvas.width * 4, 4);
+}
+
+/**
+ * The decoder config of a stream with parameters `p` and first packet `keyframe`, whether
+ * the browser's VideoDecoder takes it, and if it does, the frame number of the frame it
+ * decodes; and the same for the stream as it would be without a configuration record, its
+ * parameter sets in band.
+ */
+export async function checkVideoConfig(p: VideoParams, keyframe: Uint8Array) {
+  const config = videoConfig(p, keyframe);
+  const inBandKeyframe = inBand(p, keyframe);
+  const inBandConfig = videoConfig({ ...p, extradata: new Uint8Array() }, inBandKeyframe);
+  const { supported = false } = await VideoDecoder.isConfigSupported(config);
+  const result = { codec: config.codec, inBandCodec: inBandConfig.codec, supported };
+  if (!supported) return { ...result, id: undefined, inBandId: undefined };
+  const id = await decodeFrameId(config, keyframe);
+  const inBandId = await decodeFrameId(inBandConfig, inBandKeyframe);
+  return { ...result, id, inBandId };
+}
