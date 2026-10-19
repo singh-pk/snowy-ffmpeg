@@ -6,6 +6,10 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 
 ## [Unreleased]
 
+### Added
+
+- `sny_resample`, with `sny_resampler_alloc`, `sny_resampler_flush` and `sny_resampler_free`: resamples and mixes decoded audio for an `AudioContext`, to 32-bit float with the channels interleaved, at any rate, as mono, stereo, quad or 5.1 in the Web Audio API's channel order. Output matches native `ffmpeg -ar -ac` within 10⁻⁶, honouring the stream's downmix levels.
+
 ## [0.1.2] - 2026-10-19
 
 ### Fixed

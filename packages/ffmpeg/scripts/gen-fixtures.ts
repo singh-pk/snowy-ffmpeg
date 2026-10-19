@@ -82,6 +82,8 @@ const fixtures: Record<string, string[]> = {
   "audio.eac3": [...A, "-c:a", "eac3"],
   "audio.mp2": [...A, "-c:a", "mp2"],
   "eac3-51.mka": [...SURROUND, "-c:a", "eac3"],
+  // Asks for a Dolby Surround compatible (Lt/Rt) downmix.
+  "ac3-ltrt.ac3": [...SURROUND, "-c:a", "ac3", "-dmix_mode", "ltrt"],
   "truehd-51.thd": [...SURROUND, "-c:a", "truehd", "-strict", "-2"],
   "dts-51.dts": [...SURROUND, "-c:a", "dca", "-strict", "-2"],
   "flac-24.flac": [...STEREO, "-c:a", "flac", "-sample_fmt", "s32"],
@@ -117,6 +119,20 @@ await $`ffmpeg -hide_banner -loglevel error ${AV} -i ${dir}subs.srt -map 0 -map 
 
 // Every 127th decoded value: enough to catch a shifted, dropped or swapped frame or channel.
 const PROBE_STRIDE = 127;
+// Fixtures whose audio is also resampled to stereo at 44.1 kHz, the output of a typical
+// AudioContext: mono, stereo and 5.1 audio, with downmix levels; integer and float; 8, 16 and
+// 48 kHz. Must match
+// RESAMPLE_* in test/demux.worker.js.
+const RESAMPLED = new Set([
+  "pcm.wav",
+  "pcm-24.wav",
+  "eac3-51.mka",
+  "ac3-ltrt.ac3",
+  "h263-aac.3gp",
+  "ra144.rm",
+]);
+const RESAMPLE_RATE = 44_100;
+const RESAMPLE_CHANNELS = 2;
 
 interface Stream {
   codec_type: string;
@@ -161,6 +177,19 @@ async function decodeAudio(file: string, index: number, format: string) {
     sha256: new Bun.CryptoHasher("sha256").update(pcm).digest("hex"),
     exact,
     ...(exact ? {} : { probe: Buffer.from(probe.buffer).toString("base64") }),
+  };
+}
+
+// Stream `index` resampled by native FFmpeg as `ffmpeg -ar -ac` does: its length in samples
+// per channel and every PROBE_STRIDE-th value. Never exact: native builds fuse multiply-adds.
+async function resampleAudio(file: string, index: number) {
+  const pcm =
+    await $`ffmpeg -v error -cpuflags 0 -i ${file} -map 0:${index} -ar ${RESAMPLE_RATE} -ac ${RESAMPLE_CHANNELS} -c:a pcm_f32le -f f32le -`.arrayBuffer();
+  const samples = new Float32Array(pcm);
+  const probe = samples.filter((_, i) => i % PROBE_STRIDE === 0);
+  return {
+    samples: samples.length / RESAMPLE_CHANNELS,
+    probe: Buffer.from(probe.buffer).toString("base64"),
   };
 }
 
@@ -239,7 +268,13 @@ for (const name of names) {
 
     if (s.codec_type === "audio") {
       const audio = await decodeAudio(file, i, s.sample_fmt ?? "");
-      streams.push({ ...stream, audio });
+
+      if (RESAMPLED.has(name)) {
+        const resampled = await resampleAudio(file, i);
+        streams.push({ ...stream, audio: { ...audio, resampled } });
+      } else {
+        streams.push({ ...stream, audio });
+      }
     } else if (s.codec_type === "video") {
       const video = await decodeVideo(file, name, i, s.codec_name);
       streams.push({ ...stream, video });
