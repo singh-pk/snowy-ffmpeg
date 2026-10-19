@@ -109,7 +109,7 @@ function play({ id, ring, params, pcm }: Extract<ToRender, { type: "play" }>) {
   if (!state.compositor) throw new Error("play before init");
   const output = createVideoOutput(ring, params, state.compositor);
   const clock = createPcmControl(pcm);
-  const playing = { output, frame: 0 };
+  const playing = { output, frame: 0, decoded: false };
   const timing = { last: 0, next: 0, gaps: new Float64Array(GAPS).fill(REFRESH) };
 
   // Reports the first failure of this play, unless it has stopped.
@@ -136,6 +136,11 @@ function play({ id, ring, params, pcm }: Extract<ToRender, { type: "play" }>) {
     try {
       const seen = clock.heard(performance.timeOrigin + time + refresh);
       output.present(Math.round(seen * 1e6));
+
+      if (!playing.decoded && (output.latest() > -Infinity || output.ended())) {
+        playing.decoded = true;
+        post({ type: "decoded", id });
+      }
     } catch (e) {
       fail(e);
       return;

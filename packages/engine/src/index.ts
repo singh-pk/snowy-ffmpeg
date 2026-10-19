@@ -23,8 +23,10 @@ export interface Engine {
   open(file: File): Promise<MediaInfo>;
   /**
    * Plays the open file's first video and first audio track from where it is, once the
-   * browser allows audio to start (after a user gesture), unless a pause comes first. Rejects
-   * if playing has failed, or with an AbortError if an open stops it while it starts.
+   * browser allows audio to start (after a user gesture), unless a pause comes first: once
+   * the first frame is decoded and audio is buffered, it starts the audio, and resolves once
+   * it is heard. Rejects if playing has failed, or with an AbortError if an open stops it
+   * while it starts.
    */
   play(): Promise<void>;
   /** Pauses; `play` goes on from here. Rejects if playing has failed. */
@@ -40,8 +42,23 @@ export interface Engine {
 const pcmFrames = (rate: number) => 2 ** Math.ceil(Math.log2(rate));
 // The packet ring of a file without video, which only ever carries the END record.
 const NO_VIDEO_RING = 64;
+// The audio buffered before it starts, in seconds, so a slow start does not underrun.
+const PREROLL = 0.25;
+// The output timestamp has settled once this many in a row, each newer than the last, map
+// context time to performance time within SETTLED_MS of the one before. The first ones
+// after output starts are estimates: Chromium's move by 35 ms, Firefox's by 10 ms.
+const SETTLED_COUNT = 2;
+const SETTLED_MS = 2;
+// Animation frames published with a settled timestamp before play resolves, so the render
+// worker, a frame behind at most, has drawn the frame on screen by it.
+const DRAWN_AFTER = 2;
 // What the PCM ring mixes to; the context's destination takes stereo everywhere.
 const CHANNELS = 2;
+
+// Resolves on the first animation frame on which `done` returns true.
+async function until(done: () => boolean) {
+  while (!done()) await new Promise((resolve) => requestAnimationFrame(resolve));
+}
 
 // A worker that fails to load fires a plain Event, without a message.
 const loadError = (e: Event, worker: string) =>
@@ -125,6 +142,15 @@ export async function createEngine({ canvas }: EngineOptions): Promise<Engine> {
   return createPlayer(render, media);
 }
 
+// What plays: play `id`, its clock, whether it may start and is heard, and stopping it.
+interface Playback {
+  id: number;
+  clock: ReturnType<typeof createPcmControl>;
+  primed(): boolean;
+  heard(): boolean;
+  stop(): void;
+}
+
 // The engine on a render worker that is ready and a media worker.
 function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): Engine {
   const state = {
@@ -132,7 +158,7 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     // Made on the first play, and kept: a page may only start so many.
     context: undefined as AudioContext | undefined,
     // Set at once, so a second play while the first starts joins it.
-    playback: undefined as ReturnType<typeof startPlayback> | undefined,
+    playback: undefined as Promise<Playback> | undefined,
     // The clock of what plays, once it has started.
     clock: undefined as ReturnType<typeof createPcmControl> | undefined,
     // Why playing stopped, until the next open.
@@ -142,10 +168,13 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     next: 0,
     // Whether the last call was play, not pause.
     playing: false,
+    // The last play whose first frame the render worker has decoded.
+    decoded: -1,
     closed: false,
   };
 
   render.addEventListener("message", ({ data }: MessageEvent<FromRender>) => {
+    if (data.type === "decoded") state.decoded = data.id;
     if (data.type === "error" && data.id === state.current) fail(new Error(data.message));
   });
   // An uncaught error in the render worker.
@@ -157,7 +186,7 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
   }
 
   // Starts the open file playing into `context` from its start, as play `id`.
-  async function startPlayback(context: AudioContext, id: number) {
+  async function startPlayback(context: AudioContext, id: number): Promise<Playback> {
     const opened = state.opened;
     if (!opened) throw new Error("play: no file is open");
     const audio = opened.info.tracks.find((t) => t.kind === "audio");
@@ -182,22 +211,35 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     const streams = video && params ? [video.id] : [];
     const demuxed = media.send({ type: "demux", ring, streams, audio: { stream: audio.id, pcm } });
     const frame = { id: 0 };
+    // The last output timestamp, as context minus performance milliseconds, and when.
+    const output = { offset: Number.NaN, at: 0, agreed: 0, settled: false, frames: 0 };
+    const demux = { done: false };
 
     // The output timestamp, for the render worker (src/pcm.ts), on every animation frame.
-    // Until output starts it is zero, which is no time heard yet, so it is not running.
+    // It runs once it has settled, and stays so until the context stops: Firefox's then
+    // wanders by a few milliseconds, which is no reason to stop the clock.
     function publish() {
       const { contextTime = 0, performanceTime = 0 } = context.getOutputTimestamp();
-      clock.publishOutput(
-        contextTime,
-        performance.timeOrigin + performanceTime,
-        context.state === "running" && performanceTime > 0,
-      );
+      const offset = contextTime * 1000 - performanceTime;
+
+      if (performanceTime > output.at) {
+        const agrees = Math.abs(offset - output.offset) < SETTLED_MS;
+        output.agreed = agrees ? output.agreed + 1 : 0;
+        output.offset = offset;
+        output.at = performanceTime;
+      }
+
+      const running = context.state === "running";
+      output.settled = running && (output.settled || output.agreed >= SETTLED_COUNT);
+      output.frames = output.settled ? output.frames + 1 : 0;
+      clock.publishOutput(contextTime, performance.timeOrigin + performanceTime, output.settled);
       frame.id = requestAnimationFrame(publish);
     }
 
     async function watch() {
       try {
         await demuxed;
+        demux.done = true;
       } catch (e) {
         if (state.current === id) fail(e instanceof Error ? e : new Error(String(e)));
       }
@@ -212,12 +254,18 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
       node.disconnect();
     }
 
+    // Whether it may start: the first frame is ready, and the audio buffered or all demuxed.
+    function primed() {
+      const shown = !params || state.decoded === id;
+      return shown && (clock.buffered() >= PREROLL * context.sampleRate || demux.done);
+    }
+
     publish();
     void watch();
-    return { clock, stop: stopPlayback };
+    return { id, clock, primed, heard: () => output.frames > DRAWN_AFTER, stop: stopPlayback };
   }
 
-  async function stopStarted(playback: ReturnType<typeof startPlayback>) {
+  async function stopStarted(playback: Promise<Playback>) {
     try {
       const started = await playback;
       started.stop();
@@ -254,18 +302,26 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     }
 
     const playback = state.playback;
+    const started = await startedOrCleared(playback);
+    // Unless an open stopped it while it started.
+    if (state.playback === playback) state.clock = started.clock;
+    const stopped = () => state.current !== started.id;
+    await until(() => stopped() || started.primed());
+    if (stopped()) throw state.failure ?? new DOMException("play: stopped", "AbortError");
+    // Unless a pause came while it started.
+    if (!state.playing) return;
+    await context.resume();
+    await until(() => stopped() || !state.playing || started.heard());
+  }
 
+  // `playback` once it has started; if it fails to, it is no longer what plays.
+  async function startedOrCleared(playback: Promise<Playback>) {
     try {
-      const started = await playback;
-      // Unless an open stopped it while it started.
-      if (state.playback === playback) state.clock = started.clock;
+      return await playback;
     } catch (e) {
       if (state.playback === playback) state.playback = undefined;
       throw e;
     }
-
-    // Unless a pause came while it started.
-    if (state.playing) await context.resume();
   }
 
   async function pause() {
