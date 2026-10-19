@@ -27,7 +27,7 @@
     },
     "packages/ffmpeg": {
       "name": "@snowy-media/ffmpeg",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "devDependencies": {
         "libav.js": "6.10.9",
         "mediabunny": "1.61.6",
