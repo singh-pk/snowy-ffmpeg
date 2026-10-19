@@ -18,6 +18,9 @@
     "packages/engine": {
       "name": "@snowy-media/engine",
       "version": "0.0.0",
+      "dependencies": {
+        "@snowy-media/ffmpeg": "workspace:^",
+      },
       "devDependencies": {
         "playwright": "1.64.1",
       },

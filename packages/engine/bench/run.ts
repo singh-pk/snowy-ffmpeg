@@ -3,14 +3,14 @@
 //
 // Engine benchmarks in Chromium, Firefox and WebKit on a GPU (test/support/browsers.ts). Each
 // run is a fresh browser; every number is the median of --runs runs, in milliseconds. Prints a
-// Markdown table and, with --out, writes the JSON. Build first (bun run build).
+// Markdown table and, with --out, writes the JSON.
 //
 // Usage: bun run bench [--browsers chromium,firefox,webkit] [--runs 5] [--out bench/results/name.json]
 
 import { parseArgs } from "node:util";
 import type { Page } from "playwright";
-import { serve } from "../../../tooling/test-server";
 import { browsers } from "../test/support/browsers";
+import { ENTRY, serveEngine } from "../test/support/serve";
 
 const { values: args } = parseArgs({
   options: {
@@ -22,7 +22,7 @@ const { values: args } = parseArgs({
 
 type Timings = Record<string, number>;
 
-// name -> what it measures, run in a fresh page with the engine at /dist/index.js.
+// name -> what it measures, run in a fresh page with the engine at ENTRY.
 const benchmarks: Record<string, (tab: Page) => Promise<Timings>> = {
   // createEngine until it resolves: the platform check, the render worker and a GPU device.
   // Cold is the first engine in the page, warm a second one once the worker script is cached.
@@ -41,7 +41,35 @@ const benchmarks: Record<string, (tab: Page) => Promise<Timings>> = {
       const cold = await time();
       const warm = await time();
       return { cold, warm };
-    }, "/dist/index.js"),
+    }, ENTRY),
+  // engine.open until it resolves, for files already in memory. First is the first file in a
+  // new engine, including whatever is left of loading the FFmpeg core; long is a ten-minute MP4
+  // after it.
+  open: (tab) =>
+    tab.evaluate(async (entry) => {
+      const engine: typeof import("../src/index") = await import(entry);
+      const started = await engine.createEngine({ canvas: document.createElement("canvas") });
+
+      const dir = "/test/fixtures/";
+
+      async function load(name: string) {
+        const res = await fetch(dir + name);
+        const blob = await res.blob();
+        return new File([blob], name);
+      }
+
+      async function time(file: File) {
+        const start = performance.now();
+        await started.open(file);
+        return performance.now() - start;
+      }
+
+      const [short, long] = await Promise.all([load("h264-aac.mp4"), load("sync-10min.mp4")]);
+      const first = await time(short);
+      const tenMinutes = await time(long);
+      started.close();
+      return { first, long: tenMinutes };
+    }, ENTRY),
 };
 
 const runs = Number(args.runs);
@@ -53,7 +81,7 @@ function median(xs: number[]) {
   return sorted.length % 2 ? (sorted[mid] ?? 0) : ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2;
 }
 
-const server = serve(new URL("../", import.meta.url), "<!doctype html><title>bench</title>");
+const server = await serveEngine("<!doctype html><title>bench</title>");
 const results: Record<string, Record<string, Timings>> = {};
 
 for (const name of args.browsers.split(",")) {

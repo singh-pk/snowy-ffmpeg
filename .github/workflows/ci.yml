@@ -66,23 +66,28 @@ jobs:
       # A file counts for a package if it is in the package or outside packages/ (lockfile,
       # shared configuration, workflows). Markdown never changes a build. On a pull request
       # HEAD is the merge commit, so HEAD^1 is the base it merges into; --no-renames also
-      # lists the old path of a file moved out of a package.
+      # lists the old path of a file moved out of a package. The engine runs on ffmpeg, so it
+      # is tested when either changes.
       - id: diff
         run: |
           files=$(git diff --name-only --no-renames HEAD^1 HEAD)
-          for package in engine ffmpeg; do
-            if [ "$GITHUB_EVENT_NAME" = push ] || printf '%s\n' "$files" \
-              | awk -v dir="packages/$package/" '!/\.md$/ && (!/^packages\// || index($0, dir) == 1) { found = 1 } END { exit !found }'; then
-              echo "$package=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "$package=false" >> "$GITHUB_OUTPUT"
-            fi
-          done
+          changed() {
+            [ "$GITHUB_EVENT_NAME" = push ] || printf '%s\n' "$files" \
+              | awk -v dir="packages/$1/" '!/\.md$/ && (!/^packages\// || index($0, dir) == 1) { found = 1 } END { exit !found }'
+          }
+          ffmpeg=false
+          engine=false
+          if changed ffmpeg; then ffmpeg=true; engine=true; fi
+          if changed engine; then engine=true; fi
+          echo "ffmpeg=$ffmpeg" >> "$GITHUB_OUTPUT"
+          echo "engine=$engine" >> "$GITHUB_OUTPUT"
 
+  # Also builds the modules the engine job tests against; ffmpeg's own tests run only when
+  # it changed.
   build:
     name: ffmpeg build and test
     needs: changes
-    if: needs.changes.outputs.ffmpeg == 'true'
+    if: needs.changes.outputs.engine == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -107,12 +112,20 @@ jobs:
           no-cache: true
       - run: bun install --frozen-lockfile
       - run: bun scripts/gen-dts.ts
-      - run: bunx playwright install --with-deps chromium firefox webkit
-      - run: bun test
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ffmpeg-dist
+          path: packages/ffmpeg/dist
+          if-no-files-found: error
+          retention-days: 1
+      - if: needs.changes.outputs.ffmpeg == 'true'
+        run: bunx playwright install --with-deps chromium firefox webkit
+      - if: needs.changes.outputs.ffmpeg == 'true'
+        run: bun test
 
   engine:
     name: engine test
-    needs: changes
+    needs: [changes, build]
     if: needs.changes.outputs.engine == 'true'
     # Only macOS 26 runners have WebGPU with a GPU in Chromium, Firefox and WebKit
     # (packages/engine/docs/architecture.md#testing).
@@ -129,6 +142,13 @@ jobs:
           bun-version-file: package.json
           no-cache: true
       - run: bun install --frozen-lockfile
+      # macOS runners have no Docker, so the modules come from the build job.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ffmpeg-dist
+          path: packages/ffmpeg/dist
+      # The published bundle; the tests build their own (test/support/serve.ts).
+      - run: bun run build
       - run: bunx playwright install chromium firefox webkit
       - run: bun run test
       # For reading only: shared runners are too noisy to fail on (packages/engine/bench).

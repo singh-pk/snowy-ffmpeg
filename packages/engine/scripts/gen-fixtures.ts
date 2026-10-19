@@ -113,6 +113,7 @@ interface Stream {
   width?: number;
   height?: number;
   sample_rate?: string;
+  channels?: number;
 }
 
 // The presentation timestamps of video stream `index`, and the frame number on each frame.
@@ -175,6 +176,7 @@ for (const [name, { seconds, args, source }] of Object.entries(fixtures)) {
     format: probe.format.format_name,
     duration: Number(probe.format.duration),
     video: {
+      id: v.index,
       codec: v.codec_name,
       timeBase: v.time_base,
       width: v.width,
@@ -183,7 +185,13 @@ for (const [name, { seconds, args, source }] of Object.entries(fixtures)) {
       pts,
       keyframes: keyframes.map((p) => p.pts),
     },
-    audio: { codec: a.codec_name, sampleRate: Number(a.sample_rate), clicks: onsets.length },
+    audio: {
+      id: a.index,
+      codec: a.codec_name,
+      sampleRate: Number(a.sample_rate),
+      channels: a.channels,
+      clicks: onsets.length,
+    },
   };
   console.log(name, `${pts.length} frames`, `${onsets.length} clicks`);
 }

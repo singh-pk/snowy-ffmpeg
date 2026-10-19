@@ -9,11 +9,11 @@ This package is the playback pipeline of Snowy, without any user interface: it r
 | Task | Command |
 | --- | --- |
 | Bundle `src/` into `dist/` | `bun run build` |
-| Build, then the browser tests (Chromium, Firefox, WebKit) | `bun run test` |
-| Benchmarks, after a build | `bun run bench --runs 5` |
+| Browser tests (Chromium, Firefox, WebKit) | `bun run test` |
+| Benchmarks | `bun run bench --runs 5` |
 | Regenerate the fixtures (needs native FFmpeg 9.0.2) | `bun run fixtures` |
 
-The tests need WebGPU with a GPU, so they run on macOS (as CI does) or Windows. On Linux only Chromium has it. Firefox runs with a window, because it has no WebGPU when headless.
+The tests and benchmarks build what they run, and need `@snowy-media/ffmpeg` built first (`bun run build` in `packages/ffmpeg`; CI takes it from the ffmpeg build job). They need WebGPU with a GPU, so they run on macOS (as CI does) or Windows. On Linux only Chromium has it. Firefox runs with a window, because it has no WebGPU when headless.
 
 ## Map
 
@@ -21,11 +21,13 @@ The tests need WebGPU with a GPU, so they run on macOS (as CI does) or Windows. 
 | --- | --- |
 | `src/index.ts` | the public API |
 | `src/platform.ts` | the platform check on the main thread, and `UnsupportedPlatformError` |
+| `src/media.worker.ts` | the media worker: reads and demuxes the file with the FFmpeg core |
+| `src/io.ts` | the media worker's synchronous reads from a `File` |
 | `src/render.worker.ts` | the render worker: WebGPU and WebCodecs |
 | `src/protocol.ts` | the messages between threads |
-| `scripts/build.ts` | bundles each thread's entry point into `dist/` |
+| `scripts/build.ts` | bundles each thread's entry point into `dist/`, or for the tests into `test/dist/` |
 | `scripts/gen-fixtures.ts` | builds `test/fixtures` and `expected.json` from native FFmpeg |
-| `test/` | Playwright tests; `test/support/` is shared with `bench/` |
+| `test/` | Playwright tests; `test/support/` is shared with `bench/`, and `serve.ts` builds and serves the engine for both |
 | `bench/` | benchmarks ([README](bench/README.md)) |
 | `docs/architecture.md` | design and the reasons behind it |
 

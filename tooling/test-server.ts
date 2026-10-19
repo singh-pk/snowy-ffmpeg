@@ -10,8 +10,14 @@ const ISOLATION = {
   "Cross-Origin-Embedder-Policy": "require-corp",
 };
 
-// `page` is the HTML served at "/"; every other path is a file under `root`.
-export function serve(root: URL, page: string, { isolated = true } = {}) {
+interface Options {
+  isolated?: boolean;
+  /** URL path prefix -> directory served under it, such as another package's build. */
+  mounts?: Record<string, URL>;
+}
+
+// `page` is the HTML served at "/"; every other path is a file under `root`, or under a mount.
+export function serve(root: URL, page: string, { isolated = true, mounts = {} }: Options = {}) {
   const headers = isolated ? ISOLATION : {};
 
   return Bun.serve({
@@ -23,7 +29,8 @@ export function serve(root: URL, page: string, { isolated = true } = {}) {
         return new Response(page, { headers: { ...headers, "Content-Type": "text/html" } });
       }
 
-      const file = Bun.file(root.pathname + path.slice(1));
+      const [prefix, dir] = Object.entries(mounts).find(([p]) => path.startsWith(p)) ?? ["/", root];
+      const file = Bun.file(dir.pathname + path.slice(prefix.length));
       const exists = await file.exists();
       return exists ? new Response(file, { headers }) : new Response("not found", { status: 404 });
     },

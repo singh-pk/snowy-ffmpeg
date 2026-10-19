@@ -6,7 +6,7 @@
 The playback pipeline of [Snowy](https://github.com/singh-pk/snowy-media): it reads a local file, demuxes and decodes it with [`@snowy-media/ffmpeg`](../ffmpeg) and WebCodecs, keeps audio and video in sync, and draws into a canvas with WebGPU, all in workers. It has no user interface; the Snowy player and editor build on it.
 
 > [!NOTE]
-> In development and not yet published. So far it checks that the browser can run it.
+> In development and not yet published. So far it checks that the browser can run it and reads what a file holds.
 
 ## Requirements
 
@@ -17,6 +17,7 @@ import { createEngine, UnsupportedPlatformError } from "@snowy-media/engine";
 
 try {
   const engine = await createEngine({ canvas: document.querySelector("canvas")! });
+  const { format, duration, tracks } = await engine.open(file);
 } catch (e) {
   if (e instanceof UnsupportedPlatformError) console.log(`This browser lacks ${e.feature}`);
 }
