@@ -23,11 +23,13 @@ API int sny_frame_color_range(const AVFrame *frame) { return frame->color_range;
 API int sny_frame_color_primaries(const AVFrame *frame) { return frame->color_primaries; }
 API int sny_frame_color_trc(const AVFrame *frame) { return frame->color_trc; }
 API int sny_frame_color_space(const AVFrame *frame) { return frame->colorspace; }
+API int sny_frame_chroma_location(const AVFrame *frame) { return frame->chroma_location; }
 // Degrees to rotate the frame counterclockwise for display (its display matrix, from the
-// container or the bitstream), or 0.
+// container or the bitstream), truncated as ffprobe reports it, or 0.
 API int sny_frame_rotation(const AVFrame *frame) {
   const AVFrameSideData *sd = av_frame_get_side_data(frame, AV_FRAME_DATA_DISPLAYMATRIX);
-  return sd ? (int)lrint(av_display_rotation_get((const int32_t *)sd->data)) : 0;
+  double r = sd ? av_display_rotation_get((const int32_t *)sd->data) : 0;
+  return isnan(r) ? 0 : (int)r;
 }
 // FFmpeg's name for the frame's pixel format ("yuv420p", "pal8", …).
 API const char *sny_frame_pix_fmt(const AVFrame *frame) {

@@ -11,6 +11,7 @@
           "240",
           "480"
         ],
+        "disposition": [],
         "audio": {
           "frames": 34,
           "samples": 8160,
@@ -37,6 +38,21 @@
           "10",
           "20"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -47,6 +63,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "bgra",
+          "depth": 8,
+          "chroma": [
+            0,
+            0
+          ],
+          "color": {
+            "range": "unknown",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "unspecified"
+          },
           "rotation": 0,
           "sha256": "cd24091e8575a54cdea78a7ccdabdae25d03b2897fcc9d75514d0637ab165737"
         }
@@ -65,6 +93,21 @@
           "8192",
           "16384"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -75,6 +118,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "bgr0",
+          "depth": 8,
+          "chroma": [
+            0,
+            0
+          ],
+          "color": {
+            "range": "unknown",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "unspecified"
+          },
           "rotation": 0,
           "sha256": "1fb6e8a9b83eada12527e56c8250f0ff4cb0d69e6df617604921d329e86f0c78"
         }
@@ -91,7 +146,8 @@
         "firstPts": [
           "0",
           "500"
-        ]
+        ],
+        "disposition": []
       }
     ]
   },
@@ -107,6 +163,7 @@
           "4096",
           "8192"
         ],
+        "disposition": [],
         "audio": {
           "frames": 12,
           "samples": 48000,
@@ -137,6 +194,23 @@
           "1024",
           "2048"
         ],
+        "disposition": [
+          "default"
+        ],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -147,6 +221,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuv422p10le",
+          "depth": 10,
+          "chroma": [
+            1,
+            0
+          ],
+          "color": {
+            "range": "tv",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "unspecified"
+          },
           "rotation": 0,
           "sha256": "36cb248c56be303cefb6c73412cbff926d7fbb2d5a1d9d471a4eebd8ab6afb8b",
           "converted": {
@@ -163,6 +249,9 @@
           "0",
           "1024",
           "2048"
+        ],
+        "disposition": [
+          "default"
         ],
         "audio": {
           "frames": 47,
@@ -190,6 +279,21 @@
           "10000",
           "20000"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -200,6 +304,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "rgb24",
+          "depth": 8,
+          "chroma": [
+            0,
+            0
+          ],
+          "color": {
+            "range": "pc",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "gbr",
+            "chromaLocation": "unspecified"
+          },
           "rotation": 0,
           "sha256": "52c2762a622e0104266e7265c3be40f2db048acd119833673faa7091571f35bb",
           "converted": {
@@ -222,6 +338,21 @@
           "100",
           "200"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -232,6 +363,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuv420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "tv",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "bt470bg",
+            "chromaLocation": "unspecified"
+          },
           "rotation": 0,
           "sha256": "3c0f660f8b473bfc4464cec7349cb92114c6a9307098f178f7bd5ee075dfa20f"
         }
@@ -250,6 +393,7 @@
           "2880",
           "5760"
         ],
+        "disposition": [],
         "audio": {
           "frames": 32,
           "samples": 49152,
@@ -277,6 +421,21 @@
           "300",
           "100"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -287,6 +446,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuv420p10le",
+          "depth": 10,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "tv",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "left"
+          },
           "rotation": 0,
           "sha256": "aef56e94f19f613af1ea35d930bad84bb5c07853ee68e492cdf6dbc6052cb379",
           "converted": {
@@ -309,6 +480,21 @@
           "300",
           "100"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -319,6 +505,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuv420p10le",
+          "depth": 10,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "pc",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "left"
+          },
           "rotation": 0,
           "sha256": "c9c043c000c151bb4323493a9002db88b1e24d8d1d51e269d7ef323501ebeccb",
           "converted": {
@@ -341,6 +539,21 @@
           "171000",
           "153000"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -351,6 +564,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuv420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "unknown",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "left"
+          },
           "rotation": 0,
           "sha256": "683114efc791fa1370b09ad35cb0a47de7862e86d742e8d27edfbaa6a991c8ee"
         }
@@ -364,6 +589,7 @@
           "146400",
           "149280"
         ],
+        "disposition": [],
         "audio": {
           "frames": 32,
           "samples": 49152,
@@ -391,6 +617,21 @@
           "1",
           "2"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -401,6 +642,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuv420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "unknown",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "center"
+          },
           "rotation": 0,
           "sha256": "c16590f5d428dd38e29ba8d38b76b22fd8b5266fb8f1a40772e58482ab6ce54b"
         }
@@ -419,6 +672,21 @@
           "63000",
           "72000"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -429,6 +697,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuv420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "tv",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "left"
+          },
           "rotation": 0,
           "sha256": "d249309dfd5ab6f1c903afa34322c89550aeb68acf42fee09afe8437cc0c0678"
         }
@@ -442,6 +722,7 @@
           "55258",
           "57418"
         ],
+        "disposition": [],
         "audio": {
           "frames": 42,
           "samples": 48384,
@@ -468,6 +749,7 @@
           "2048",
           "4096"
         ],
+        "disposition": [],
         "audio": {
           "frames": 24,
           "samples": 48000,
@@ -494,6 +776,21 @@
           "300",
           "100"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -504,6 +801,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuv420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "tv",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "left"
+          },
           "rotation": 0,
           "sha256": "683114efc791fa1370b09ad35cb0a47de7862e86d742e8d27edfbaa6a991c8ee"
         }
@@ -517,6 +826,7 @@
           "0",
           "21"
         ],
+        "disposition": [],
         "audio": {
           "frames": 47,
           "samples": 48128,
@@ -542,6 +852,7 @@
         "firstPts": [
           "0"
         ],
+        "disposition": [],
         "audio": {
           "frames": 1,
           "samples": 24000,
@@ -566,6 +877,23 @@
           "1024",
           "2048"
         ],
+        "disposition": [
+          "default"
+        ],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -576,6 +904,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuva444p12le",
+          "depth": 12,
+          "chroma": [
+            0,
+            0
+          ],
+          "color": {
+            "range": "tv",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "unspecified"
+          },
           "rotation": 0,
           "sha256": "83952ad750dd494cd9107427432efd44fa498085e913aee07aaee8c1a7a6b432",
           "converted": {
@@ -596,7 +936,8 @@
         "firstPts": [
           "0",
           "500"
-        ]
+        ],
+        "disposition": []
       }
     ]
   },
@@ -612,6 +953,7 @@
           "0",
           "1024"
         ],
+        "disposition": [],
         "audio": {
           "frames": 47,
           "samples": 48000,
@@ -639,6 +981,7 @@
           "338688",
           "677376"
         ],
+        "disposition": [],
         "audio": {
           "frames": 43,
           "samples": 48000,
@@ -666,6 +1009,23 @@
           "1024",
           "2048"
         ],
+        "disposition": [
+          "default"
+        ],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -676,6 +1036,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuv420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "unknown",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "center"
+          },
           "rotation": 0,
           "sha256": "b7ec21780cb77f6a2ea4826d88bb241373babaa017ee62da91b6096be116916c"
         }
@@ -688,6 +1060,9 @@
           "-1024",
           "0",
           "1024"
+        ],
+        "disposition": [
+          "default"
         ],
         "audio": {
           "frames": 16,
@@ -720,6 +1095,7 @@
           "602112",
           "1204224"
         ],
+        "disposition": [],
         "audio": {
           "frames": 48,
           "samples": 49152,
@@ -747,6 +1123,7 @@
           "27",
           "59"
         ],
+        "disposition": [],
         "audio": {
           "frames": 16,
           "samples": 24000,
@@ -778,6 +1155,7 @@
           "338688",
           "677376"
         ],
+        "disposition": [],
         "audio": {
           "frames": 42,
           "samples": 48384,
@@ -805,6 +1183,21 @@
           null,
           null
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -815,6 +1208,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuv420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "tv",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "left"
+          },
           "rotation": 0,
           "sha256": "4d252bb762a7cdd0c663d26a670efa05734a521efcceee79070100ba504229eb"
         }
@@ -833,6 +1238,21 @@
           "300",
           "100"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -843,6 +1263,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuv420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "tv",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "left"
+          },
           "rotation": 0,
           "sha256": "683114efc791fa1370b09ad35cb0a47de7862e86d742e8d27edfbaa6a991c8ee"
         }
@@ -856,6 +1288,7 @@
           "0",
           "21"
         ],
+        "disposition": [],
         "audio": {
           "frames": 47,
           "samples": 48128,
@@ -876,7 +1309,8 @@
         "firstPts": [
           "0",
           "500"
-        ]
+        ],
+        "disposition": []
       }
     ]
   },
@@ -892,6 +1326,21 @@
           "100",
           "200"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -902,6 +1351,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuv420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "tv",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "unspecified"
+          },
           "rotation": 0,
           "sha256": "7e8e4ca0f70adabc5a8203e1038f59e4435cce45a27e5675ecd898dc6a7d5af2"
         }
@@ -915,6 +1376,7 @@
           "14",
           "34"
         ],
+        "disposition": [],
         "audio": {
           "frames": 51,
           "samples": 48000,
@@ -942,6 +1404,7 @@
           "4096",
           "8192"
         ],
+        "disposition": [],
         "audio": {
           "frames": 12,
           "samples": 48000,
@@ -968,6 +1431,7 @@
           "4096",
           "8192"
         ],
+        "disposition": [],
         "audio": {
           "frames": 12,
           "samples": 46848,
@@ -994,6 +1458,7 @@
           "2880",
           "5760"
         ],
+        "disposition": [],
         "audio": {
           "frames": 32,
           "samples": 49152,
@@ -1021,6 +1486,21 @@
           "48000",
           "96000"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -1031,6 +1511,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuv420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "tv",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "unspecified"
+          },
           "rotation": 0,
           "sha256": "ba48a4b3a450cbbc22eef415b0f66579cf1c41b49fa454e995fbabfaec885bea"
         }
@@ -1049,6 +1541,21 @@
           "8192",
           "16384"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -1059,6 +1566,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "gray",
+          "depth": 8,
+          "chroma": [
+            0,
+            0
+          ],
+          "color": {
+            "range": "unknown",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "unspecified"
+          },
           "rotation": 0,
           "sha256": "26799741161c509cba5daadfc278fd976f7195afc4c893fb71e844046c034d4f",
           "converted": {
@@ -1081,6 +1600,21 @@
           "1",
           "2"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -1091,6 +1625,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuvj420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "pc",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "bt470bg",
+            "chromaLocation": "center"
+          },
           "rotation": 0,
           "sha256": "b74bad2b9599f2433c5e925960f797eb93c63ee4f7daf9667fc7d2290a4d9424"
         }
@@ -1109,6 +1655,21 @@
           "1",
           "2"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -1119,6 +1680,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuvj422p",
+          "depth": 8,
+          "chroma": [
+            1,
+            0
+          ],
+          "color": {
+            "range": "pc",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "bt470bg",
+            "chromaLocation": "center"
+          },
           "rotation": 0,
           "sha256": "4a39c06ff5c1ce012a6e38b6cf7d0d5068f494f26d600736c8500b2ceaed6a38",
           "converted": {
@@ -1141,6 +1714,21 @@
           "300",
           "100"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -1151,6 +1739,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuv420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "tv",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "left"
+          },
           "rotation": 0,
           "sha256": "683114efc791fa1370b09ad35cb0a47de7862e86d742e8d27edfbaa6a991c8ee"
         }
@@ -1164,6 +1764,7 @@
           "0",
           "21"
         ],
+        "disposition": [],
         "audio": {
           "frames": 47,
           "samples": 48128,
@@ -1191,6 +1792,7 @@
           "4096",
           "8192"
         ],
+        "disposition": [],
         "audio": {
           "frames": 6,
           "samples": 24000,
@@ -1209,6 +1811,63 @@
       }
     ]
   },
+  "flipped.mp4": {
+    "format": "mov,mp4,m4a,3gp,3g2,mj2",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "h264",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "3072",
+          "1024"
+        ],
+        "disposition": [
+          "default"
+        ],
+        "params": {
+          "matrix": [
+            0,
+            -65536,
+            0,
+            -65536,
+            0,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 90
+        },
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "1024",
+            "2048"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "unknown",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "left"
+          },
+          "rotation": 90,
+          "sha256": "683114efc791fa1370b09ad35cb0a47de7862e86d742e8d27edfbaa6a991c8ee"
+        }
+      }
+    ]
+  },
   "subs.ass": {
     "format": "ass",
     "streams": [
@@ -1219,7 +1878,8 @@
         "firstPts": [
           "0",
           "50"
-        ]
+        ],
+        "disposition": []
       }
     ]
   },
@@ -1235,6 +1895,23 @@
           "3072",
           "1024"
         ],
+        "disposition": [
+          "default"
+        ],
+        "params": {
+          "matrix": [
+            0,
+            -65536,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 90
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -1245,6 +1922,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuv420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "unknown",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "left"
+          },
           "rotation": 90,
           "sha256": "683114efc791fa1370b09ad35cb0a47de7862e86d742e8d27edfbaa6a991c8ee"
         }
@@ -1263,6 +1952,21 @@
           "143",
           "243"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -1273,6 +1977,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuv420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "unknown",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "unspecified"
+          },
           "rotation": 0,
           "sha256": "6b67f48e1ed9e7622bc9a7a8271f70523de0da0b4593a65f10f88d17a1259b8a"
         }
@@ -1286,6 +2002,7 @@
           "43",
           "86"
         ],
+        "disposition": [],
         "audio": {
           "frames": 23,
           "samples": 47104,
@@ -1313,6 +2030,7 @@
           "1024",
           "2048"
         ],
+        "disposition": [],
         "audio": {
           "frames": 24,
           "samples": 24000,
@@ -1340,6 +2058,21 @@
           "1",
           "2"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -1350,6 +2083,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuv420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "tv",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "unspecified"
+          },
           "rotation": 0,
           "sha256": "ba48a4b3a450cbbc22eef415b0f66579cf1c41b49fa454e995fbabfaec885bea"
         }
@@ -1368,6 +2113,21 @@
           null,
           null
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -1378,6 +2138,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuv420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "tv",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "left"
+          },
           "rotation": 0,
           "sha256": "d249309dfd5ab6f1c903afa34322c89550aeb68acf42fee09afe8437cc0c0678"
         }
@@ -1396,6 +2168,7 @@
           "960",
           "1920"
         ],
+        "disposition": [],
         "audio": {
           "frames": 47,
           "samples": 24064,
@@ -1423,6 +2196,21 @@
           "8192",
           "16384"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -1433,6 +2221,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "rgba",
+          "depth": 8,
+          "chroma": [
+            0,
+            0
+          ],
+          "color": {
+            "range": "unknown",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "unspecified"
+          },
           "rotation": 0,
           "sha256": "f0ec9fef9a561b8becbd2ace205a08f9859740c8382fe98d5e6b0367f6500deb"
         }
@@ -1451,6 +2251,7 @@
           "1024",
           "2048"
         ],
+        "disposition": [],
         "audio": {
           "frames": 47,
           "samples": 48000,
@@ -1477,6 +2278,21 @@
           "8192",
           "16384"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -1487,6 +2303,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "nv12",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "unknown",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "unspecified"
+          },
           "rotation": 0,
           "sha256": "411bc6cfef4dba93b40e00e7fb125c90618fb4bbd4c3590b11df671b19c013f7"
         }
@@ -1505,6 +2333,7 @@
           "0",
           "0"
         ],
+        "disposition": [],
         "audio": {
           "frames": 51,
           "samples": 8160,
@@ -1523,6 +2352,115 @@
       }
     ]
   },
+  "dispositions.mkv": {
+    "format": "matroska,webm",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "h264",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "300",
+          "100"
+        ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "100",
+            "200"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "tv",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "left"
+          },
+          "rotation": 0,
+          "sha256": "683114efc791fa1370b09ad35cb0a47de7862e86d742e8d27edfbaa6a991c8ee"
+        }
+      },
+      {
+        "type": "audio",
+        "codec": "aac",
+        "packets": 48,
+        "firstPts": [
+          "-21",
+          "0",
+          "21"
+        ],
+        "disposition": [
+          "default",
+          "original"
+        ],
+        "audio": {
+          "frames": 47,
+          "samples": 48128,
+          "firstPts": [
+            "0",
+            "21",
+            "43"
+          ],
+          "sha256": "1359b6957a7b5674a2ef36ffc19b4f2ff9c57c8bde32119cb006fc91a5fe8c4e",
+          "exact": false,
+          "probe": "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"
+        }
+      },
+      {
+        "type": "audio",
+        "codec": "aac",
+        "packets": 48,
+        "firstPts": [
+          "-21",
+          "0",
+          "21"
+        ],
+        "disposition": [
+          "comment",
+          "forced",
+          "hearing_impaired",
+          "visual_impaired"
+        ],
+        "audio": {
+          "frames": 47,
+          "samples": 48128,
+          "firstPts": [
+            "0",
+            "21",
+            "43"
+          ],
+          "sha256": "1359b6957a7b5674a2ef36ffc19b4f2ff9c57c8bde32119cb006fc91a5fe8c4e",
+          "exact": false,
+          "probe": "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"
+        }
+      }
+    ]
+  },
   "alpha.nut": {
     "format": "nut",
     "streams": [
@@ -1535,6 +2473,21 @@
           "8192",
           "16384"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -1545,6 +2498,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuva420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "unknown",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "unspecified"
+          },
           "rotation": 0,
           "sha256": "2a1ee9dae2c23a30b7a2b42e2c11a623ed1a7670bae230a3a420d8037c3feb56"
         }
@@ -1563,6 +2528,7 @@
           "648",
           "1608"
         ],
+        "disposition": [],
         "audio": {
           "frames": 51,
           "samples": 48000,
@@ -1590,6 +2556,21 @@
           null,
           null
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -1600,8 +2581,81 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuv420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "unknown",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "left"
+          },
           "rotation": 0,
           "sha256": "683114efc791fa1370b09ad35cb0a47de7862e86d742e8d27edfbaa6a991c8ee"
+        }
+      }
+    ]
+  },
+  "hlg.mp4": {
+    "format": "mov,mp4,m4a,3gp,3g2,mj2",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "h264",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "3072",
+          "1024"
+        ],
+        "disposition": [
+          "default"
+        ],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "1024",
+            "2048"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p10le",
+          "depth": 10,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "tv",
+            "primaries": "bt2020",
+            "transfer": "arib-std-b67",
+            "space": "bt2020nc",
+            "chromaLocation": "left"
+          },
+          "rotation": 0,
+          "sha256": "aef56e94f19f613af1ea35d930bad84bb5c07853ee68e492cdf6dbc6052cb379",
+          "converted": {
+            "pixFmt": "yuv420p",
+            "sha256": "497ed70305291f8b4338e755568dd70415571292072b31538fd9b4430426e223"
+          }
         }
       }
     ]
@@ -1618,6 +2672,21 @@
           "8192",
           "16384"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -1628,6 +2697,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuv420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "unknown",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "unspecified"
+          },
           "rotation": 0,
           "sha256": "c16590f5d428dd38e29ba8d38b76b22fd8b5266fb8f1a40772e58482ab6ce54b"
         }
@@ -1641,6 +2722,7 @@
           "1024",
           "2048"
         ],
+        "disposition": [],
         "audio": {
           "frames": 47,
           "samples": 48000,
@@ -1666,6 +2748,9 @@
           "0",
           "4096",
           "8192"
+        ],
+        "disposition": [
+          "default"
         ],
         "audio": {
           "frames": 12,
@@ -1693,6 +2778,7 @@
           "240",
           "480"
         ],
+        "disposition": [],
         "audio": {
           "frames": 187,
           "samples": 23936,
@@ -1703,6 +2789,63 @@
           ],
           "sha256": "17822f8d153430df925296e7add1ac9e61ef018aa6bb424b7871ceb145dabef0",
           "exact": true
+        }
+      }
+    ]
+  },
+  "rotated-30.mp4": {
+    "format": "mov,mp4,m4a,3gp,3g2,mj2",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "h264",
+        "packets": 10,
+        "firstPts": [
+          "0",
+          "3072",
+          "1024"
+        ],
+        "disposition": [
+          "default"
+        ],
+        "params": {
+          "matrix": [
+            56755,
+            -32767,
+            0,
+            32767,
+            56755,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 29
+        },
+        "video": {
+          "frames": 10,
+          "firstPts": [
+            "0",
+            "1024",
+            "2048"
+          ],
+          "width": 128,
+          "height": 96,
+          "pixFmt": "yuv420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "unknown",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "left"
+          },
+          "rotation": 29,
+          "sha256": "683114efc791fa1370b09ad35cb0a47de7862e86d742e8d27edfbaa6a991c8ee"
         }
       }
     ]
@@ -1719,6 +2862,7 @@
           "40",
           "80"
         ],
+        "disposition": [],
         "audio": {
           "frames": 600,
           "samples": 24000,
@@ -1745,6 +2889,21 @@
           "2",
           "3"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -1755,6 +2914,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuv420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "unknown",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "left"
+          },
           "rotation": 0,
           "sha256": "6d09e3bbece7ae55e10a61a8505aa3a36e7b76c70faf7b122cd29538862165ab"
         }
@@ -1768,6 +2939,7 @@
           "1",
           "2"
         ],
+        "disposition": [],
         "audio": {
           "frames": 43,
           "samples": 49536,
@@ -1795,6 +2967,7 @@
           "12",
           "23"
         ],
+        "disposition": [],
         "audio": {
           "frames": 88,
           "samples": 22528,
@@ -1822,6 +2995,7 @@
           "1024",
           "2048"
         ],
+        "disposition": [],
         "audio": {
           "frames": 24,
           "samples": 24000,
@@ -1848,6 +3022,7 @@
           "2880",
           "5760"
         ],
+        "disposition": [],
         "audio": {
           "frames": 16,
           "samples": 24576,
@@ -1879,6 +3054,7 @@
           "4068",
           "8136"
         ],
+        "disposition": [],
         "audio": {
           "frames": 24,
           "samples": 24408,
@@ -1905,6 +3081,21 @@
           "1",
           "2"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -1915,6 +3106,18 @@
           "width": 127,
           "height": 95,
           "pixFmt": "yuv420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "unknown",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "center"
+          },
           "rotation": 0,
           "sha256": "394b00e87ce1e37cc4f908564b12b703b08f4cfcee052ee07bc165053c4cf905",
           "converted": {
@@ -1937,6 +3140,21 @@
           "500",
           "300"
         ],
+        "disposition": [],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -1947,6 +3165,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuv420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "unknown",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "left"
+          },
           "rotation": 0,
           "sha256": "683114efc791fa1370b09ad35cb0a47de7862e86d742e8d27edfbaa6a991c8ee"
         }
@@ -1960,6 +3190,7 @@
           "200",
           "221"
         ],
+        "disposition": [],
         "audio": {
           "frames": 48,
           "samples": 49152,
@@ -1987,6 +3218,23 @@
           "3072",
           "2048"
         ],
+        "disposition": [
+          "default"
+        ],
+        "params": {
+          "matrix": [
+            65536,
+            0,
+            0,
+            0,
+            65536,
+            0,
+            0,
+            0,
+            1073741824
+          ],
+          "rotation": 0
+        },
         "video": {
           "frames": 10,
           "firstPts": [
@@ -1997,6 +3245,18 @@
           "width": 128,
           "height": 96,
           "pixFmt": "yuv420p",
+          "depth": 8,
+          "chroma": [
+            1,
+            1
+          ],
+          "color": {
+            "range": "tv",
+            "primaries": "unknown",
+            "transfer": "unknown",
+            "space": "unknown",
+            "chromaLocation": "left"
+          },
           "rotation": 0,
           "sha256": "4d252bb762a7cdd0c663d26a670efa05734a521efcceee79070100ba504229eb"
         }
@@ -2009,6 +3269,9 @@
           "-1024",
           "0",
           "1024"
+        ],
+        "disposition": [
+          "default"
         ],
         "audio": {
           "frames": 47,

@@ -6,7 +6,9 @@
 #include "sny.h"
 
 #include <libavformat/avformat.h>
+#include <libavutil/display.h>
 #include <limits.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -16,6 +18,31 @@ SNY_CONST(AVSEEK_FLAG_BACKWARD, 1)
 SNY_CONST(AVSEEK_FLAG_BYTE, 2)
 SNY_CONST(AVSEEK_FLAG_ANY, 4)
 SNY_CONST(AVINDEX_KEYFRAME, 1)
+// The codecs WebCodecs decodes.
+SNY_CONST(AV_CODEC_ID_H264, 27)
+SNY_CONST(AV_CODEC_ID_HEVC, 172)
+SNY_CONST(AV_CODEC_ID_VP8, 139)
+SNY_CONST(AV_CODEC_ID_VP9, 166)
+SNY_CONST(AV_CODEC_ID_AV1, 222)
+SNY_CONST(AV_DISPOSITION_DEFAULT, 1 << 0)
+SNY_CONST(AV_DISPOSITION_DUB, 1 << 1)
+SNY_CONST(AV_DISPOSITION_ORIGINAL, 1 << 2)
+SNY_CONST(AV_DISPOSITION_COMMENT, 1 << 3)
+SNY_CONST(AV_DISPOSITION_LYRICS, 1 << 4)
+SNY_CONST(AV_DISPOSITION_KARAOKE, 1 << 5)
+SNY_CONST(AV_DISPOSITION_FORCED, 1 << 6)
+SNY_CONST(AV_DISPOSITION_HEARING_IMPAIRED, 1 << 7)
+SNY_CONST(AV_DISPOSITION_VISUAL_IMPAIRED, 1 << 8)
+SNY_CONST(AV_DISPOSITION_CLEAN_EFFECTS, 1 << 9)
+SNY_CONST(AV_DISPOSITION_ATTACHED_PIC, 1 << 10)
+SNY_CONST(AV_DISPOSITION_TIMED_THUMBNAILS, 1 << 11)
+SNY_CONST(AV_DISPOSITION_NON_DIEGETIC, 1 << 12)
+SNY_CONST(AV_DISPOSITION_CAPTIONS, 1 << 16)
+SNY_CONST(AV_DISPOSITION_DESCRIPTIONS, 1 << 17)
+SNY_CONST(AV_DISPOSITION_METADATA, 1 << 18)
+SNY_CONST(AV_DISPOSITION_DEPENDENT, 1 << 19)
+SNY_CONST(AV_DISPOSITION_STILL_IMAGE, 1 << 20)
+SNY_CONST(AV_DISPOSITION_MULTILAYER, 1 << 21)
 
 // ---- I/O: implemented in src/io.js, called by FFmpeg through AVIO ----
 
@@ -111,6 +138,29 @@ API int64_t sny_stream_nb_frames(const AVStream *st) { return st->nb_frames; }
 API int sny_stream_disposition(const AVStream *st) { return st->disposition; }
 API int sny_stream_fps_num(const AVStream *st) { return st->avg_frame_rate.num; }
 API int sny_stream_fps_den(const AVStream *st) { return st->avg_frame_rate.den; }
+
+static const int32_t *display_matrix(const AVStream *st) {
+  const AVPacketSideData *sd = av_packet_side_data_get(
+      st->codecpar->coded_side_data, st->codecpar->nb_coded_side_data, AV_PKT_DATA_DISPLAYMATRIX);
+  return sd && sd->size >= 9 * (int)sizeof(int32_t) ? (const int32_t *)sd->data : NULL;
+}
+// Element i, row by row, of the stream's display matrix: 16.16 fixed point, but 2.30 in the
+// last column. The identity when the stream has none.
+API int sny_stream_display_matrix(const AVStream *st, int i) {
+  const int32_t *m = display_matrix(st);
+  if ((unsigned)i > 8)
+    return 0;
+  if (m)
+    return m[i];
+  return i == 0 || i == 4 ? 1 << 16 : i == 8 ? 1 << 30 : 0;
+}
+// Its rotation in degrees counter-clockwise, truncated as ffprobe reports it; 0 without one,
+// or for a matrix that has none (NaN).
+API int sny_stream_rotation(const AVStream *st) {
+  const int32_t *m = display_matrix(st);
+  double r = m ? av_display_rotation_get(m) : 0;
+  return isnan(r) ? 0 : (int)r;
+}
 
 // Codec parameters
 API int sny_codec_type(const AVStream *st) { return st->codecpar->codec_type; }
