@@ -197,6 +197,8 @@ export function createConsumer(ring: SharedArrayBuffer) {
     // so READ was not at WRITE.
     Atomics.store(control, READ, Atomics.load(control, WRITE));
     Atomics.notify(control, READ);
+    // And a wait of this consumer's own resolves: a closed producer writes nothing to wake it.
+    Atomics.notify(control, WRITE);
   }
 
   return { peek, release, wait, close };

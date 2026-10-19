@@ -3,17 +3,19 @@
 //
 // Code for the test and benchmark pages, bundled by serve.ts and imported from PAGE: the
 // packet ring and the hash test/fixtures/expected.json records for a stream's packets, and
-// the audio output with a player that renders it offline; and a video stream's first packet
-// and the check of its decoder config.
+// the audio output with a player that renders it offline; a video stream's first packet and
+// the check of its decoder config; and the video output, drawing into a canvas it reads back.
 
 import { AV_NOPTS_VALUE, AV_PKT_FLAG_KEY } from "@snowy-media/ffmpeg/core";
 import { createAudioOutput } from "../../src/audio";
 import { type VideoParams, videoConfig } from "../../src/codec";
+import { createCompositor } from "../../src/compositor";
 import { createPcmControl, createPcmRing } from "../../src/pcm";
 import type { FromMedia, ToMedia } from "../../src/protocol";
-import { createConsumer, createRing, END, FAILED } from "../../src/ring";
+import { createConsumer, createRing, END, FAILED, RING_CAPACITY } from "../../src/ring";
+import { createVideoOutput } from "../../src/video";
 import { PCM_CHANNELS, PCM_RATE, probe } from "./audio";
-import { readFrameId } from "./frame-id";
+import { brightnessGrid, readFrameId } from "./frame-id";
 
 export { createAudioOutput } from "../../src/audio";
 export {
@@ -280,4 +282,93 @@ export async function checkVideoConfig(p: VideoParams, keyframe: Uint8Array) {
   const id = await decodeFrameId(config, keyframe);
   const inBandId = await decodeFrameId(inBandConfig, inBandKeyframe);
   return { ...result, id, inBandId };
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Plays video stream `stream` of the file open in `media` through the engine's video output
+ * into a `width` × `height` canvas, showing it at each of `times` (microseconds) in turn
+ * once the frames up to it are decoded. Returns, for each time, whether a new frame went up
+ * and the frame number on the canvas, and the brightness grid of the first frame shown.
+ */
+export async function render(
+  media: ReturnType<typeof startMedia>,
+  stream: number,
+  p: VideoParams,
+  { times, width, height }: { times: number[]; width: number; height: number },
+) {
+  const adapter = await navigator.gpu.requestAdapter();
+  if (!adapter) throw new Error("no GPU adapter");
+  const device = await adapter.requestDevice();
+  const canvas = new OffscreenCanvas(width, height);
+  const context = canvas.getContext("webgpu");
+  if (!(context instanceof GPUCanvasContext)) throw new Error("no WebGPU context");
+  const format = navigator.gpu.getPreferredCanvasFormat();
+  // COPY_SRC, to read back what was drawn.
+  const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC;
+  context.configure({ device, format, usage, alphaMode: "opaque" });
+  const ring = createRing(RING_CAPACITY);
+  const demuxed = media.request({ type: "demux", ring, streams: [stream] });
+  const output = createVideoOutput(ring, p, createCompositor(device, context, format));
+  // Rows of a texture copy are a multiple of 256 bytes apart.
+  const stride = Math.ceil((width * 4) / 256) * 256;
+  const buffer = device.createBuffer({
+    size: stride * height,
+    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+  });
+  const shown: { drawn: boolean; id: number }[] = [];
+  let grid: number[] = [];
+  const failure = { error: undefined as unknown };
+
+  async function watch() {
+    try {
+      await output.done;
+    } catch (e) {
+      failure.error = e;
+    }
+  }
+
+  void watch();
+
+  try {
+    for (const time of times) {
+      while (output.latest() < time && !output.ended() && !failure.error) await sleep(1);
+      if (failure.error) throw failure.error;
+      const drawn = output.present(time);
+
+      // Nothing new on screen: the canvas still shows the last frame, which was read already.
+      if (!drawn) {
+        shown.push({ drawn, id: shown.at(-1)?.id ?? -1 });
+        continue;
+      }
+
+      // The canvas's texture is the one just drawn until the task ends.
+      const encoder = device.createCommandEncoder();
+      encoder.copyTextureToBuffer(
+        { texture: context.getCurrentTexture() },
+        { buffer, bytesPerRow: stride },
+        [width, height],
+      );
+      device.queue.submit([encoder.finish()]);
+      await buffer.mapAsync(GPUMapMode.READ);
+      const mapped = new Uint8Array(buffer.getMappedRange());
+      const pixels = new Uint8Array(width * height * 4);
+
+      for (let y = 0; y < height; y++) {
+        pixels.set(mapped.subarray(y * stride, y * stride + width * 4), y * width * 4);
+      }
+
+      buffer.unmap();
+      // Green, the same byte in RGBA and BGRA.
+      if (shown.length === 0) grid = brightnessGrid(pixels, width, height, 4, 1);
+      shown.push({ drawn, id: readFrameId(pixels.subarray(1), width * 4, 4) });
+    }
+  } finally {
+    output.close();
+    await demuxed;
+    device.destroy();
+  }
+
+  return { shown, grid };
 }

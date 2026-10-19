@@ -13,7 +13,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PCM_CHANNELS, PCM_RATE, probe as probeSamples } from "../test/support/audio";
-import { CELL, FRAME_ID_BITS, readFrameId } from "../test/support/frame-id";
+import { brightnessGrid, CELL, FRAME_ID_BITS, readFrameId } from "../test/support/frame-id";
 
 const dir = new URL("../test/fixtures/", import.meta.url).pathname;
 const WIDTH = 320;
@@ -75,9 +75,12 @@ const OPUS = ["-c:a", "libopus"];
 // No random IDs or version tags, so the output is reproducible.
 const OUT = ["-fflags", "+bitexact"];
 
-// name -> its length and the ffmpeg arguments after the inputs. Every fixture has FPS frames
-// and one click per second of it.
-const fixtures: Record<string, { seconds: number; args: string[]; source?: string }> = {
+// name -> its length, the ffmpeg arguments after the inputs, and those for the video input.
+// Every fixture has FPS frames and one click per second of it.
+const fixtures: Record<
+  string,
+  { seconds: number; args: string[]; source?: string; input?: string[] }
+> = {
   "h264-aac.mp4": { seconds: 3, args: [...H264, ...AAC] },
   "h264-aac.mkv": { seconds: 3, args: [...H264, ...AAC] },
   "hevc-aac.mp4": { seconds: 3, args: [...HEVC, ...AAC] },
@@ -96,6 +99,17 @@ const fixtures: Record<string, { seconds: number; args: string[]; source?: strin
       ...H264,
       ...AAC,
     ],
+  },
+  // A display matrix: shown a quarter turn anticlockwise, and also mirrored.
+  "rotated-h264-aac.mp4": {
+    seconds: 1,
+    args: [...H264, ...AAC],
+    input: ["-display_rotation", "90", "-noautorotate"],
+  },
+  "flipped-h264-aac.mp4": {
+    seconds: 1,
+    args: [...H264, ...AAC],
+    input: ["-display_rotation", "90", "-display_hflip", "-noautorotate"],
   },
   // Ten minutes, for drift.
   "sync-10min.mp4": { seconds: 600, args: [...H264, ...AAC], source: "color=c=gray:" },
@@ -128,11 +142,25 @@ async function readVideo(file: string, index: number, width: number, height: num
   const { frames }: { frames: { pts: number }[] } =
     await $`ffprobe -v error -select_streams ${index} -show_entries frame=pts -of json ${file}`.json();
   const grey =
-    await $`ffmpeg -v error -i ${file} -map 0:${index} -fps_mode passthrough -pix_fmt gray -f rawvideo -`.arrayBuffer();
+    await $`ffmpeg -v error -noautorotate -i ${file} -map 0:${index} -fps_mode passthrough -pix_fmt gray -f rawvideo -`.arrayBuffer();
   const size = width * height;
   if (grey.byteLength !== frames.length * size) throw new Error(`${file}: frame count differs`);
   const ids = frames.map((_, i) => readFrameId(new Uint8Array(grey, i * size, size), width));
   return { pts: frames.map((f) => f.pts), ids };
+}
+
+// The size the first frame of video stream `index` is shown at, turned by its display matrix,
+// and the brightness grid (test/support/frame-id.ts) of it as FFmpeg shows it, in RGB.
+async function referenceGrid(file: string, index: number, width: number, height: number) {
+  const { streams }: { streams: { side_data_list?: { rotation?: number }[] }[] } =
+    await $`ffprobe -v error -select_streams ${index} -show_entries stream_side_data=rotation -of json ${file}`.json();
+  const rotation = streams[0]?.side_data_list?.find((d) => d.rotation !== undefined)?.rotation;
+  const turned = Math.abs(rotation ?? 0) % 180 === 90;
+  const [w, h] = turned ? [height, width] : [width, height];
+  const rgb =
+    await $`ffmpeg -v error -i ${file} -map 0:${index} -frames:v 1 -pix_fmt rgb24 -f rawvideo -`.arrayBuffer();
+  if (rgb.byteLength !== w * h * 3) throw new Error(`${file}: the shown frame is not ${w}x${h}`);
+  return { shown: [w, h], grid: brightnessGrid(new Uint8Array(rgb), w, h, 3, 1) };
 }
 
 // A stream's packets as the engine's tests hash them: one line `pts,dts,key,size,crc32` per
@@ -205,9 +233,9 @@ await rm(dir, { recursive: true, force: true });
 await mkdir(dir, { recursive: true });
 const expected: Record<string, unknown> = {};
 
-for (const [name, { seconds, args, source }] of Object.entries(fixtures)) {
+for (const [name, { seconds, args, source, input = [] }] of Object.entries(fixtures)) {
   const file = dir + name;
-  const inputs = [...video(seconds, source), ...clicks(seconds)];
+  const inputs = [...input, ...video(seconds, source), ...clicks(seconds)];
   await $`ffmpeg -hide_banner -loglevel error -y ${inputs} ${args} ${OUT} ${file}`;
   const probe =
     await $`ffprobe -v error -show_format -show_streams -show_entries packet=codec_type,stream_index,pts,dts,size,flags,data_hash -show_data_hash crc32 -of json ${file}`.json();
@@ -227,6 +255,7 @@ for (const [name, { seconds, args, source }] of Object.entries(fixtures)) {
   const resampled = await resample(file, a.index);
   const codecString = await hlsCodec(file, v.index, v.codec_name);
   const keyframes = packets.filter((p) => p.codec_type === "video" && p.flags.startsWith("K"));
+  const reference = await referenceGrid(file, v.index, v.width, v.height);
 
   const dts = name.endsWith(".mp4");
 
@@ -245,6 +274,8 @@ for (const [name, { seconds, args, source }] of Object.entries(fixtures)) {
       // Frame i shows the number i, so this is also every frame's number in order.
       pts,
       keyframes: keyframes.map((p) => p.pts),
+      // The first frame as shown (referenceGrid).
+      ...reference,
       ...hashPackets(packets, v.index, dts),
     },
     audio: {
