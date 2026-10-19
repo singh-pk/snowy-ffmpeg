@@ -41,6 +41,9 @@ function offset(id: number, time: number) {
   return time >= next ? time - next : 0;
 }
 
+// Seconds as milliseconds to a tenth, for the log.
+const ms = (x: number) => Math.round(x * 1e4) / 10;
+
 // The frame due at `time`.
 function frameAt(time: number) {
   const [num = 1, den = 1] = video.timeBase.split("/").map(Number);
@@ -108,6 +111,16 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
             .toSorted((a, b) => a - b);
           const p99 = sorted[Math.floor(sorted.length * 0.99)] ?? 0;
           const of = (w: typeof early) => `${w.offset} s, frame ${w.id} at ${w.time} s`;
+          const p = (q: number) => ms(sorted[Math.floor(sorted.length * q)] ?? 0);
+          // A summary for the log, so a failure on CI shows its shape.
+          console.log(
+            `${name}: ${checked.length} reads, ${got.playing.length - checked.length} stale;`,
+            `|offset| p50 ${p(0.5)} p95 ${p(0.95)} p99 ${p(0.99)} ms;`,
+            `early ${ms(early.offset)} ms at ${ms(early.time) / 1000} s;`,
+            `late ${ms(late.offset)} ms at ${ms(late.time) / 1000} s;`,
+            `over ${sorted.filter((x) => x >= MAX_OFFSET).length};`,
+            `last ${ms(got.playing.at(-1)?.[0] ?? 0) / 1000} s`,
+          );
 
           const last = got.playing.at(-1)?.[0] ?? 0;
           // It played in real time, from the start.
