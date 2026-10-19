@@ -24,7 +24,7 @@ export interface Engine {
   /**
    * Plays the open file's first video and first audio track from where it is, once the
    * browser allows audio to start (after a user gesture), unless a pause comes first: once
-   * the first frame is decoded and audio is buffered, it starts the audio, and resolves once
+   * video is decoded and audio buffered ahead, it starts the audio, and resolves once
    * it is heard. Rejects if playing has failed, or with an AbortError if an open stops it
    * while it starts.
    */
@@ -168,7 +168,7 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     next: 0,
     // Whether the last call was play, not pause.
     playing: false,
-    // The last play whose first frame the render worker has decoded.
+    // The last play the render worker has decoded ahead for.
     decoded: -1,
     closed: false,
   };
@@ -254,7 +254,7 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
       node.disconnect();
     }
 
-    // Whether it may start: the first frame is ready, and the audio buffered or all demuxed.
+    // Whether it may start: video is decoded ahead, and audio buffered or all demuxed.
     function primed() {
       const shown = !params || state.decoded === id;
       return shown && (clock.buffered() >= PREROLL * context.sampleRate || demux.done);

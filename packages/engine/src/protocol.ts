@@ -23,7 +23,8 @@ export type Missing = [feature: PlatformFeature, reason: string];
 // After init, the render worker plays video stream packets from `ring` (src/ring.ts), with
 // parameters `params`, timed by the clock in PCM ring `pcm` (src/pcm.ts), until it stops. An
 // error while it plays is reported once, with the play's `id`, and it stops. It says once
-// when the first frame is decoded, so the main thread starts audio with video ready.
+// when a quarter second of video is decoded, or all of it, or as much as the frame queue
+// holds, so the main thread starts audio with video ready.
 export type ToRender =
   | { type: "init"; canvas: OffscreenCanvas }
   | {

@@ -94,10 +94,12 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
           // frame queue only moves forward, so a frame older than one already read was not on
           // screen; the newest frame read is always checked, so this hides no frame ahead. More
           // of them come under load (4 % locally, 6 % on CI); most reads must still be checked.
+          // Its first read, too, now and then shows a frame from five or more frames before,
+          // with the frame due on the next read a few milliseconds later.
           const firefox = name === "firefox";
           const newest = { id: -1 };
-          const checked = got.playing.filter(([, id]) => {
-            const stale = firefox && id < newest.id;
+          const checked = got.playing.filter(([, id], i) => {
+            const stale = firefox && (i === 0 || id < newest.id);
             newest.id = Math.max(newest.id, id);
             return !stale;
           });
@@ -137,7 +139,10 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
           // No frame late, but in Firefox, where a stale read of the newest frame looks late.
           // There, nearly every frame is in time, and none looks later than a stale read.
           const lateness = ci ? CI_LATE : firefox ? STALE_LATE : MAX_OFFSET;
-          expect(late.offset, `late by ${of(late)}`).toBeLessThan(lateness);
+          const start = got.playing.slice(0, 8).map(([time, id]) => `${ms(time)}:${id}`);
+          expect(late.offset, `late by ${of(late)}; first reads ${start.join(" ")}`).toBeLessThan(
+            lateness,
+          );
           if (!ci) expect(p99, "the 99th percentile").toBeLessThan(MAX_OFFSET);
           // Paused: one time, one frame.
           expect(new Set(got.paused.map(([time]) => time)).size).toBe(1);

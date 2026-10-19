@@ -149,5 +149,7 @@ export function createVideoOutput(
     latest: () => state.latest,
     /** Whether the decoder has decoded every packet. */
     ended: () => state.ended,
+    /** Whether the frame queue is full, so decoding waits for a frame to be shown. */
+    full: () => queue.full(),
   };
 }

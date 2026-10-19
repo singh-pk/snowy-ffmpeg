@@ -24,6 +24,9 @@ interface Gpu {
 const REFRESH = 1000 / 60;
 const LONGEST_REFRESH = 50;
 const GAPS = 8;
+// The video decoded before the main thread starts audio, in microseconds, as much as the audio
+// it buffers: a decoder that has just started delivers its next frames slowly.
+const PREROLL = 250_000;
 
 const state = {
   compositor: undefined as ReturnType<typeof createCompositor> | undefined,
@@ -109,7 +112,7 @@ function play({ id, ring, params, pcm }: Extract<ToRender, { type: "play" }>) {
   if (!state.compositor) throw new Error("play before init");
   const output = createVideoOutput(ring, params, state.compositor);
   const clock = createPcmControl(pcm);
-  const playing = { output, frame: 0, decoded: false };
+  const playing = { output, frame: 0, decoded: false, first: Number.NaN };
   const timing = { last: 0, next: 0, gaps: new Float64Array(GAPS).fill(REFRESH) };
 
   // Reports the first failure of this play, unless it has stopped.
@@ -137,9 +140,15 @@ function play({ id, ring, params, pcm }: Extract<ToRender, { type: "play" }>) {
       const seen = clock.heard(performance.timeOrigin + time + refresh);
       output.present(Math.round(seen * 1e6));
 
-      if (!playing.decoded && (output.latest() > -Infinity || output.ended())) {
-        playing.decoded = true;
-        post({ type: "decoded", id });
+      if (!playing.decoded) {
+        const latest = output.latest();
+        if (Number.isNaN(playing.first) && latest > -Infinity) playing.first = latest;
+        const ahead = latest - playing.first >= PREROLL;
+
+        if (ahead || output.full() || output.ended()) {
+          playing.decoded = true;
+          post({ type: "decoded", id });
+        }
       }
     } catch (e) {
       fail(e);

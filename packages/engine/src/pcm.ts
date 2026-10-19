@@ -59,7 +59,7 @@ export interface AudioOptions {
 interface Clock {
   pts: number;
   time: number;
-  /** False after an underrun, and before the first sample: the clock is stopped at `pts`. */
+  /** False after an underrun, and before the first sample: the clock stops at `pts` at `time`. */
   playing: boolean;
 }
 
@@ -153,6 +153,8 @@ export function createPcmConsumer(ring: SharedArrayBuffer) {
   const { control, samples, channels, capacity } = views(ring);
   // Frames played since the start, exact in a double for millions of years at any rate.
   let played = 0;
+  // The context frame after the last one played, which an underrun keeps.
+  let end = 0;
 
   function publish(next: number, playing: boolean) {
     const sequence = control[SEQUENCE] ?? 0;
@@ -192,7 +194,8 @@ export function createPcmConsumer(ring: SharedArrayBuffer) {
     }
 
     played += n;
-    publish(frame + frames, n === frames && n > 0);
+    if (n > 0) end = frame + n;
+    publish(end, n === frames && n > 0);
   }
 
   /** Whether the ring is closed: nothing will play from it again. */
@@ -226,10 +229,14 @@ export function createPcmControl(ring: SharedArrayBuffer) {
     }
   }
 
-  /** The media time, in seconds, playing at context time `time`. */
+  /**
+   * The media time, in seconds, playing at context time `time`. Stopped, it is `pts` from
+   * context time `at` on, when the last frame has played, and runs until then: what was heard
+   * at a context time before it is still the audio before the underrun.
+   */
   function mediaTime(time: number) {
     const { pts, time: at, playing } = read();
-    return playing ? pts + time - at : pts;
+    return playing ? pts + time - at : pts + Math.min(0, time - at);
   }
 
   /**

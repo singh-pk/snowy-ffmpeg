@@ -116,16 +116,18 @@ test("the clock stops on an underrun and resumes with the audio", () => {
   expect(control.read()).toEqual({ pts: 10.128, time: 0.128, playing: true });
   expect(control.mediaTime(0.2)).toBeCloseTo(10.2, 12);
 
-  // 122 frames, then silence: the clock stops after the last frame, whenever it is read.
+  // 122 frames, then silence: the clock stops after the last frame, at its context time, and
+  // runs until then.
   consumer.read(output, 128);
-  expect(control.read()).toEqual({ pts: 10.25, time: 0.256, playing: false });
+  expect(control.read()).toEqual({ pts: 10.25, time: 0.25, playing: false });
   expect(output[0]?.[121]).toBe(249);
   expect(output[0]?.subarray(122).every((v) => v === 0)).toBe(true);
+  expect(control.mediaTime(0.2)).toBeCloseTo(10.2, 12);
   expect(control.mediaTime(5)).toBe(10.25);
 
-  // An empty ring: still stopped, and silent.
+  // An empty ring: still stopped where the last frame played, and silent.
   consumer.read(output, 256);
-  expect(control.read()).toEqual({ pts: 10.25, time: 0.384, playing: false });
+  expect(control.read()).toEqual({ pts: 10.25, time: 0.25, playing: false });
   expect(output[1]?.every((v) => v === 0)).toBe(true);
 
   // The audio continues: so does the clock, from where it stopped.
