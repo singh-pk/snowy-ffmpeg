@@ -6,7 +6,16 @@
 // stops a producer that is waiting for room. Usage: bun test test/ring.test.ts
 
 import { expect, test } from "bun:test";
-import { createConsumer, createProducer, createRing, END, PRODUCER_WAITING } from "../src/ring";
+import { AV_NOPTS_VALUE, AV_PKT_FLAG_KEY } from "@snowy-media/ffmpeg/core";
+import {
+  createConsumer,
+  createProducer,
+  createRing,
+  END,
+  KEY_FLAG,
+  NO_TIMESTAMP,
+  PRODUCER_WAITING,
+} from "../src/ring";
 import { size } from "./support/ring-producer";
 
 function startProducer(ring: SharedArrayBuffer, count: number) {
@@ -89,6 +98,10 @@ test("closing an empty ring ends the consumer's own wait for a packet", async ()
 
   const ended = await Promise.race([waited(), timedOut(1000)]);
   expect(ended).toBe(true);
+});
+
+test("the key flag and the unknown timestamp are FFmpeg's", () => {
+  expect([KEY_FLAG, NO_TIMESTAMP]).toEqual([AV_PKT_FLAG_KEY, AV_NOPTS_VALUE]);
 });
 
 test("a capacity, packet or duration the ring cannot hold is an error", () => {

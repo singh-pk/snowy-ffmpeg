@@ -19,7 +19,7 @@ The tests and benchmarks build what they run, and need `@snowy-media/ffmpeg` bui
 
 | Path | What it holds |
 | --- | --- |
-| `src/index.ts` | the public API |
+| `src/index.ts` | the public API, and playback on the main thread |
 | `src/platform.ts` | the platform check on the main thread, and `UnsupportedPlatformError` |
 | `src/media.worker.ts` | the media worker: reads and demuxes the file, and decodes and resamples its audio, with the FFmpeg core |
 | `src/io.ts` | the media worker's synchronous reads from a `File` |
@@ -32,7 +32,7 @@ The tests and benchmarks build what they run, and need `@snowy-media/ffmpeg` bui
 | `src/pcm.ts` | the PCM ring from the media worker to the AudioWorklet, and the clock |
 | `src/audio.ts` | the audio output on the main thread |
 | `src/audio.worklet.ts` | the AudioWorklet: plays the PCM ring and publishes the clock |
-| `src/render.worker.ts` | the render worker: WebGPU and WebCodecs |
+| `src/render.worker.ts` | the render worker: the platform check, then video on its animation frames |
 | `src/protocol.ts` | the messages between threads |
 | `scripts/build.ts` | bundles each thread's entry point into `dist/`, or for the tests into `test/dist/` |
 | `scripts/gen-fixtures.ts` | builds `test/fixtures` and `expected.json` from native FFmpeg |

@@ -6,11 +6,10 @@
 // time through the compositor. Decoding waits while the queue is full or the decoder has
 // enough packets in hand, so neither memory nor the decoder's backlog grows.
 
-import { AV_NOPTS_VALUE, AV_PKT_FLAG_KEY } from "@snowy-media/ffmpeg/core";
 import { type VideoParams, videoConfig } from "./codec";
 import type { createCompositor } from "./compositor";
 import { createFrameQueue } from "./frames";
-import { createConsumer, END, FAILED } from "./ring";
+import { createConsumer, END, FAILED, KEY_FLAG, NO_TIMESTAMP } from "./ring";
 
 /**
  * The bytes of decoded frames the queue holds: enough for a few 4K 10-bit frames, and many
@@ -82,11 +81,11 @@ export function createVideoOutput(
       if (decoder.state === "unconfigured") decoder.configure(videoConfig(p, packet.data));
       // A missing pts takes the dts, right for a stream without B-frames. A raw stream with
       // them has neither and is not played yet.
-      const pts = packet.pts === AV_NOPTS_VALUE ? packet.dts : packet.pts;
-      if (pts === AV_NOPTS_VALUE) throw new Error("a video packet has no timestamp");
+      const pts = packet.pts === NO_TIMESTAMP ? packet.dts : packet.pts;
+      if (pts === NO_TIMESTAMP) throw new Error("a video packet has no timestamp");
       // The chunk copies the data, so the packet is released at once.
       const chunk = new EncodedVideoChunk({
-        type: packet.flags & AV_PKT_FLAG_KEY ? "key" : "delta",
+        type: packet.flags & KEY_FLAG ? "key" : "delta",
         timestamp: micros(Number(pts)),
         duration: micros(packet.duration),
         data: packet.data,

@@ -32,14 +32,20 @@ export const RING_CAPACITY = 1 << 23;
 export const END = -1;
 /** The stream of the record that ends the packets early, because the producer failed. */
 export const FAILED = -2;
+/**
+ * FFmpeg's values the records carry, AV_PKT_FLAG_KEY and AV_NOPTS_VALUE, here so a consumer
+ * need not load FFmpeg for them (test/ring.test.ts checks them).
+ */
+export const KEY_FLAG = 1;
+export const NO_TIMESTAMP = -(2n ** 63n);
 
 /** A packet as the consumer sees it. `data` is valid until `release`. */
 export interface Packet {
   /** The stream index, END or FAILED. */
   stream: number;
-  /** AV_PKT_FLAG_* bits. */
+  /** AV_PKT_FLAG_* bits, KEY_FLAG among them. */
   flags: number;
-  /** Timestamps in the stream's time base; AV_NOPTS_VALUE when unknown. */
+  /** Timestamps in the stream's time base; NO_TIMESTAMP when unknown. */
   pts: bigint;
   dts: bigint;
   /** In the stream's time base, a 32-bit integer. */

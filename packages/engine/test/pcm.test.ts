@@ -150,3 +150,21 @@ test("closing the ring stops the producer and silences the consumer", () => {
 test("a ring size that is not a power of two is an error", () => {
   expect(() => createPcmRing(1000, 2, RATE)).toThrow(RangeError);
 });
+
+test("what is heard comes from the output timestamp, carried forward while it runs", () => {
+  const ring = createPcmRing(1024, 2, RATE);
+  const producer = createPcmProducer(ring);
+  const consumer = createPcmConsumer(ring);
+  const control = createPcmControl(ring);
+  producer.start(10);
+  producer.write(frames(0, 1000), 0, 1000);
+  // Rendered up to context time 0.128, which plays media time 10.128.
+  consumer.read(quantum(), 0);
+
+  // Context time 0.1 heard at 5000 ms: 50 ms later, 0.15 is heard, so media time 10.15.
+  control.publishOutput(0.1, 5000, true);
+  expect(control.heard(5050)).toBeCloseTo(10.15, 12);
+  // Suspended: what is heard stays where the output stopped.
+  control.publishOutput(0.1, 5000, false);
+  expect(control.heard(9000)).toBeCloseTo(10.1, 12);
+});

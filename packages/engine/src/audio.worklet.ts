@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// The AudioWorklet: plays the PCM ring (src/pcm.ts) and publishes the clock. It runs on the
-// audio rendering thread, so it never blocks and never allocates.
+// The AudioWorklet: plays the PCM ring (src/pcm.ts) and publishes the clock, until the ring
+// is closed. It runs on the audio rendering thread, so it never blocks and never allocates.
 
 /// <reference types="audioworklet" />
 
@@ -21,7 +21,8 @@ registerProcessor(
     process(_: Float32Array[][], outputs: Float32Array[][]) {
       const output = outputs[0];
       if (output) this.#pcm.read(output, currentFrame);
-      return true;
+      // Once the ring is closed, false lets the disconnected node and this processor go.
+      return !this.#pcm.closed();
     }
   },
 );
