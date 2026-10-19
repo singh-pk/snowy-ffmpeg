@@ -25,8 +25,9 @@ The WebGPU check asks for an adapter, a device and a canvas context and then imp
 | Thread | Does | Blocks |
 | --- | --- | --- |
 | Main | the API, starting and stopping workers | never |
-| Media worker | reading the file, demuxing it with the FFmpeg core | yes, on reads and on a full packet ring |
+| Media worker | reading the file, demuxing it, decoding and resampling its audio, all with the FFmpeg core | yes, on reads and on a full packet or PCM ring |
 | Render worker | WebGPU, WebCodecs | never |
+| AudioWorklet | playing the PCM ring, the clock | never |
 
 Each worker is an entry point of its own in `dist/`, loaded by URL, so a thread downloads only its own code. The engine starts both at once, so the FFmpeg core loads while the render worker checks the GPU.
 
@@ -43,6 +44,24 @@ The media worker demuxes ahead of playback into a ring in a `SharedArrayBuffer` 
 - **Capacity: 8 MiB.** That holds seconds of the highest bitrates a browser plays (4K HEVC at 100 Mbit/s is 12.5 MB a second) and any single packet. Moving packets through the ring takes far less time than decoding them: under 0.5 µs per packet, and over 20 GB/s for large packets. A wake-up takes under 0.2 ms at the 99th percentile in every browser (`bench/run.ts`, the `ring` benchmark).
 
 The tests check the ring between two threads in Bun, and check, in every browser, that the packets of every fixture pass through a 64 KiB ring exactly as native `ffprobe` lists them.
+
+## Audio and clock
+
+The media worker decodes the audio itself, with FFmpeg, as it demuxes, and `sny_resample` converts each frame in one call to what the `AudioContext` plays: its sample rate, stereo or the destination's channels, 32-bit float. The samples go into a second ring (`src/pcm.ts`), and the engine's AudioWorklet (`src/audio.worklet.ts`) plays them from there.
+
+- **The PCM ring** is a `SharedArrayBuffer` of interleaved frames with the same growing positions as the packet ring, and its channel count and rate in its header. The producer blocks while it is full. The AudioWorklet may never block, so it never waits: when the ring runs out, it plays silence for the rest of the render quantum. That is an underrun.
+- **The AudioWorklet owns the clock.** After each quantum it publishes the media time of the next frame it will play and the context time that frame plays at, and whether it is playing. A reader's media time is that time plus how far the context has moved on since, or exactly that time while it is not playing.
+  - **No drift.** The media time is the first frame's timestamp plus the frames played divided by the rate: an exact count, not a sum of durations, and not the context's own time.
+  - **An underrun stops the clock** at the last frame played, and it resumes from there with the audio. A reader that extrapolated past that frame sees the clock step back, by less than a quantum.
+  - **Context time is render time.** The worklet knows when the context renders a frame, not when it is heard; whoever schedules video against it must add the output latency (`getOutputTimestamp`).
+  - **No torn reads.** The three numbers are written between two increments of a sequence word, and a reader that sees it odd or changed reads again (a seqlock), so any thread reads a consistent clock without a lock or a message.
+- **Rate and channels are the context's.** The worklet plays the ring as it is; resampling and mixing happen once, in the media worker, where blocking is allowed and FFmpeg already is.
+- **One thread fills both rings,** in file order, and blocks on whichever is full. A consumer of one ring must therefore not wait for the other to fill first: the packet ring and the PCM ring each need room for what the file interleaves between them.
+- **Only the core module's codecs play for now.** A stream that needs `audio-ext` is rejected before demuxing starts.
+
+Decoding and resampling are far from the bottleneck: ten minutes of AAC takes about 0.2 s, or 0.5 s resampled from 48 to 44.1 kHz, in every browser (`bench/run.ts`, the `audio` benchmark).
+
+The tests play every fixture through the worklet into an `OfflineAudioContext`, in every browser. They check that what plays equals native `ffmpeg -ar -ac` within 10⁻⁶; that while it plays, the clock is at the media time of what plays, without a gap; that it stops after the last frame, which is native FFmpeg's last; and that over ten minutes every click still starts on its whole second, so the clock has not drifted. Underruns, and a producer thread that waits for room, are tested in Bun against the ring itself.
 
 ## Bundling
 

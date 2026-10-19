@@ -1,12 +1,15 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// The media worker: it reads the file and demuxes it with the FFmpeg core module. It is the
-// one thread that may block, so it reads the file synchronously (src/io.ts) and waits for
-// room in the packet ring (src/ring.ts).
+// The media worker: it reads the file and demuxes it with the FFmpeg core module, and decodes
+// and resamples its audio. It is the one thread that may block, so it reads the file
+// synchronously (src/io.ts) and waits for room in the packet ring (src/ring.ts) and the PCM
+// ring (src/pcm.ts).
 
 import {
+  AV_NOPTS_VALUE,
   AV_TIME_BASE,
+  AVERROR_EAGAIN,
   AVERROR_EOF,
   AVMEDIA_TYPE_ATTACHMENT,
   AVMEDIA_TYPE_AUDIO,
@@ -17,6 +20,7 @@ import {
   type Ptr,
 } from "@snowy-media/ffmpeg/core";
 import { createFileSource } from "./io";
+import { createPcmProducer, pcmFormat } from "./pcm";
 import { createProducer } from "./ring";
 import type { FromMedia, MediaInfo, ToMedia, Track } from "./protocol";
 
@@ -32,6 +36,16 @@ const IO = 1;
 
 // Loading the module starts with the worker, before the first file arrives.
 const ready = startMedia();
+
+type AudioRequest = NonNullable<Extract<ToMedia, { type: "demux" }>["audio"]>;
+
+// An audio stream being decoded into a PCM ring.
+interface Audio {
+  stream: number;
+  decode(pkt: Ptr): boolean;
+  end(): void;
+  close(): void;
+}
 
 function post(message: FromMedia) {
   self.postMessage(message);
@@ -81,7 +95,7 @@ function createMedia(core: CoreModule) {
     const out = core._malloc(4);
     const name = core.stringToNewUTF8(file.name);
     const opened = core._sny_open(IO, BUFFER, name, out);
-    const ctx = core.HEAP32[out >> 2] ?? 0;
+    const ctx = core.HEAP32[out >>> 2] ?? 0;
     core._free(name);
     core._free(out);
     check(opened, "open");
@@ -97,26 +111,131 @@ function createMedia(core: CoreModule) {
     };
   }
 
-  // Writes the packets of `streams` into `ring`, from where the demuxer is to the end of the
-  // file, then the END record. Returns early once the consumer closes the ring.
-  function pump(ring: ReturnType<typeof createProducer>, streams: number[]) {
+  // The open file's demuxer, after checking that `streams` are all streams of it.
+  function demuxer(streams: number[]) {
     const { ctx } = state;
     if (!ctx) throw new Error("demux: no file is open");
-    const selected = new Uint8Array(core._sny_nb_streams(ctx));
+    const count = core._sny_nb_streams(ctx);
 
     for (const s of streams) {
-      if (!Number.isInteger(s) || s < 0 || s >= selected.length) {
+      if (!Number.isInteger(s) || s < 0 || s >= count)
         throw new RangeError(`demux: no stream ${s}`);
-      }
-
-      selected[s] = 1;
     }
+
+    return ctx;
+  }
+
+  // Decodes audio stream `stream` into PCM ring `pcm`: `decode` takes each of its packets,
+  // and returns false once the consumer has closed the ring; `end` drains the decoder and the
+  // resampler. `close` frees it all.
+  function createAudio(stream: number, pcm: SharedArrayBuffer): Audio {
+    const ctx = demuxer([stream]);
+    const st = core._sny_stream(ctx, stream);
+
+    if (core._sny_codec_type(st) !== AVMEDIA_TYPE_AUDIO) {
+      throw new RangeError(`demux: stream ${stream} is not audio`);
+    }
+
+    // Loading audio-ext for the long tail of codecs is still to come.
+    const module = str(core._sny_codec_module(ctx, stream));
+    if (!module) throw new Error(`demux: no module decodes stream ${stream}`);
+
+    if (module !== "core") {
+      throw new Error(`demux: stream ${stream} needs the ${module} module, not loaded yet`);
+    }
+
+    const { channels, rate } = pcmFormat(pcm);
+    const producer = createPcmProducer(pcm);
+    const [tbNum, tbDen] = [core._sny_stream_tb_num(st), core._sny_stream_tb_den(st)];
+    const frame = core._sny_frame_alloc();
+    const resampled = core._sny_frame_alloc();
+    const resampler = core._sny_resampler_alloc();
+    const out = core._malloc(4);
+    const allocated = frame && resampled && resampler && out;
+    const opened = allocated ? core._sny_decoder_open(ctx, stream, out) : 0;
+    const dec = allocated && opened >= 0 ? (core.HEAP32[out >>> 2] ?? 0) : 0;
+    core._free(out);
+    let started = false;
+
+    function free() {
+      core._sny_resampler_free(resampler);
+      core._sny_frame_free(resampled);
+      core._sny_frame_free(frame);
+      if (dec) core._sny_decoder_close(dec);
+    }
+
+    if (!allocated || opened < 0) {
+      free();
+      if (!allocated) throw new Error("decoder: out of memory");
+      check(opened, "decoder_open");
+    }
+
+    // Resamples `input` (0 at the end) into the ring; false once the ring is closed.
+    function resample(input: Ptr) {
+      check(core._sny_resample(resampler, input, resampled, rate, channels), "resample");
+      const frames = core._sny_frame_samples(resampled);
+      if (frames === 0) return true;
+      const at = core._sny_frame_plane(resampled, 0) >>> 2;
+      // HEAPF32 is read for each frame: the heap's buffer changes when memory grows.
+      return producer.write(core.HEAPF32, at, frames);
+    }
+
+    function receive() {
+      for (;;) {
+        const ret = core._sny_decoder_receive(dec, frame);
+        if (ret === AVERROR_EAGAIN || ret === AVERROR_EOF) return true;
+        check(ret, "decoder_receive");
+
+        if (!started) {
+          const pts = core._sny_frame_pts(frame);
+          producer.start(pts === AV_NOPTS_VALUE ? 0 : (Number(pts) * tbNum) / tbDen);
+          started = true;
+        }
+
+        if (!resample(frame)) return false;
+      }
+    }
+
+    // A packet the decoder rejects is skipped, as the ffmpeg command line does.
+    function decode(packet: Ptr) {
+      for (;;) {
+        const ret = core._sny_decoder_send(dec, packet);
+        if (!receive()) return false;
+        if (ret !== AVERROR_EAGAIN) return true;
+      }
+    }
+
+    function end() {
+      if (decode(0)) resample(0);
+    }
+
+    return { stream, decode, end, close: free };
+  }
+
+  // Writes the packets of `streams` into `ring` and decodes those of `audio`, from where the
+  // demuxer is to the end of the file, then drains the audio and writes the END record. Returns
+  // early once the packet ring's consumer closes it; once the PCM ring's does, the audio stops
+  // and the packets go on.
+  function pump(ring: ReturnType<typeof createProducer>, streams: number[], audio?: Audio) {
+    const ctx = demuxer(streams);
+    let sound = audio;
+    const selected = new Uint8Array(core._sny_nb_streams(ctx));
+    for (const s of streams) selected[s] = 1;
 
     for (;;) {
       const ret = core._sny_read(ctx, pkt);
       if (ret === AVERROR_EOF) break;
       check(ret, "read");
       const stream = core._sny_packet_stream(pkt);
+
+      if (stream === sound?.stream) {
+        if (sound.decode(pkt)) continue;
+        sound = undefined;
+        // Nothing else to demux.
+        if (streams.length === 0) break;
+        continue;
+      }
+
       if (!selected[stream]) continue;
       const pts = core._sny_packet_pts(pkt);
       const dts = core._sny_packet_dts(pkt);
@@ -128,19 +247,28 @@ function createMedia(core: CoreModule) {
       if (!ring.write(stream, flags, pts, dts, duration, core.HEAPU8, data, size)) return;
     }
 
+    sound?.end();
     ring.end();
   }
 
   // pump, and on an error the FAILED record, so the thread reading the ring stops too; the
   // error itself goes to whoever asked.
-  function demux(ring: SharedArrayBuffer, streams: number[]) {
+  function demux(ring: SharedArrayBuffer, streams: number[], audio?: AudioRequest) {
     const producer = createProducer(ring);
+    let decoder: Audio | undefined;
 
     try {
-      pump(producer, streams);
+      if (audio && streams.includes(audio.stream)) {
+        throw new RangeError(`demux: stream ${audio.stream} is both demuxed and decoded`);
+      }
+
+      if (audio) decoder = createAudio(audio.stream, audio.pcm);
+      pump(producer, streams, decoder);
     } catch (e) {
       producer.fail();
       throw e;
+    } finally {
+      decoder?.close();
     }
   }
 
@@ -161,7 +289,7 @@ async function handle(message: ToMedia) {
     if (message.type === "open") {
       post({ type: "opened", id, info: media.open(message.file) });
     } else {
-      media.demux(message.ring, message.streams);
+      media.demux(message.ring, message.streams, message.audio);
       post({ type: "demuxed", id });
     }
   } catch (e) {

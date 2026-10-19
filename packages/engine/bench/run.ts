@@ -10,7 +10,7 @@
 import { parseArgs } from "node:util";
 import type { Page } from "playwright";
 import { browsers } from "../test/support/browsers";
-import { ENTRY, PAGE, RING_WORKER, serveEngine } from "../test/support/serve";
+import { ENTRY, MEDIA_WORKER, PAGE, RING_WORKER, serveEngine } from "../test/support/serve";
 
 const { values: args } = parseArgs({
   options: {
@@ -117,6 +117,51 @@ const benchmarks: Record<string, (tab: Page) => Promise<Timings>> = {
         return timings;
       },
       { page: PAGE, worker: RING_WORKER },
+    ),
+  // The media worker decoding the ten-minute AAC track into the PCM ring, in stereo at 48 kHz
+  // (the track's rate: no resampling) and at 44.1 kHz, while the page drains the ring in
+  // large reads; until the worker replies.
+  audio: (tab) =>
+    tab.evaluate(
+      async ({ page, worker }) => {
+        const support: typeof import("../test/support/page") = await import(page);
+        const media = support.startMedia(worker);
+        const res = await fetch("/test/fixtures/sync-10min.mp4");
+        const blob = await res.blob();
+        const file = new File([blob], "sync-10min.mp4");
+        const read = 1 << 20;
+        const output = [new Float32Array(read), new Float32Array(read)];
+
+        async function time(rate: number) {
+          // Opened again each time: the previous run left the demuxer at the end.
+          await media.request({ type: "open", file });
+          const pcm = support.createPcmRing(1 << 22, 2, rate);
+          const consumer = support.createPcmConsumer(pcm);
+          const state = { decoding: true };
+
+          async function drain() {
+            while (state.decoding) {
+              consumer.read(output, 0);
+              await new Promise((resolve) => setTimeout(resolve, 0));
+            }
+          }
+
+          const draining = drain();
+          const start = performance.now();
+          const ring = support.createRing(64);
+          await media.request({ type: "demux", ring, streams: [], audio: { stream: 1, pcm } });
+          const ms = performance.now() - start;
+          state.decoding = false;
+          await draining;
+          return ms;
+        }
+
+        const native = await time(48_000);
+        const resampled = await time(44_100);
+        media.stop();
+        return { "10 min at 48 kHz": native, "10 min at 44.1 kHz": resampled };
+      },
+      { page: PAGE, worker: MEDIA_WORKER },
     ),
 };
 

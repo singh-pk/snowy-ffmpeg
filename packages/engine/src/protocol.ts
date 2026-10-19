@@ -37,11 +37,19 @@ export interface MediaInfo {
 }
 
 // `id` pairs each reply with its request. A demux request writes the packets of `streams`
-// into `ring` (src/ring.ts) and replies once it has written the END record, or once the
-// consumer has closed the ring. On an error it writes the FAILED record and replies with it.
+// into `ring` (src/ring.ts), and with `audio` decodes that audio stream into the PCM ring
+// `pcm` (src/pcm.ts), resampled to its rate and channels. It replies once it has written all
+// the audio and the END record, or once a consumer has closed its ring. On an error it
+// writes the FAILED record and replies with it.
 export type ToMedia =
   | { type: "open"; id: number; file: File }
-  | { type: "demux"; id: number; ring: SharedArrayBuffer; streams: number[] };
+  | {
+      type: "demux";
+      id: number;
+      ring: SharedArrayBuffer;
+      streams: number[];
+      audio?: { stream: number; pcm: SharedArrayBuffer };
+    };
 
 export type FromMedia =
   | { type: "opened"; id: number; info: MediaInfo }
