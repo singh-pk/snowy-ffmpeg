@@ -99,6 +99,9 @@ function createMedia(core: CoreModule) {
       width: core._sny_codec_width(st),
       height: core._sny_codec_height(st),
       level: core._sny_codec_level(st),
+      sampleAspect: [core._sny_codec_sar_num(st), core._sny_codec_sar_den(st)],
+      timeBase: [core._sny_stream_tb_num(st), core._sny_stream_tb_den(st)],
+      matrix: Array.from({ length: 9 }, (_, i) => core._sny_stream_display_matrix(st, i)),
     };
   }
 

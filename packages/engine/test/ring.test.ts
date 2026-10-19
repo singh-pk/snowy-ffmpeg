@@ -71,6 +71,26 @@ test("closing the ring stops a producer that waits for room, and ends the consum
   worker.terminate();
 });
 
+async function timedOut(ms: number) {
+  await Bun.sleep(ms);
+  return false;
+}
+
+test("closing an empty ring ends the consumer's own wait for a packet", async () => {
+  const ring = createRing(4096);
+  const consumer = createConsumer(ring);
+  const waiting = consumer.wait();
+  consumer.close();
+
+  async function waited() {
+    await waiting;
+    return true;
+  }
+
+  const ended = await Promise.race([waited(), timedOut(1000)]);
+  expect(ended).toBe(true);
+});
+
 test("a capacity, packet or duration the ring cannot hold is an error", () => {
   expect(() => createRing(3000)).toThrow(RangeError);
   const producer = createProducer(createRing(64));

@@ -24,6 +24,12 @@ export interface VideoParams {
   height: number;
   /** The level the container states, or a negative number when it states none. */
   level: number;
+  /** The width of a pixel over its height, as a fraction; 0/1 when unknown. */
+  sampleAspect: [number, number];
+  /** The stream's time base, as a fraction of a second. */
+  timeBase: [number, number];
+  /** FFmpeg's display matrix (src/compositor.ts), the identity when the stream has none. */
+  matrix: number[];
 }
 
 const hex = (b: number) => b.toString(16).toUpperCase().padStart(2, "0");
@@ -281,7 +287,13 @@ function av1(p: VideoParams, keyframe: Uint8Array): VideoDecoderConfig {
  * `keyframe`. Throws for a codec WebCodecs does not decode.
  */
 export function videoConfig(p: VideoParams, keyframe: Uint8Array): VideoDecoderConfig {
-  const size = { codedWidth: p.width, codedHeight: p.height };
+  const [num, den] = p.sampleAspect;
+  // Non-square pixels make the displayed size differ from the coded size.
+  const aspect =
+    num > 0 && den > 0 && num !== den
+      ? { displayAspectWidth: p.width * num, displayAspectHeight: p.height * den }
+      : {};
+  const size = { codedWidth: p.width, codedHeight: p.height, ...aspect };
   if (p.codec === "h264") return { ...h264(p, keyframe), ...size };
   if (p.codec === "hevc") return { ...hevc(p, keyframe), ...size };
   if (p.codec === "vp9") return { codec: vp9Codec(keyframe, p.width, p.height, p.level), ...size };

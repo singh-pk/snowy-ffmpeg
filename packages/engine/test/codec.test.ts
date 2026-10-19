@@ -3,11 +3,25 @@
 //
 // Codec strings from bitstream fields, in Bun, for what the fixtures do not cover: the HEVC
 // example of ISO/IEC 14496-15 Annex E, a VP9 profile 2 keyframe, AV1 sequence headers with
-// the fields the fixtures leave out, and a codec WebCodecs does not decode. test/video.test.ts checks every fixture in the browsers.
+// the fields the fixtures leave out, non-square pixels, and a codec WebCodecs does not
+// decode. test/video.test.ts checks every fixture in the browsers.
 // Usage: bun test test/codec.test.ts
 
 import { expect, test } from "bun:test";
-import { hevcCodec, videoConfig, vp9Codec } from "../src/codec";
+import { hevcCodec, type VideoParams, videoConfig, vp9Codec } from "../src/codec";
+
+// A stream without a configuration record, a level or a display matrix.
+const STREAM: VideoParams = {
+  codec: "av1",
+  tag: "",
+  extradata: new Uint8Array(),
+  width: 1920,
+  height: 1080,
+  level: -99,
+  sampleAspect: [1, 1],
+  timeBase: [1, 1000],
+  matrix: [],
+};
 
 test("HEVC: Main profile, level 3.1, progressive (ISO/IEC 14496-15 Annex E)", () => {
   // profile_space 0, tier 0, profile_idc 1; compatibility flags 1 and 2; constraint flags
@@ -46,11 +60,7 @@ function pack(fields: [number, number][]) {
 // A temporal delimiter, then a sequence header OBU with `payload`, each with its size.
 const obus = (payload: Uint8Array) => new Uint8Array([0x12, 0, 0x0a, payload.length, ...payload]);
 
-const av1 = (keyframe: Uint8Array) =>
-  videoConfig(
-    { codec: "av1", tag: "", extradata: new Uint8Array(), width: 1920, height: 1080, level: -99 },
-    keyframe,
-  ).codec;
+const av1 = (keyframe: Uint8Array) => videoConfig(STREAM, keyframe).codec;
 
 test("AV1: timing and decoder model information, two operating points, high tier, 10-bit", () => {
   const header = pack([
@@ -124,13 +134,16 @@ test("AV1: a reduced still picture header, profile 2, 12-bit", () => {
 });
 
 test("a codec WebCodecs does not decode is an error", () => {
-  const p = {
-    codec: "mpeg4",
-    tag: "",
-    extradata: new Uint8Array(),
-    width: 2,
-    height: 2,
-    level: -99,
-  };
+  const p = { ...STREAM, codec: "mpeg4" };
   expect(() => videoConfig(p, new Uint8Array())).toThrow("not a codec WebCodecs decodes");
+});
+
+const vp8 = (sampleAspect: [number, number]) =>
+  videoConfig({ ...STREAM, codec: "vp8", width: 720, height: 576, sampleAspect }, new Uint8Array());
+
+test("non-square pixels give the display aspect; square or unknown ones none", () => {
+  const wide = vp8([64, 45]);
+  expect([wide.displayAspectWidth, wide.displayAspectHeight]).toEqual([720 * 64, 576 * 45]);
+  expect(vp8([1, 1]).displayAspectWidth).toBeUndefined();
+  expect(vp8([0, 1]).displayAspectWidth).toBeUndefined();
 });

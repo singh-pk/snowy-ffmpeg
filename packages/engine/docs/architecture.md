@@ -65,15 +65,28 @@ The tests play every fixture through the worklet into an `OfflineAudioContext`, 
 
 ## Video decoder configs
 
-WebCodecs decodes H.264, HEVC, VP8, VP9 and AV1, given a `VideoDecoderConfig` (`src/codec.ts`). The media worker sends each video stream's parameters when it opens a file (FFmpeg's codec name, the container's four-character code, the extradata, the size and any level the container states), and the config is made from them and the stream's first packet, a keyframe.
+WebCodecs decodes H.264, HEVC, VP8, VP9 and AV1, given a `VideoDecoderConfig` (`src/codec.ts`). The media worker sends each video stream's parameters when it opens a file (FFmpeg's codec name, the container's four-character code, the extradata, the size, any level the container states, the sample aspect ratio, the time base and the display matrix), and the config is made from them and the stream's first packet, a keyframe.
 
 - **The codec string is built as its spec defines it,** from the configuration record (avcC, hvcC, av1C), which also becomes the config's `description`. Where the container has no record (MPEG-TS, raw streams), it comes from the parameter sets in band (the SPS, or AV1's sequence header OBU), in the extradata or in the keyframe, and there is no description: packets then carry their parameter sets themselves.
 - **VP9 has no record in WebM,** so its profile and bit depth come from the keyframe's uncompressed header. Its level is the container's, or else the smallest whose picture size fits the stream (VP9 Annex A): browsers decode by the bitstream and the level is only a hint.
+- **Non-square pixels set the display aspect** (`displayAspectWidth` and `displayAspectHeight`), so a frame's display size is the size it is shown at before rotation.
 - **The config leaves out rotation and flip.** They are the display matrix's, applied where frames are drawn, the same for every decoder.
 - **Firefox's WebCodecs has no HEVC.** `isConfigSupported` says so, and the tests record it.
 - **WebKit decodes AV1 only in hardware,** on an Apple M3 or later, yet says it supports AV1 on any Mac. Elsewhere the decoder fails on the first frame (`EncodingError`), as it does on CI's runners, and the tests accept that failure, and only that one.
 
 The tests check every fixture in every browser. The decoder takes the config and decodes the first packet to frame 0. The codec string equals the one native FFmpeg writes, where it writes one (H.264 and AV1). The same holds for each stream converted to how a container without a record carries it: Annex B, its parameter sets in band. Bun unit tests cover the spec's HEVC example, VP9 profile 2, and AV1 sequence headers with timing and decoder model information, a high tier, and 10- and 12-bit depths.
+
+## Video output
+
+The render worker decodes a video stream's packets from the packet ring with a `VideoDecoder` and shows them through the compositor (`src/video.ts`). The packet's data goes straight from the ring into an `EncodedVideoChunk`, which copies it, so the ring frees it at once.
+
+- **The frame queue** (`src/frames.ts`) keeps decoded frames in presentation order, whatever order they arrive in, and is bounded by the bytes they hold, 64 MiB: two or three 4K 10-bit frames, hundreds of small ones. A frame on the GPU, without a pixel format, counts as RGBA.
+- **Closing** stops decoding at once, wherever it waits, and closes every frame; it is not a failure.
+- **Decoding waits** while the queue is full or the decoder holds 8 packets it has not decoded, and goes on when a frame is shown or the decoder takes a packet (its `dequeue` event). Neither memory nor the decoder's backlog grows. A hardware decoder's pool of frames may run out before the byte budget does; in playback the frames come back as they are shown, so decoding goes on. A seek must drop the frames before its target as they arrive, or the pool would stall it.
+- **Presenting** shows the latest frame due at the media time and closes the ones before it, which were never shown in time; the frame on screen is closed when the next one replaces it. Timestamps are the packets' pts in microseconds, rounded, or their dts where they have no pts, which is right for a stream without B-frames; a packet with neither is an error.
+- **The compositor** (`src/compositor.ts`) samples each frame as an external texture, which converts it to RGB with its own colour space (SDR for now), and draws one triangle over the canvas. Its uniform maps the canvas to the frame's texture through the inverse of FFmpeg's display matrix, so rotation and flip cost nothing, fitted and centred with black around it. An external texture lasts one task, so each frame gets its own bind group; with the `EncodedVideoChunk` that each packet needs, that is all a frame allocates.
+
+The tests (`test/render.test.ts`) decode every fixture from the ring into a canvas they read back, in every browser. Each frame goes up at its own timestamp with its own number, stays up halfway to the next, and a jump shows the frame due and skips the rest. The first frame, drawn at the size it is shown at, has the layout of native FFmpeg's, rotated and mirrored fixtures included: their brightness grids correlate above 0.9, where a mirrored one comes to about 0.76 and one turned the wrong way below 0. The levels are not compared, because for an untagged stream each browser and FFmpeg assume their own YUV matrix, and Chromium converts the transfer too; matching colour is the colour pipeline's.
 
 ## Bundling
 
@@ -93,6 +106,6 @@ So CI runs the engine tests on `macos-26`. The checks that a browser can be made
 
 ## Fixtures
 
-`scripts/gen-fixtures.ts` makes the test videos with native FFmpeg 9.0.2, the version `@snowy-media/ffmpeg` builds, and takes every expectation (format, codecs, sizes, timestamps, keyframes, duration) from native `ffprobe`. It covers H.264, HEVC, VP9 and AV1 in MP4, Matroska and WebM, with AAC or Opus, plus a variable frame rate file and a ten-minute file for drift.
+`scripts/gen-fixtures.ts` makes the test videos with native FFmpeg 9.0.2, the version `@snowy-media/ffmpeg` builds, and takes every expectation (format, codecs, sizes, timestamps, keyframes, duration) from native `ffprobe`. It covers H.264, HEVC, VP9 and AV1 in MP4, Matroska and WebM, with AAC or Opus, plus a variable frame rate file, a ten-minute file for drift, and files whose display matrix turns them a quarter turn, and also mirrors them. For each, it records the first frame as FFmpeg shows it, as a grid of mean brightness.
 
 Each frame shows its own number in binary, as a row of 16-pixel squares in the top-left corner ([`test/support/frame-id.ts`](../test/support/frame-id.ts)), and the audio clicks at every whole second. A test reads which frame is on screen from the canvas alone, after any decoder and colour conversion, and the clicks mark known instants in the audio. Squares this size survive every lossy codec in the set. The generator decodes every fixture natively and stops if a single frame number or click is more than a millisecond off, so a broken fixture never reaches a test. The output is reproducible (`-fflags +bitexact`, a fixed keyframe interval).
