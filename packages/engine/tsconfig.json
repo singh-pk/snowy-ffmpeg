@@ -1,5 +1,6 @@
 {
   "extends": "../../tsconfig.base.json",
   "include": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts", "bench/**/*.ts"],
-  "exclude": ["src/**/*.worker.ts"]
+  // Worker-only code: the worker globals (tsconfig.worker.json).
+  "exclude": ["src/**/*.worker.ts", "src/io.ts"]
 }

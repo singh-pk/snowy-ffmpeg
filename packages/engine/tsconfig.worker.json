@@ -4,5 +4,5 @@
     "lib": ["ESNext", "WebWorker"],
     "types": []
   },
-  "include": ["src/**/*.worker.ts"]
+  "include": ["src/**/*.worker.ts", "src/io.ts"]
 }

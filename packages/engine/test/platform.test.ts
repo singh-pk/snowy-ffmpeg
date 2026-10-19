@@ -6,13 +6,12 @@
 
 import { afterAll, describe, expect, test } from "bun:test";
 import { type BrowserType, chromium, firefox, type LaunchOptions, type Page } from "playwright";
-import { serve } from "../../../tooling/test-server";
 import { browsers } from "./support/browsers";
+import { ENTRY, serveEngine } from "./support/serve";
 
-const root = new URL("../", import.meta.url);
 const page = "<!doctype html><title>test</title>";
-const isolated = serve(root, page);
-const notIsolated = serve(root, page, { isolated: false });
+const isolated = await serveEngine(page);
+const notIsolated = await serveEngine(page, { isolated: false });
 
 afterAll(async () => {
   await isolated.stop(true);
@@ -43,7 +42,7 @@ async function start(type: BrowserType, options: LaunchOptions, url: URL) {
       } catch (e) {
         return e instanceof engine.UnsupportedPlatformError ? e.feature : String(e);
       }
-    }, "/dist/index.js");
+    }, ENTRY);
   } finally {
     await browser.close();
   }

@@ -25,9 +25,16 @@ The WebGPU check asks for an adapter, a device and a canvas context and then imp
 | Thread | Does | Blocks |
 | --- | --- | --- |
 | Main | the API, starting and stopping workers | never |
+| Media worker | reading the file, demuxing it with the FFmpeg core | yes, on reads |
 | Render worker | WebGPU, WebCodecs | never |
 
-Each worker is an entry point of its own in `dist/`, loaded by URL, so a thread downloads only its own code.
+Each worker is an entry point of its own in `dist/`, loaded by URL, so a thread downloads only its own code. The engine starts both at once, so the FFmpeg core loads while the render worker checks the GPU.
+
+The media worker is the one thread allowed to block. FFmpeg reads its input through synchronous callbacks, and the worker answers them with `FileReaderSync` (`src/io.ts`), straight from the `File`: FFmpeg reads only what the demuxer asks for, in reads of up to 4 MiB, never the whole file. Copying the file into WebAssembly memory first would cap it at that memory, and asynchronous reads would need Asyncify or JSPI around every FFmpeg call.
+
+## Bundling
+
+`dist/` keeps `@snowy-media/ffmpeg` as an import, so the app's bundler resolves it and the WebAssembly files it loads by URL, and an app can update it on its own. The tests have no bundler: `scripts/build.ts` builds them into `test/dist/` with the imports pointing at `/ffmpeg/`, where the test server serves the ffmpeg package.
 
 ## Testing
 
@@ -43,6 +50,6 @@ So CI runs the engine tests on `macos-26`. The checks that a browser can be made
 
 ## Fixtures
 
-`scripts/gen-fixtures.ts` makes the test videos with native FFmpeg 9.0.2, the version `@snowy-media/ffmpeg` builds, and takes every expectation (timestamps, keyframes, duration) from native `ffprobe`. It covers H.264, HEVC, VP9 and AV1 in MP4, Matroska and WebM, with AAC or Opus, plus a variable frame rate file and a ten-minute file for drift.
+`scripts/gen-fixtures.ts` makes the test videos with native FFmpeg 9.0.2, the version `@snowy-media/ffmpeg` builds, and takes every expectation (format, codecs, sizes, timestamps, keyframes, duration) from native `ffprobe`. It covers H.264, HEVC, VP9 and AV1 in MP4, Matroska and WebM, with AAC or Opus, plus a variable frame rate file and a ten-minute file for drift.
 
 Each frame shows its own number in binary, as a row of 16-pixel squares in the top-left corner ([`test/support/frame-id.ts`](../test/support/frame-id.ts)), and the audio clicks at every whole second. A test reads which frame is on screen from the canvas alone, after any decoder and colour conversion, and the clicks mark known instants in the audio. Squares this size survive every lossy codec in the set. The generator decodes every fixture natively and stops if a single frame number or click is more than a millisecond off, so a broken fixture never reaches a test. The output is reproducible (`-fflags +bitexact`, a fixed keyframe interval).

@@ -9,3 +9,4 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 ### Added
 
 - `createEngine({ canvas })`, which checks the platform once and rejects with an `UnsupportedPlatformError` naming the first missing feature: cross-origin isolation, WebAssembly SIMD or threads, AudioWorklet, OffscreenCanvas, WebGPU in a worker, WebCodecs, or importing a `VideoFrame` as a WebGPU texture.
+- `engine.open(file)`, which reads a local `File` in a worker and resolves with its container format, duration and tracks: codec, plus size for video and sample rate and channels for audio.
