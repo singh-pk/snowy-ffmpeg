@@ -29,6 +29,14 @@ const modules = [
   },
 ];
 
+// Valid C names a parameter cannot have in a module (strict mode), such as `in`, get a
+// trailing underscore. C keywords are left out: no C parameter has one.
+const RESERVED = new Set(
+  "arguments catch class debugger delete eval export extends finally function implements import in instanceof interface let new null package private protected public super this throw try typeof var with yield".split(
+    " ",
+  ),
+);
+
 function tsType(cType: string): string {
   if (cType.includes("*")) return "Ptr";
   if (/\bu?int64_t\b/.test(cType)) return "bigint";
@@ -49,7 +57,7 @@ async function generate({ dir, factory, iface, files }: (typeof modules)[number]
         : params.split(",").map((param) => {
             const { type = "", arg = "" } =
               /^(?<type>.*?)(?<arg>\w+)$/.exec(param.trim())?.groups ?? {};
-            return `${arg}: ${tsType(type)}`;
+            return `${RESERVED.has(arg) ? `${arg}_` : arg}: ${tsType(type)}`;
           });
     fns.push(`  _${name}(${args.join(", ")}): ${tsType(ret)};`);
   }
