@@ -8,6 +8,7 @@
 
 import {
   AV_NOPTS_VALUE,
+  AVERROR_EINVAL,
   AVERROR_EOF,
   AVSEEK_FLAG_BACKWARD,
   AVSEEK_FLAG_BYTE,
@@ -226,7 +227,40 @@ async function createDemuxer() {
     }
   }
 
-  return { demux, openBeyondPool, transferAll };
+  // Opens stream 0 of subtitle file `file` in core and sends and receives on it: "rejected"
+  // when both return AVERROR(EINVAL), as they must instead of corrupting memory.
+  function decodeSubtitles(file) {
+    source.open(file);
+    const out = core._malloc(4);
+    const name = core.stringToNewUTF8(file.name);
+    const opened = core._sny_open(1, 1 << 22, name, out);
+    const ctx = core.HEAP32[out >> 2];
+    core._free(name);
+    if (opened < 0) core._free(out);
+    check(opened, "open");
+    const decoded = core._sny_decoder_open(ctx, 0, out);
+    const dec = core.HEAP32[out >> 2];
+    core._free(out);
+    const pkt = core._sny_packet_alloc();
+    const frame = core._sny_frame_alloc();
+
+    try {
+      check(decoded, "decoder_open");
+      check(core._sny_read(ctx, pkt), "read");
+      const sent = core._sny_decoder_send(dec, pkt);
+      const received = core._sny_decoder_receive(dec, frame);
+      return sent === AVERROR_EINVAL && received === AVERROR_EINVAL
+        ? "rejected"
+        : `send ${sent}, receive ${received}`;
+    } finally {
+      if (decoded >= 0) core._sny_decoder_close(dec);
+      core._sny_frame_free(frame);
+      core._sny_packet_free(pkt);
+      core._sny_close(ctx);
+    }
+  }
+
+  return { demux, openBeyondPool, decodeSubtitles, transferAll };
 }
 
 function concat(chunks, Type) {
@@ -274,7 +308,7 @@ async function summarize(result) {
 const ready = createDemuxer();
 
 async function run(names) {
-  const { demux, openBeyondPool, transferAll } = await ready;
+  const { demux, openBeyondPool, decodeSubtitles, transferAll } = await ready;
   const results = {};
 
   for (const name of names) {
@@ -293,6 +327,9 @@ async function run(names) {
     const res = await fetch("/test/fixtures/h264.h264");
     const blob = await res.blob();
     results.threadPool = await openBeyondPool(new File([blob], "h264.h264"));
+    const subs = await fetch("/test/fixtures/subs.srt");
+    const text = await subs.blob();
+    results.subtitleDecoder = decodeSubtitles(new File([text], "subs.srt"));
   }
 
   self.postMessage(results);

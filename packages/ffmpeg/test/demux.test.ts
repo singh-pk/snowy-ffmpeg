@@ -75,6 +75,8 @@ for (const [engine, type] of [
     test("page is cross-origin isolated", () => expect(isolated).toBe(true));
     test("a decoder asking for more threads than the pool fails", () =>
       expect(results.threadPool as unknown).toBe("rejected"));
+    test("a subtitle decoder refuses packets and frames", () =>
+      expect(results.subtitleDecoder as unknown).toBe("rejected"));
 
     for (const name of names) {
       test(name, () => {
