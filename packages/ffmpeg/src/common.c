@@ -7,6 +7,7 @@
 
 #include <libavutil/error.h>
 #include <libavutil/mathematics.h>
+#include <libavutil/pixdesc.h>
 
 SNY_CONST(AVERROR_EOF, -541478725)
 SNY_CONST(AVERROR(EAGAIN), -6)
@@ -23,6 +24,36 @@ SNY_CONST(AVMEDIA_TYPE_AUDIO, 1)
 SNY_CONST(AVMEDIA_TYPE_DATA, 2)
 SNY_CONST(AVMEDIA_TYPE_SUBTITLE, 3)
 SNY_CONST(AVMEDIA_TYPE_ATTACHMENT, 4)
+// Colour: the values are those of ITU-T H.273, which codec strings use too.
+SNY_CONST(AVCOL_RANGE_UNSPECIFIED, 0)
+SNY_CONST(AVCOL_RANGE_MPEG, 1)
+SNY_CONST(AVCOL_RANGE_JPEG, 2)
+SNY_CONST(AVCOL_PRI_BT709, 1)
+SNY_CONST(AVCOL_PRI_UNSPECIFIED, 2)
+SNY_CONST(AVCOL_PRI_BT470BG, 5)
+SNY_CONST(AVCOL_PRI_SMPTE170M, 6)
+SNY_CONST(AVCOL_PRI_BT2020, 9)
+SNY_CONST(AVCOL_PRI_SMPTE431, 11)
+SNY_CONST(AVCOL_PRI_SMPTE432, 12)
+SNY_CONST(AVCOL_TRC_BT709, 1)
+SNY_CONST(AVCOL_TRC_UNSPECIFIED, 2)
+SNY_CONST(AVCOL_TRC_SMPTE170M, 6)
+SNY_CONST(AVCOL_TRC_LINEAR, 8)
+SNY_CONST(AVCOL_TRC_IEC61966_2_1, 13)
+SNY_CONST(AVCOL_TRC_BT2020_10, 14)
+SNY_CONST(AVCOL_TRC_BT2020_12, 15)
+SNY_CONST(AVCOL_TRC_SMPTE2084, 16)
+SNY_CONST(AVCOL_TRC_ARIB_STD_B67, 18)
+SNY_CONST(AVCOL_SPC_RGB, 0)
+SNY_CONST(AVCOL_SPC_BT709, 1)
+SNY_CONST(AVCOL_SPC_UNSPECIFIED, 2)
+SNY_CONST(AVCOL_SPC_BT470BG, 5)
+SNY_CONST(AVCOL_SPC_SMPTE170M, 6)
+SNY_CONST(AVCOL_SPC_BT2020_NCL, 9)
+SNY_CONST(AVCHROMA_LOC_UNSPECIFIED, 0)
+SNY_CONST(AVCHROMA_LOC_LEFT, 1)
+SNY_CONST(AVCHROMA_LOC_CENTER, 2)
+SNY_CONST(AVCHROMA_LOC_TOPLEFT, 3)
 
 // ---- Packets ----
 
@@ -62,6 +93,31 @@ API int sny_packet_side_data_size(const AVPacket *pkt, int i) { return pkt->side
 // NULL when out of memory.
 API uint8_t *sny_packet_side_data_add(AVPacket *pkt, int type, int size) {
   return av_packet_new_side_data(pkt, type, size);
+}
+
+// ---- Pixel formats and colour ----
+
+// FFmpeg's names, as ffprobe prints them, or NULL for a value FFmpeg does not know.
+API const char *sny_pix_fmt_name(int fmt) { return av_get_pix_fmt_name(fmt); }
+API const char *sny_color_range_name(int v) { return av_color_range_name(v); }
+API const char *sny_color_primaries_name(int v) { return av_color_primaries_name(v); }
+API const char *sny_color_trc_name(int v) { return av_color_transfer_name(v); }
+API const char *sny_color_space_name(int v) { return av_color_space_name(v); }
+API const char *sny_chroma_location_name(int v) { return av_chroma_location_name(v); }
+
+// Bits per sample of a pixel format's first component, and the log2 of its chroma
+// subsampling across and down; 0 for a format FFmpeg does not know.
+API int sny_pix_fmt_depth(int fmt) {
+  const AVPixFmtDescriptor *d = av_pix_fmt_desc_get(fmt);
+  return d ? d->comp[0].depth : 0;
+}
+API int sny_pix_fmt_log2_chroma_w(int fmt) {
+  const AVPixFmtDescriptor *d = av_pix_fmt_desc_get(fmt);
+  return d ? d->log2_chroma_w : 0;
+}
+API int sny_pix_fmt_log2_chroma_h(int fmt) {
+  const AVPixFmtDescriptor *d = av_pix_fmt_desc_get(fmt);
+  return d ? d->log2_chroma_h : 0;
 }
 
 // ---- Utilities ----

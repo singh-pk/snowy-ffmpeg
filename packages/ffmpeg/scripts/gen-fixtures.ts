@@ -56,6 +56,45 @@ const fixtures: Record<string, string[]> = {
   "mjpeg-422.avi": [...V, "-c:v", "mjpeg", "-pix_fmt", "yuvj422p"],
   // A display matrix: coded side data, carried to the video module with the codec parameters.
   "rotated.mp4": ["-display_rotation", "90", "-noautorotate", ...V, "-c:v", "libx264"],
+  // Not a multiple of 90°: ffprobe truncates the angle (29).
+  "rotated-30.mp4": ["-display_rotation", "30", "-noautorotate", ...V, "-c:v", "libx264"],
+  "flipped.mp4": [
+    "-display_rotation",
+    "90",
+    "-display_hflip",
+    "-noautorotate",
+    ...V,
+    "-c:v",
+    "libx264",
+  ],
+  // Tagged colour. The encoder takes it from the frames, not from -color_* options.
+  "hlg.mp4": [
+    ...V,
+    "-vf",
+    "setparams=color_primaries=bt2020:color_trc=arib-std-b67:colorspace=bt2020nc:range=tv",
+    "-c:v",
+    "libx264",
+    "-pix_fmt",
+    "yuv420p10le",
+  ],
+  // Dispositions, on two audio streams.
+  "dispositions.mkv": [
+    ...AV,
+    "-map",
+    "0",
+    "-map",
+    "1",
+    "-map",
+    "1",
+    "-c:v",
+    "libx264",
+    "-c:a",
+    "aac",
+    "-disposition:a:0",
+    "default+original",
+    "-disposition:a:1",
+    "comment+forced+hearing_impaired+visual_impaired",
+  ],
   "vp8.webm": [...V, "-c:v", "libvpx"],
   "h264-10.mkv": [...V, "-c:v", "libx264", "-pix_fmt", "yuv420p10le"],
   "h264-10-full.mkv": [...V, "-c:v", "libx264", "-pix_fmt", "yuv420p10le", "-color_range", "pc"],
@@ -138,6 +177,42 @@ interface Stream {
   codec_type: string;
   codec_name: string;
   sample_fmt?: string;
+  disposition: Record<string, number>;
+  side_data_list?: { side_data_type: string; displaymatrix?: string; rotation?: number }[];
+}
+
+interface PixelFormat {
+  name: string;
+  log2_chroma_w: number;
+  log2_chroma_h: number;
+  components?: { bit_depth: number }[];
+}
+
+const { pixel_formats: pixelFormats }: { pixel_formats: PixelFormat[] } =
+  await $`ffprobe -v error -show_pixel_formats -of json`.json();
+const IDENTITY = [1 << 16, 0, 0, 0, 1 << 16, 0, 0, 0, 1 << 30];
+
+// The bit depth and log2 chroma subsampling across and down of pixel format `name`.
+function pixelFormat(name?: string) {
+  const format = pixelFormats.find((f) => f.name === name);
+  return {
+    depth: format?.components?.[0]?.bit_depth ?? 0,
+    chroma: [format?.log2_chroma_w ?? 0, format?.log2_chroma_h ?? 0],
+  };
+}
+
+// A video stream's display matrix, from the container, as ffprobe prints it, and its rotation.
+function videoParams(s: Stream) {
+  const display = s.side_data_list?.find((d) => d.side_data_type === "Display Matrix");
+  // "\n00000000:  a  b  c\n00000001: …": the rows after each offset.
+  const matrix = display?.displaymatrix
+    ?.trim()
+    .split("\n")
+    .flatMap((row) => row.split(":")[1]?.trim().split(/\s+/).map(Number) ?? []);
+  return {
+    matrix: matrix ?? IDENTITY,
+    rotation: display?.rotation ?? 0,
+  };
 }
 
 interface VideoFrame {
@@ -145,6 +220,11 @@ interface VideoFrame {
   width: number;
   height: number;
   pix_fmt: string;
+  color_range?: string;
+  color_primaries?: string;
+  color_transfer?: string;
+  color_space?: string;
+  chroma_location?: string;
   side_data_list?: { side_data_type: string; rotation?: number }[];
 }
 
@@ -199,6 +279,7 @@ const CONVERTED: Record<string, string> = {
   "prores-pcm.mov": "yuv420p", // 10-bit 4:2:2
   "h264-10.mkv": "yuv420p", // 10-bit 4:2:0
   "h264-10-full.mkv": "yuv420p", // full range stays full range
+  "hlg.mp4": "yuv420p", // 10-bit 4:2:0
   "anim.apng": "rgb0", // rgb24
   "gray.nut": "rgb0",
   "mjpeg-422.avi": "yuv420p", // full-range 4:2:2
@@ -216,7 +297,7 @@ async function decodeVideo(file: string, name: string, index: number, codec: str
   // FFmpeg's own av1 decoder needs hardware; the WASM build decodes AV1 with dav1d.
   const dec = codec === "av1" ? ["-c:v", "libdav1d"] : [];
   const { frames }: { frames: VideoFrame[] } =
-    await $`ffprobe -v error ${dec} -select_streams ${index} -show_entries frame=pts,width,height,pix_fmt:frame_side_data=side_data_type,rotation -of json ${file}`.json();
+    await $`ffprobe -v error ${dec} -select_streams ${index} -show_entries frame=pts,width,height,pix_fmt,color_range,color_primaries,color_transfer,color_space,chroma_location:frame_side_data=side_data_type,rotation -of json ${file}`.json();
   // As the decoder outputs it: not rotated, not converted, no frame dropped or repeated.
   const decode = (vf: string[]) =>
     $`ffmpeg -v error -cpuflags 0 -noautorotate ${dec} -i ${file} -map 0:${index} -fps_mode passthrough ${vf} -c:v rawvideo -f rawvideo -`.arrayBuffer();
@@ -232,6 +313,14 @@ async function decodeVideo(file: string, name: string, index: number, codec: str
     width: first?.width,
     height: first?.height,
     pixFmt: first?.pix_fmt,
+    ...pixelFormat(first?.pix_fmt),
+    color: {
+      range: first?.color_range ?? "unknown",
+      primaries: first?.color_primaries ?? "unknown",
+      transfer: first?.color_transfer ?? "unknown",
+      space: first?.color_space ?? "unknown",
+      chromaLocation: first?.chroma_location ?? "unspecified",
+    },
     // Coded side data, such as a container's display matrix, reaches the frames.
     rotation:
       first?.side_data_list?.find((s) => s.side_data_type === "3x3 displaymatrix")?.rotation ?? 0,
@@ -240,8 +329,9 @@ async function decodeVideo(file: string, name: string, index: number, codec: str
   };
 }
 
-// Expectations from native FFmpeg: container name, streams, packet count and first pts per
-// stream, and for audio and video streams the decoded output.
+// Expectations from native FFmpeg: container name; streams with their dispositions, and for
+// video their parameters; packet count and first pts per stream; and for audio and video
+// streams the decoded output.
 const expected: Record<string, unknown> = {};
 const listing = await $`ls ${dir}`.text();
 const names = listing
@@ -264,6 +354,9 @@ for (const name of names) {
       codec: s.codec_name,
       packets: pkts.length,
       firstPts: pkts.slice(0, 3).map((p) => (p.pts === undefined ? null : String(p.pts))),
+      disposition: Object.keys(s.disposition)
+        .filter((k) => s.disposition[k])
+        .toSorted((a, b) => a.localeCompare(b)),
     };
 
     if (s.codec_type === "audio") {
@@ -277,7 +370,7 @@ for (const name of names) {
       }
     } else if (s.codec_type === "video") {
       const video = await decodeVideo(file, name, i, s.codec_name);
-      streams.push({ ...stream, video });
+      streams.push({ ...stream, params: videoParams(s), video });
     } else {
       streams.push(stream);
     }

@@ -6,6 +6,7 @@
 // scripts/gen-fixtures.ts). With ?transfer, streams core decodes also go through the copy
 // that feeds the other modules.
 
+import * as constants from "/dist/core/index.js";
 import {
   AV_NOPTS_VALUE,
   AVERROR_EINVAL,
@@ -27,6 +28,11 @@ const RESAMPLE_CHANNELS = 2;
 // threads, so frame threading runs in the tests.
 const POOL = Math.min(navigator.hardwareConcurrency, 8);
 const THREADS = Math.min(POOL, 4);
+
+// Every AV_DISPOSITION_* constant, by ffprobe's name for it.
+const DISPOSITIONS = Object.entries(constants)
+  .filter(([k]) => k.startsWith("AV_DISPOSITION_"))
+  .map(([k, flag]) => [k.slice("AV_DISPOSITION_".length).toLowerCase(), flag]);
 
 const timestamp = (v) => (v === AV_NOPTS_VALUE ? null : String(v));
 
@@ -104,6 +110,21 @@ function appendVideo(d, m, out, frame) {
   v.width ??= m._sny_frame_width(frame);
   v.height ??= m._sny_frame_height(frame);
   v.pixFmt ??= m.UTF8ToString(m._sny_frame_pix_fmt(frame));
+  const fmt = m._sny_frame_format(frame);
+  v.depth ??= m._sny_pix_fmt_depth(fmt);
+  v.chroma ??= [m._sny_pix_fmt_log2_chroma_w(fmt), m._sny_pix_fmt_log2_chroma_h(fmt)];
+  // ffprobe prints a value without a name as "unknown".
+  const name = (ptr, none = "unknown") => (ptr ? m.UTF8ToString(ptr) : none);
+  v.color ??= {
+    range: name(m._sny_color_range_name(m._sny_frame_color_range(frame))),
+    primaries: name(m._sny_color_primaries_name(m._sny_frame_color_primaries(frame))),
+    transfer: name(m._sny_color_trc_name(m._sny_frame_color_trc(frame))),
+    space: name(m._sny_color_space_name(m._sny_frame_color_space(frame))),
+    chromaLocation: name(
+      m._sny_chroma_location_name(m._sny_frame_chroma_location(frame)),
+      "unspecified",
+    ),
+  };
   v.rotation ??= m._sny_frame_rotation(frame);
   const raw = pack(m, frame);
   d.chunks.push(raw);
@@ -158,6 +179,9 @@ async function createDemuxer() {
           codec: str(core._sny_codec_name(st)),
           packets: 0,
           firstPts: [],
+          disposition: DISPOSITIONS.filter(([, flag]) => core._sny_stream_disposition(st) & flag)
+            .map(([key]) => key)
+            .toSorted((a, b) => a.localeCompare(b)),
         };
         streams.push(stream);
 
@@ -173,6 +197,10 @@ async function createDemuxer() {
 
           decoders.set(i, d);
         } else if (stream.type === "video") {
+          stream.params = {
+            matrix: Array.from({ length: 9 }, (_, k) => core._sny_stream_display_matrix(st, k)),
+            rotation: core._sny_stream_rotation(st),
+          };
           stream.video = { frames: 0, firstPts: [], videoFrame: "ok" };
           const decoder = await openDecoder(ctx, i, THREADS);
           const d = { video: stream.video, chunks: [], converted: [], decoder };
