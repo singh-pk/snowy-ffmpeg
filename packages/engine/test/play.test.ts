@@ -26,10 +26,12 @@ const MAX_OFFSET = 0.02;
 // How late a frame may look in Firefox, whose canvas reads back up to four frames stale.
 const STALE_LATE = 0.15;
 // On CI's virtual machines the GPU does not draw in real time (Chromium's page gets 30
-// animation frames a second), so video falls behind by up to half a second. There, lateness
-// is only bounded by this and logged; the bounds above hold on real hardware.
-const CI_LATE = 1;
-const ci = Boolean(process.env.CI);
+// animation frames a second), so video falls behind: p99 82 ms in Chromium, up to half a
+// second at worst. There, lateness is bounded by these, and logged; the bounds above hold on
+// real hardware.
+const CI_LATE = 0.6;
+const CI_P99 = 0.15;
+const ci = process.env.CI === "true";
 const server = await serveEngine(
   `<!doctype html><title>test</title><canvas width="${video.width}" height="${video.height}"></canvas>`,
 );
@@ -94,16 +96,18 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
           // frame queue only moves forward, so a frame older than one already read was not on
           // screen; the newest frame read is always checked, so this hides no frame ahead. More
           // of them come under load (4 % locally, 6 % on CI); most reads must still be checked.
-          // Its first read, too, now and then shows a frame from five or more frames before,
-          // with the frame due on the next read a few milliseconds later.
+          // The first read, in Firefox and now and then in Chromium, may show a frame from five
+          // or more frames before, with the frame due on the next read under a millisecond
+          // later in Chromium. That is no late frame: play prerolls a quarter second of video
+          // before the clock starts. So the first read is left out in every browser.
           const firefox = name === "firefox";
           const newest = { id: -1 };
           const checked = got.playing.filter(([, id], i) => {
-            const stale = firefox && (i === 0 || id < newest.id);
+            const stale = i === 0 || (firefox && id < newest.id);
             newest.id = Math.max(newest.id, id);
             return !stale;
           });
-          expect(got.playing.length - checked.length).toBeLessThan(got.playing.length / 4);
+          expect(got.playing.length - checked.length).toBeLessThan(got.playing.length / 10);
           const early = { offset: 0, time: 0, id: 0 };
           const late = { offset: 0, time: 0, id: 0 };
 
@@ -143,7 +147,7 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
           expect(late.offset, `late by ${of(late)}; first reads ${start.join(" ")}`).toBeLessThan(
             lateness,
           );
-          if (!ci) expect(p99, "the 99th percentile").toBeLessThan(MAX_OFFSET);
+          expect(p99, "the 99th percentile").toBeLessThan(ci ? CI_P99 : MAX_OFFSET);
           // Paused: one time, one frame.
           expect(new Set(got.paused.map(([time]) => time)).size).toBe(1);
           expect(new Set(got.paused.map(([, id]) => id)).size).toBe(1);

@@ -144,10 +144,11 @@ function play({ id, ring, params, pcm }: Extract<ToRender, { type: "play" }>) {
         const latest = output.latest();
         if (Number.isNaN(playing.first) && latest > -Infinity) playing.first = latest;
         const ahead = latest - playing.first >= PREROLL;
+        const full = output.full();
 
-        if (ahead || output.full() || output.ended()) {
+        if (ahead || full || output.ended()) {
           playing.decoded = true;
-          post({ type: "decoded", id });
+          post({ type: "decoded", id, full });
         }
       }
     } catch (e) {

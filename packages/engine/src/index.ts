@@ -46,16 +46,19 @@ const NO_VIDEO_RING = 64;
 const PREROLL = 0.25;
 // The output timestamp has settled once this many in a row, each newer than the last, map
 // context time to performance time within SETTLED_MS of the one before. The first ones
-// after output starts are estimates: Chromium's move by 35 ms, Firefox's by 10 ms.
+// after output starts are estimates: Chromium's move by 35 ms, Firefox's by 10 ms. Coarse
+// timers may never agree, so it settles anyway after SETTLED_LIMIT newer ones.
 const SETTLED_COUNT = 2;
 const SETTLED_MS = 2;
+const SETTLED_LIMIT = 10;
 // Animation frames published with a settled timestamp before play resolves, so the render
 // worker, a frame behind at most, has drawn the frame on screen by it.
 const DRAWN_AFTER = 2;
 // What the PCM ring mixes to; the context's destination takes stereo everywhere.
 const CHANNELS = 2;
 
-// Resolves on the first animation frame on which `done` returns true.
+// Resolves on the first animation frame on which `done` returns true; in a hidden page,
+// whose animation frames wait, once it is shown.
 async function until(done: () => boolean) {
   while (!done()) await new Promise((resolve) => requestAnimationFrame(resolve));
 }
@@ -168,13 +171,13 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     next: 0,
     // Whether the last call was play, not pause.
     playing: false,
-    // The last play the render worker has decoded ahead for.
-    decoded: -1,
+    // The last play the render worker has decoded ahead for, and whether its queue was full.
+    decoded: { id: -1, full: false },
     closed: false,
   };
 
   render.addEventListener("message", ({ data }: MessageEvent<FromRender>) => {
-    if (data.type === "decoded") state.decoded = data.id;
+    if (data.type === "decoded") state.decoded = { id: data.id, full: data.full };
     if (data.type === "error" && data.id === state.current) fail(new Error(data.message));
   });
   // An uncaught error in the render worker.
@@ -194,8 +197,12 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     if (!audio) throw new Error("play: a file without audio does not play yet");
     const video = opened.info.tracks.find((t) => t.kind === "video");
     const params = video && opened.video[video.id];
-    const pcm = createPcmRing(pcmFrames(context.sampleRate), CHANNELS, context.sampleRate);
+    const frames = pcmFrames(context.sampleRate);
+    const pcm = createPcmRing(frames, CHANNELS, context.sampleRate);
     const clock = createPcmControl(pcm);
+    // Held while it prerolls: a context made in a user gesture starts running by itself, and
+    // one that played the last file still runs.
+    await context.suspend();
     const node = await createAudioOutput(context, pcm);
 
     // An open may have stopped this play while the worklet loaded, and the media worker may
@@ -212,7 +219,7 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     const demuxed = media.send({ type: "demux", ring, streams, audio: { stream: audio.id, pcm } });
     const frame = { id: 0 };
     // The last output timestamp, as context minus performance milliseconds, and when.
-    const output = { offset: Number.NaN, at: 0, agreed: 0, settled: false, frames: 0 };
+    const output = { offset: Number.NaN, at: 0, agreed: 0, newer: 0, settled: false, frames: 0 };
     const demux = { done: false };
 
     // The output timestamp, for the render worker (src/pcm.ts), on every animation frame.
@@ -227,10 +234,13 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
         output.agreed = agrees ? output.agreed + 1 : 0;
         output.offset = offset;
         output.at = performanceTime;
+        output.newer++;
       }
 
       const running = context.state === "running";
-      output.settled = running && (output.settled || output.agreed >= SETTLED_COUNT);
+      const agreed = output.agreed >= SETTLED_COUNT || output.newer >= SETTLED_LIMIT;
+      output.settled = running && (output.settled || agreed);
+      if (!running) output.newer = 0;
       output.frames = output.settled ? output.frames + 1 : 0;
       clock.publishOutput(contextTime, performance.timeOrigin + performanceTime, output.settled);
       frame.id = requestAnimationFrame(publish);
@@ -254,10 +264,18 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
       node.disconnect();
     }
 
-    // Whether it may start: video is decoded ahead, and audio buffered or all demuxed.
+    // Whether it may start, once and for good: video is decoded and audio buffered ahead, or
+    // either can wait no longer. While the context is held, a full PCM ring blocks the media
+    // worker, and so does a full frame queue in the end, so then nothing more would come.
+    const prerolled = { done: false };
+
     function primed() {
-      const shown = !params || state.decoded === id;
-      return shown && (clock.buffered() >= PREROLL * context.sampleRate || demux.done);
+      const decoded = state.decoded.id === id;
+      const videoAhead = !params || decoded;
+      const audioAhead = clock.buffered() >= PREROLL * context.sampleRate || demux.done;
+      const blocked = clock.buffered() >= frames || (decoded && state.decoded.full);
+      prerolled.done ||= (videoAhead && audioAhead) || blocked;
+      return prerolled.done;
     }
 
     publish();
@@ -306,12 +324,19 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     // Unless an open stopped it while it started.
     if (state.playback === playback) state.clock = started.clock;
     const stopped = () => state.current !== started.id;
-    await until(() => stopped() || started.primed());
-    if (stopped()) throw state.failure ?? new DOMException("play: stopped", "AbortError");
+
+    // Rejects if an open or a failure stopped it while it waited.
+    const check = () => {
+      if (stopped()) throw state.failure ?? new DOMException("play: stopped", "AbortError");
+    };
+
+    await until(() => stopped() || !state.playing || started.primed());
+    check();
     // Unless a pause came while it started.
     if (!state.playing) return;
     await context.resume();
     await until(() => stopped() || !state.playing || started.heard());
+    check();
   }
 
   // `playback` once it has started; if it fails to, it is no longer what plays.
