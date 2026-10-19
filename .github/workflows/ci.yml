@@ -130,6 +130,8 @@ jobs:
     # Only macOS 26 runners have WebGPU with a GPU in Chromium, Firefox and WebKit
     # (packages/engine/docs/architecture.md#testing).
     runs-on: macos-26
+    # It takes about 5 minutes; a browser that hangs would otherwise hold the runner for 6 hours.
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: packages/engine
