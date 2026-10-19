@@ -1,0 +1,195 @@
+// SPDX-FileCopyrightText: 2026 The Snowy Authors
+// SPDX-License-Identifier: MIT
+//
+// Generates the test videos in test/fixtures and their expectations, test/fixtures/expected.json,
+// from native ffprobe. Every video frame carries its number (test/support/frame-id.ts) and the
+// audio clicks at every whole second, so a test can measure which frame is shown when, and
+// where audio and video drift apart. Before writing anything it decodes every fixture
+// natively and checks every frame number and click. Requires ffmpeg and ffprobe 9.0.2 on
+// PATH, the version @snowy-media/ffmpeg builds. Usage: bun run fixtures
+
+import { $ } from "bun";
+import { mkdir, rm } from "node:fs/promises";
+import { CELL, FRAME_ID_BITS, readFrameId } from "../test/support/frame-id";
+
+const dir = new URL("../test/fixtures/", import.meta.url).pathname;
+const WIDTH = 320;
+const HEIGHT = 180;
+const FPS = 30;
+const RATE = 48_000;
+// The click's length, and how far from a whole second a decoded click may start.
+const CLICK = 0.002;
+const CLICK_TOLERANCE = 0.001;
+
+// SVT-AV1 logs its configuration to stderr unless told not to.
+$.env({ ...process.env, SVT_LOG: "1" });
+
+for (const tool of ["ffmpeg", "ffprobe"]) {
+  const version = await $`${tool} -version`.text();
+  if (!version.startsWith(`${tool} version 9.0.2 `)) throw new Error(`needs ${tool} 9.0.2 on PATH`);
+}
+
+// The frame number over the top band, in limited range (16 black, 235 white). geq works in
+// each plane's own coordinates, and the chroma planes have half as many rows.
+const bit = `mod(floor(N/pow(2,floor(X/${CELL}))),2)`;
+const code = [
+  `lum='if(lt(Y,${CELL}),if(lt(X,${CELL * FRAME_ID_BITS}),16+219*${bit},16),lum(X,Y))'`,
+  `cb='if(lt(Y,${CELL / 2}),128,cb(X,Y))'`,
+  `cr='if(lt(Y,${CELL / 2}),128,cr(X,Y))'`,
+].join(":");
+
+// Moving test pattern, or flat grey for the long fixture, which only needs the numbers.
+const video = (seconds: number, source = "testsrc2=") => [
+  "-f",
+  "lavfi",
+  "-i",
+  `${source}size=${WIDTH}x${HEIGHT}:rate=${FPS}:duration=${seconds},format=yuv420p,geq=${code}`,
+];
+
+// A 4 kHz burst at every whole second, the same in both channels.
+const clicks = (seconds: number) => [
+  "-f",
+  "lavfi",
+  "-i",
+  `aevalsrc='if(lt(mod(t,1),${CLICK}),0.8*sin(2*PI*4000*t),0)':s=${RATE}:d=${seconds}:c=stereo`,
+];
+
+// One keyframe a second and none in between, so a seek usually decodes forward from one.
+const GOP = ["-g", String(FPS), "-keyint_min", String(FPS), "-sc_threshold", "0"];
+const H264 = ["-c:v", "libx264", ...GOP];
+const HEVC = [
+  "-c:v",
+  "libx265",
+  "-tag:v",
+  "hvc1",
+  "-x265-params",
+  `keyint=${FPS}:min-keyint=${FPS}:scenecut=0:log-level=none`,
+];
+const VP9 = ["-c:v", "libvpx-vp9", "-g", String(FPS)];
+const AV1 = ["-c:v", "libsvtav1", "-g", String(FPS)];
+const AAC = ["-c:a", "aac"];
+const OPUS = ["-c:a", "libopus"];
+// No random IDs or version tags, so the output is reproducible.
+const OUT = ["-fflags", "+bitexact"];
+
+// name -> its length and the ffmpeg arguments after the inputs. Every fixture has FPS frames
+// and one click per second of it.
+const fixtures: Record<string, { seconds: number; args: string[]; source?: string }> = {
+  "h264-aac.mp4": { seconds: 3, args: [...H264, ...AAC] },
+  "h264-aac.mkv": { seconds: 3, args: [...H264, ...AAC] },
+  "hevc-aac.mp4": { seconds: 3, args: [...HEVC, ...AAC] },
+  "vp9-opus.webm": { seconds: 3, args: [...VP9, ...OPUS] },
+  "av1-opus.webm": { seconds: 3, args: [...AV1, ...OPUS] },
+  // Variable frame rate: frames last one frame and a frame and a half, alternately.
+  "vfr-h264-aac.mkv": {
+    seconds: 3,
+    args: [
+      "-vf",
+      `settb=1/${2 * FPS},setpts='2*N+floor(N/2)'`,
+      "-fps_mode",
+      "passthrough",
+      "-enc_time_base:v",
+      `1/${2 * FPS}`,
+      ...H264,
+      ...AAC,
+    ],
+  },
+  // Ten minutes, for drift.
+  "sync-10min.mp4": { seconds: 600, args: [...H264, ...AAC], source: "color=c=gray:" },
+};
+
+interface Packet {
+  codec_type: string;
+  pts: number;
+  flags: string;
+}
+
+interface Stream {
+  index: number;
+  codec_type: string;
+  codec_name: string;
+  time_base: string;
+  start_time?: string;
+  width?: number;
+  height?: number;
+  sample_rate?: string;
+}
+
+// The presentation timestamps of video stream `index`, and the frame number on each frame.
+async function readVideo(file: string, index: number, width: number, height: number) {
+  const { frames }: { frames: { pts: number }[] } =
+    await $`ffprobe -v error -select_streams ${index} -show_entries frame=pts -of json ${file}`.json();
+  const grey =
+    await $`ffmpeg -v error -i ${file} -map 0:${index} -fps_mode passthrough -pix_fmt gray -f rawvideo -`.arrayBuffer();
+  const size = width * height;
+  if (grey.byteLength !== frames.length * size) throw new Error(`${file}: frame count differs`);
+  const ids = frames.map((_, i) => readFrameId(new Uint8Array(grey, i * size, size), width));
+  return { pts: frames.map((f) => f.pts), ids };
+}
+
+// The time each click starts, in seconds on the stream's timeline.
+async function readClicks(file: string, stream: Stream) {
+  const left = "pan=mono|c0=c0";
+  const pcm =
+    await $`ffmpeg -v error -i ${file} -map 0:${stream.index} -af ${left} -f f32le -`.arrayBuffer();
+  const samples = new Float32Array(pcm);
+  const start = Number(stream.start_time ?? 0);
+  const onsets: number[] = [];
+  let quietUntil = 0;
+
+  for (const [i, s] of samples.entries()) {
+    if (i < quietUntil || Math.abs(s) < 0.3) continue;
+    onsets.push(start + i / RATE);
+    quietUntil = i + RATE / 2;
+  }
+
+  return onsets;
+}
+
+await rm(dir, { recursive: true, force: true });
+await mkdir(dir, { recursive: true });
+const expected: Record<string, unknown> = {};
+
+for (const [name, { seconds, args, source }] of Object.entries(fixtures)) {
+  const file = dir + name;
+  const inputs = [...video(seconds, source), ...clicks(seconds)];
+  await $`ffmpeg -hide_banner -loglevel error -y ${inputs} ${args} ${OUT} ${file}`;
+  const probe =
+    await $`ffprobe -v error -show_format -show_streams -show_entries packet=codec_type,pts,flags -of json ${file}`.json();
+  const streams: Stream[] = probe.streams;
+  const packets: Packet[] = probe.packets;
+  const v = streams.find((s) => s.codec_type === "video");
+  const a = streams.find((s) => s.codec_type === "audio");
+  if (!v?.width || !v.height || !a) throw new Error(`${name}: needs a video and an audio stream`);
+  const { pts, ids } = await readVideo(file, v.index, v.width, v.height);
+  if (ids.length !== seconds * FPS) throw new Error(`${name}: ${ids.length} frames`);
+  const wrong = ids.findIndex((id, i) => id !== i);
+  if (wrong >= 0) throw new Error(`${name}: frame ${wrong} reads as ${ids[wrong]}`);
+  const onsets = await readClicks(file, a);
+  if (onsets.length !== seconds) throw new Error(`${name}: ${onsets.length} clicks`);
+  const late = onsets.findIndex((t, k) => Math.abs(t - k) > CLICK_TOLERANCE);
+  if (late >= 0) throw new Error(`${name}: click ${late} starts at ${onsets[late]} s`);
+  const keyframes = packets.filter((p) => p.codec_type === "video" && p.flags.startsWith("K"));
+
+  expected[name] = {
+    format: probe.format.format_name,
+    duration: Number(probe.format.duration),
+    video: {
+      codec: v.codec_name,
+      timeBase: v.time_base,
+      width: v.width,
+      height: v.height,
+      // Frame i shows the number i, so this is also every frame's number in order.
+      pts,
+      keyframes: keyframes.map((p) => p.pts),
+    },
+    audio: { codec: a.codec_name, sampleRate: Number(a.sample_rate), clicks: onsets.length },
+  };
+  console.log(name, `${pts.length} frames`, `${onsets.length} clicks`);
+}
+
+// One fixture a line: readable, and a regenerated fixture changes one line.
+const lines = Object.entries(expected).map(
+  ([k, v]) => `  ${JSON.stringify(k)}: ${JSON.stringify(v)}`,
+);
+await Bun.write(`${dir}expected.json`, `{\n${lines.join(",\n")}\n}\n`);

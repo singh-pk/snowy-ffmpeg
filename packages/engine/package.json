@@ -17,6 +17,8 @@
   "scripts": {
     "build": "bun scripts/build.ts",
     "test": "bun scripts/build.ts && bun test",
+    "bench": "bun bench/run.ts",
+    "fixtures": "bun scripts/gen-fixtures.ts",
     "typecheck": "bun --bun tsc && bun --bun tsc -p tsconfig.worker.json"
   },
   "devDependencies": {

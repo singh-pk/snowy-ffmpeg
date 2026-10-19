@@ -15,7 +15,7 @@
     "packages/*/dist/**",
     "packages/ffmpeg/bench/variants/**",
     "packages/ffmpeg/bench/media/**",
-    "packages/ffmpeg/test/fixtures/**",
+    "packages/*/test/fixtures/**",
     "packages/ffmpeg/bench/results/**"
   ],
   "rules": {
