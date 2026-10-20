@@ -26,11 +26,11 @@ const MAX_OFFSET = 0.02;
 // How late a frame may look in Firefox, whose canvas reads back up to four frames stale.
 const STALE_LATE = 0.15;
 // On CI's virtual machines the GPU does not draw in real time (Chromium's page gets 30
-// animation frames a second), so video falls behind: p99 82 ms in Chromium, up to half a
-// second at worst. And when the machine stalls, Firefox's output timestamp jumps as it
+// animation frames a second), so video falls behind: p99 82 ms in Chromium, up to three
+// quarters of a second at worst. And when the machine stalls, Firefox's output timestamp jumps as it
 // catches up, so a frame looks early by up to 86 ms. There, the offsets are bounded by
 // these, and logged; the bounds above hold on real hardware.
-const CI_LATE = 0.6;
+const CI_LATE = 1;
 const CI_EARLY = 0.15;
 const CI_P99 = 0.15;
 const ci = process.env.CI === "true";
