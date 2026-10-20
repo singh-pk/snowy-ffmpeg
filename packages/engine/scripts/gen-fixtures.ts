@@ -69,6 +69,9 @@ const HEVC = [
   `keyint=${FPS}:min-keyint=${FPS}:scenecut=0:log-level=none`,
 ];
 const VP9 = ["-c:v", "libvpx-vp9", "-g", String(FPS)];
+// Alt-ref frames, which libvpx makes only in two passes, and WebM stores as packets that make
+// no frame.
+const VP8_ALTREF = ["-c:v", "libvpx", "-b:v", "1M", "-g", String(FPS), "-auto-alt-ref", "1"];
 const AV1 = ["-c:v", "libsvtav1", "-g", String(FPS)];
 const AAC = ["-c:a", "aac"];
 const OPUS = ["-c:a", "libopus"];
@@ -87,6 +90,7 @@ const fixtures: Record<
     input?: string[];
     fps?: number;
     audioSeconds?: number;
+    twoPass?: boolean;
   }
 > = {
   "h264-aac.mp4": { seconds: 3, args: [...H264, ...AAC] },
@@ -124,6 +128,7 @@ const fixtures: Record<
   "sparse-h264-aac.mp4": { seconds: 12, fps: 0.5, args: [...H264, ...AAC] },
   // Audio for a tenth of a second, less than play buffers before it starts, under 3 s of video.
   "short-audio-h264-aac.mp4": { seconds: 3, audioSeconds: 0.1, args: [...H264, ...AAC] },
+  "altref-vp8-opus.webm": { seconds: 3, args: [...VP8_ALTREF, ...OPUS], twoPass: true },
   // Ten minutes, for drift.
   "sync-10min.mp4": { seconds: 600, args: [...H264, ...AAC], source: "color=c=gray:" },
 };
@@ -242,15 +247,35 @@ async function resample(file: string, index: number) {
   };
 }
 
+// Encodes `file` from `inputs` with `args`; in two passes if `twoPass`, the first logging to
+// a directory of its own.
+async function encode(file: string, inputs: string[], args: string[], twoPass = false) {
+  if (!twoPass) {
+    await $`ffmpeg -hide_banner -loglevel error -y ${inputs} ${args} ${OUT} ${file}`;
+    return;
+  }
+
+  const log = await mkdtemp(join(tmpdir(), "snowy-pass-"));
+  const passlog = ["-passlogfile", join(log, "pass")];
+
+  try {
+    await $`ffmpeg -hide_banner -loglevel error -y ${inputs} ${args} -pass 1 ${passlog} -an -f null -`;
+    await $`ffmpeg -hide_banner -loglevel error -y ${inputs} ${args} -pass 2 ${passlog} ${OUT} ${file}`;
+  } finally {
+    await rm(log, { recursive: true, force: true });
+  }
+}
+
 await rm(dir, { recursive: true, force: true });
 await mkdir(dir, { recursive: true });
 const expected: Record<string, unknown> = {};
 
 for (const [name, fixture] of Object.entries(fixtures)) {
-  const { seconds, args, source, input = [], fps = FPS, audioSeconds = seconds } = fixture;
+  const { seconds, args, source, input = [], fps = FPS, audioSeconds = seconds, twoPass } = fixture;
   const file = dir + name;
   const inputs = [...input, ...video(seconds, source, fps), ...clicks(audioSeconds)];
-  await $`ffmpeg -hide_banner -loglevel error -y ${inputs} ${args} ${OUT} ${file}`;
+  await encode(file, inputs, args, twoPass);
+
   const probe =
     await $`ffprobe -v error -show_format -show_streams -show_entries packet=codec_type,stream_index,pts,dts,size,flags,data_hash -show_data_hash crc32 -of json ${file}`.json();
   const streams: Stream[] = probe.streams;

@@ -27,6 +27,7 @@ The tests and benchmarks build what they run, and need `@snowy-media/ffmpeg` bui
 | `src/codec.ts` | WebCodecs decoder configs, with the codec string from a stream's configuration record or parameter sets |
 | `src/video.ts` | the render worker's video output: WebCodecs decoding from the packet ring, and presentation |
 | `src/frames.ts` | the frame queue, in presentation order and bounded by bytes |
+| `src/decoding.ts` | how far a video decoder has decoded, whatever order it emits frames in |
 | `src/compositor.ts` | the WebGPU compositor: a frame, turned by its display matrix, fitted into the canvas |
 | `src/webgpu.d.ts` | the WebGPU flag constants TypeScript's libraries leave out |
 | `src/pcm.ts` | the PCM ring from the media worker to the AudioWorklet, and the clock |

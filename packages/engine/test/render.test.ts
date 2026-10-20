@@ -29,6 +29,11 @@ const expected: Record<string, { video: Video }> = await Bun.file(
 // What each browser cannot decode on every machine (test/video.test.ts): WebKit's AV1 needs
 // hardware CI's runners lack.
 const UNSUPPORTED: Record<string, string[]> = { firefox: ["hevc"], webkit: ["av1"] };
+// What a browser fails to decode, by file, and how: WebKit's VP8 decoder fails on a frame that
+// is not shown, such as an alt-ref frame (docs/architecture.md#video-decoder-configs).
+const FAILS: Record<string, Record<string, string>> = {
+  webkit: { "altref-vp8-opus.webm": "VPx decoding failed" },
+};
 // Frames shown one by one, then a jump to a later one.
 const STEPS = 20;
 const JUMP = 59;
@@ -39,6 +44,16 @@ const MIN_CORRELATION = 0.9;
 const server = await serveEngine("<!doctype html><title>test</title>");
 
 afterAll(() => server.stop(true));
+
+// The message `promise` rejects with, or "" if it resolves.
+async function rejection(promise: Promise<unknown>) {
+  try {
+    await promise;
+    return "";
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+}
 
 const mean = (v: number[]) => v.reduce((s, x) => s + x, 0) / v.length;
 
@@ -97,7 +112,7 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
         try {
           const tab = await browser.newPage();
           await tab.goto(server.url.href);
-          const got = await tab.evaluate(
+          const rendering = tab.evaluate(
             async ({ page, worker, n, stream, size }) => {
               const support: typeof import("./support/page") = await import(page);
               const media = support.startMedia(worker);
@@ -119,6 +134,15 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
               size: { times, width, height },
             },
           );
+          const fails = FAILS[name]?.[file];
+
+          if (fails) {
+            const failed = await rejection(rendering);
+            expect(failed).toContain(fails);
+            return;
+          }
+
+          const got = await rendering;
 
           expect(got.shown.map((s) => s.drawn)).toEqual(drawn);
           const ids = got.shown.filter((s) => s.drawn).map((s) => s.id);
