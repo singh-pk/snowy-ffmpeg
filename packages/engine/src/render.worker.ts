@@ -112,10 +112,10 @@ function stop() {
   state.playing = undefined;
 }
 
-function play({ id, ring, params, pcm }: Extract<ToRender, { type: "play" }>) {
+function play({ id, ring, wake, params, pcm }: Extract<ToRender, { type: "play" }>) {
   stop();
   if (!state.compositor) throw new Error("play before init");
-  const output = createVideoOutput(ring, params, state.compositor);
+  const output = createVideoOutput(ring, wake, params, state.compositor);
   const clock = createPcmControl(pcm);
   const playing = { output, frame: 0, first: Number.NaN, reported: -1, shown: false };
   // The latest frame decoded, and when it was, in animation frame time.

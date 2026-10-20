@@ -5,8 +5,8 @@
 // with no message per packet. It is a byte stream of records: a 32-byte header, then the
 // payload, padded to 32 bytes. A record may wrap around the end of the ring, so a packet of
 // any size up to the capacity fits without wasting the space at the end. The producer blocks
-// (Atomics.wait) while the ring is full; the consumer never blocks, and waits with
-// Atomics.waitAsync.
+// (Atomics.wait) while the ring is full; the consumer never blocks, and waits for a message
+// the producer posts on a MessageChannel between them when it writes to an empty ring.
 //
 // Positions only grow, as 32-bit integers that wrap; the distance between them is the bytes
 // in use. Each side writes only its own position, so neither needs a lock.
@@ -75,8 +75,11 @@ function views(ring: SharedArrayBuffer) {
   };
 }
 
-/** The producer's side of `ring`, for a thread that may block. */
-export function createProducer(ring: SharedArrayBuffer) {
+/**
+ * The producer's side of `ring`, for a thread that may block, with `wake`, one end of the
+ * channel whose other end the consumer has.
+ */
+export function createProducer(ring: SharedArrayBuffer, wake: MessagePort) {
   const { capacity, control, bytes, words, longs } = views(ring);
 
   // Waits until `need` bytes are free; false once the consumer has closed the ring.
@@ -127,7 +130,14 @@ export function createProducer(ring: SharedArrayBuffer) {
     bytes.set(src.subarray(offset, offset + first), start);
     if (first < size) bytes.set(src.subarray(offset + first, offset + size), 0);
     Atomics.store(control, WRITE, (written + need) | 0);
-    if (Atomics.load(control, CONSUMER_WAITING)) Atomics.notify(control, WRITE);
+
+    // Taken, so a wait gets one message.
+    const waiting = Atomics.load(control, CONSUMER_WAITING) === 1;
+
+    if (waiting && Atomics.compareExchange(control, CONSUMER_WAITING, 1, 0) === 1) {
+      wake.postMessage(null);
+    }
+
     return true;
   }
 
@@ -144,9 +154,29 @@ export function createProducer(ring: SharedArrayBuffer) {
   return { write, end, fail };
 }
 
-/** The consumer's side of `ring`, for a thread that never blocks. */
-export function createConsumer(ring: SharedArrayBuffer) {
+/**
+ * Stops the producer of `ring`, from any thread: its next write returns false. A wait of the
+ * consumer goes on until its own thread closes it.
+ */
+export function closeRing(ring: SharedArrayBuffer) {
+  const { control } = views(ring);
+  Atomics.store(control, CLOSED, 1);
+  // Moving READ wakes a producer that checked CLOSED just before; it is waiting for space,
+  // so READ was not at WRITE.
+  Atomics.store(control, READ, Atomics.load(control, WRITE));
+  Atomics.notify(control, READ);
+}
+
+/**
+ * The consumer's side of `ring`, for a thread that never blocks, with `wake`, the end of the
+ * channel whose other end the producer has.
+ */
+export function createConsumer(ring: SharedArrayBuffer, wake: MessagePort) {
   const { capacity, control, bytes, words, longs } = views(ring);
+  // Ends the wait in progress, if any.
+  const waiting = { end: () => {} };
+  wake.addEventListener("message", () => waiting.end());
+  wake.start();
   const packet: Packet = { stream: 0, flags: 0, pts: 0n, dts: 0n, duration: 0, data: bytes };
   // Where a record that wraps is put back together; it grows to the largest such packet.
   let joined = new Uint8Array(0);
@@ -189,22 +219,23 @@ export function createConsumer(ring: SharedArrayBuffer) {
   /** Resolves once the ring holds a packet, or at once when it is closed. */
   async function wait() {
     if (Atomics.load(control, CLOSED)) return;
-    // Raised before the check, so a write after it notifies this wait or changes WRITE first.
+    // Raised before the check, so a write after it posts to this wait or changes WRITE first.
     Atomics.store(control, CONSUMER_WAITING, 1);
-    const waiting = Atomics.waitAsync(control, WRITE, control[READ] ?? 0);
-    if (waiting.async) await waiting.value;
-    Atomics.store(control, CONSUMER_WAITING, 0);
+    const empty = Atomics.load(control, WRITE) === (control[READ] ?? 0);
+    // A packet came first: lower the flag, unless the producer took it and its message is on
+    // its way, which this wait must take so the next one does not end on it.
+    if (!empty && Atomics.compareExchange(control, CONSUMER_WAITING, 1, 0) === 1) return;
+    // Made only now: a message comes in a later task, never before this await.
+    const woken = Promise.withResolvers<void>();
+    waiting.end = woken.resolve;
+    await woken.promise;
   }
 
-  /** Stops the producer: its next write returns false, and a waiting one wakes up. */
+  /** Stops the producer, and ends a wait of this consumer's own: no write will. */
   function close() {
-    Atomics.store(control, CLOSED, 1);
-    // Moving READ wakes a producer that checked CLOSED just before; it is waiting for space,
-    // so READ was not at WRITE.
-    Atomics.store(control, READ, Atomics.load(control, WRITE));
-    Atomics.notify(control, READ);
-    // And a wait of this consumer's own resolves: a closed producer writes nothing to wake it.
-    Atomics.notify(control, WRITE);
+    closeRing(ring);
+    waiting.end();
+    wake.close();
   }
 
   /** Whether the producer waits for room. */

@@ -43,12 +43,12 @@ function crc32(data: Uint8Array) {
 const timestamp = (t: bigint) => (t === AV_NOPTS_VALUE ? "" : String(t));
 
 /**
- * Reads `ring` to its END record and resolves with each stream's packet count and the
- * SHA-256 of its lines `pts,dts,key,size,crc32`, without dts unless `dts`
+ * Reads `ring`, woken by `wake`, to its END record and resolves with each stream's packet count
+ * and the SHA-256 of its lines `pts,dts,key,size,crc32`, without dts unless `dts`
  * (scripts/gen-fixtures.ts); or with "failed" at a FAILED record.
  */
-export async function hashRing(ring: SharedArrayBuffer, dts: boolean) {
-  const consumer = createConsumer(ring);
+export async function hashRing(ring: SharedArrayBuffer, wake: MessagePort, dts: boolean) {
+  const consumer = createConsumer(ring, wake);
   const lines = new Map<number, string[]>();
 
   for (;;) {
@@ -115,7 +115,11 @@ export async function play(
   });
   await createAudioOutput(context, pcm, worklet);
   // No packets: the ring only gets the END record.
-  await media.request({ type: "demux", ring: createRing(64), streams: [], audio: { stream, pcm } });
+  const { port1 } = new MessageChannel();
+  const ring = createRing(64);
+  await media.request({ type: "demux", ring, wake: port1, streams: [], audio: { stream, pcm } }, [
+    port1,
+  ]);
   const offsets: number[] = [];
   const rendering = { done: false };
 
@@ -154,7 +158,7 @@ export function startMedia(url: string) {
   const worker = new Worker(url, { type: "module" });
   let next = 0;
 
-  function request(message: DistributiveOmit<ToMedia, "id">) {
+  function request(message: DistributiveOmit<ToMedia, "id">, transfer: Transferable[] = []) {
     const id = next++;
 
     return new Promise<FromMedia>((resolve, reject) => {
@@ -164,7 +168,7 @@ export function startMedia(url: string) {
         if (e.data.type === "error") reject(new Error(e.data.message));
         else resolve(e.data);
       });
-      worker.postMessage({ ...message, id });
+      worker.postMessage({ ...message, id }, transfer);
     });
   }
 
@@ -176,8 +180,9 @@ type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K>
 /** The first packet of `stream` in the file open in `media`, which stops demuxing after it. */
 export async function firstPacket(media: ReturnType<typeof startMedia>, stream: number) {
   const ring = createRing(1 << 22);
-  const consumer = createConsumer(ring);
-  const demuxed = media.request({ type: "demux", ring, streams: [stream] });
+  const { port1, port2 } = new MessageChannel();
+  const consumer = createConsumer(ring, port2);
+  const demuxed = media.request({ type: "demux", ring, wake: port1, streams: [stream] }, [port1]);
 
   for (;;) {
     const packet = consumer.peek();
@@ -310,8 +315,9 @@ export async function render(
   const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC;
   context.configure({ device, format, usage, alphaMode: "opaque" });
   const ring = createRing(RING_CAPACITY);
-  const demuxed = media.request({ type: "demux", ring, streams: [stream] });
-  const output = createVideoOutput(ring, p, createCompositor(device, context, format));
+  const { port1, port2 } = new MessageChannel();
+  const demuxed = media.request({ type: "demux", ring, wake: port1, streams: [stream] }, [port1]);
+  const output = createVideoOutput(ring, port2, p, createCompositor(device, context, format));
   // Rows of a texture copy are a multiple of 256 bytes apart.
   const stride = Math.ceil((width * 4) / 256) * 256;
   const buffer = device.createBuffer({

@@ -87,12 +87,13 @@ const benchmarks: Record<string, (tab: Page) => Promise<Timings>> = {
           const done = new Promise<import("./ring.worker").RingResult>((resolve) => {
             consumer?.addEventListener("message", (e) => resolve(e.data), { once: true });
           });
+          const { port1, port2 } = new MessageChannel();
           const jobs: import("./ring.worker").RingJob[] = [
-            { role: "consume", ring },
-            { role: "produce", ring, size, count, interval },
+            { role: "consume", ring, wake: port2 },
+            { role: "produce", ring, wake: port1, size, count, interval },
           ];
-          consumer?.postMessage(jobs[0]);
-          producer?.postMessage(jobs[1]);
+          consumer?.postMessage(jobs[0], [port2]);
+          producer?.postMessage(jobs[1], [port1]);
           const result = await done;
           consumer?.terminate();
           producer?.terminate();
@@ -149,7 +150,9 @@ const benchmarks: Record<string, (tab: Page) => Promise<Timings>> = {
           const draining = drain();
           const start = performance.now();
           const ring = support.createRing(64);
-          await media.request({ type: "demux", ring, streams: [], audio: { stream: 1, pcm } });
+          const { port1 } = new MessageChannel();
+          const audio = { stream: 1, pcm };
+          await media.request({ type: "demux", ring, wake: port1, streams: [], audio }, [port1]);
           const ms = performance.now() - start;
           state.decoding = false;
           await draining;

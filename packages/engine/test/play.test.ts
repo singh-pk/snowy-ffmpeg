@@ -27,8 +27,8 @@ const MAX_OFFSET = 0.02;
 const STALE_LATE = 0.15;
 // On CI's virtual machines the GPU does not draw in real time (Chromium's page gets 30
 // animation frames a second), so video falls behind: p99 82 ms in Chromium, up to three
-// quarters of a second at worst. And when the machine stalls, Firefox's output timestamp jumps as it
-// catches up, so a frame looks early by up to 86 ms. There, the offsets are bounded by
+// quarters of a second at worst. And when the machine stalls, Firefox's output timestamp jumps
+// as it catches up, so a frame looks early by up to 86 ms. There, the offsets are bounded by
 // these, and logged; the bounds above hold on real hardware.
 const CI_LATE = 1;
 const CI_EARLY = 0.15;

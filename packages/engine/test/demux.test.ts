@@ -50,8 +50,9 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
               await media.request({ type: "open", file: new File([blob], n) });
               // 64 KiB: far smaller than any fixture, so records wrap and the pump waits.
               const ring = support.createRing(1 << 16);
-              const hashed = support.hashRing(ring, dts);
-              await media.request({ type: "demux", ring, streams });
+              const { port1, port2 } = new MessageChannel();
+              const hashed = support.hashRing(ring, port2, dts);
+              await media.request({ type: "demux", ring, wake: port1, streams }, [port1]);
               all[n] = await hashed;
             }
 
@@ -94,10 +95,11 @@ test("a pump that fails ends the ring with FAILED", async () => {
 
         async function demux(capacity: number, streams: number[]) {
           const ring = support.createRing(capacity);
-          const hashed = support.hashRing(ring, false);
+          const { port1, port2 } = new MessageChannel();
+          const hashed = support.hashRing(ring, port2, false);
 
           try {
-            await media.request({ type: "demux", ring, streams });
+            await media.request({ type: "demux", ring, wake: port1, streams }, [port1]);
             const ended = await hashed;
             return ["replied", ended];
           } catch (e) {

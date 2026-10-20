@@ -279,8 +279,13 @@ function createMedia(core: CoreModule) {
 
   // pump, and on an error the FAILED record, so the thread reading the ring stops too; the
   // error itself goes to whoever asked.
-  function demux(ring: SharedArrayBuffer, streams: number[], audio?: AudioRequest) {
-    const producer = createProducer(ring);
+  function demux(
+    ring: SharedArrayBuffer,
+    wake: MessagePort,
+    streams: number[],
+    audio?: AudioRequest,
+  ) {
+    const producer = createProducer(ring, wake);
     let decoder: Audio | undefined;
 
     try {
@@ -295,6 +300,7 @@ function createMedia(core: CoreModule) {
       throw e;
     } finally {
       decoder?.close();
+      wake.close();
     }
   }
 
@@ -315,7 +321,7 @@ async function handle(message: ToMedia) {
     if (message.type === "open") {
       post({ type: "opened", id, ...media.open(message.file) });
     } else {
-      media.demux(message.ring, message.streams, message.audio);
+      media.demux(message.ring, message.wake, message.streams, message.audio);
       post({ type: "demuxed", id });
     }
   } catch (e) {
