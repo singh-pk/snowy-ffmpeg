@@ -8,7 +8,7 @@
 // Usage: bun test test/codec.test.ts
 
 import { expect, test } from "bun:test";
-import { hevcCodec, type VideoParams, videoConfig, vp9Codec } from "../src/codec";
+import { hevcCodec, makesFrame, type VideoParams, videoConfig, vp9Codec } from "../src/codec";
 
 // A stream without a configuration record, a level or a display matrix.
 const STREAM: VideoParams = {
@@ -146,4 +146,13 @@ test("non-square pixels give the display aspect; square or unknown ones none", (
   expect([wide.displayAspectWidth, wide.displayAspectHeight]).toEqual([720 * 64, 576 * 45]);
   expect(vp8([1, 1]).displayAspectWidth).toBeUndefined();
   expect(vp8([0, 1]).displayAspectWidth).toBeUndefined();
+});
+
+test("a VP8 alt-ref frame makes no frame; every other packet does", () => {
+  const p = { ...STREAM, codec: "vp8" };
+  // The frame tag's show_frame bit (RFC 6386 section 9.1), on a key and an inter frame.
+  expect(makesFrame(p, new Uint8Array([0x10, 0, 0]))).toBe(true);
+  expect(makesFrame(p, new Uint8Array([0x11, 0, 0]))).toBe(true);
+  expect(makesFrame(p, new Uint8Array([0x01, 0, 0]))).toBe(false);
+  expect(makesFrame(STREAM, new Uint8Array([0x00]))).toBe(true);
 });

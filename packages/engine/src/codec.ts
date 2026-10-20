@@ -283,6 +283,15 @@ function av1(p: VideoParams, keyframe: Uint8Array): VideoDecoderConfig {
 }
 
 /**
+ * Whether packet `data` of a stream with parameters `p` makes a frame. A VP8 alt-ref frame,
+ * which WebM stores as a packet of its own, is decoded only to be referred to (RFC 6386
+ * section 9.1, `show_frame`).
+ */
+export function makesFrame(p: VideoParams, data: Uint8Array) {
+  return p.codec !== "vp8" || ((data[0] ?? 0) & 0x10) !== 0;
+}
+
+/**
  * The VideoDecoderConfig of a stream with parameters `p` whose first packet, a keyframe, is
  * `keyframe`. Throws for a codec WebCodecs does not decode.
  */
