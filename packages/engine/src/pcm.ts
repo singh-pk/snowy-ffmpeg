@@ -274,6 +274,11 @@ export function createPcmControl(ring: SharedArrayBuffer) {
     }
   }
 
+  /** Whether the last output timestamp published runs (`publishOutput`). */
+  function outputRunning() {
+    return Atomics.load(control, OUTPUT_RUNNING) === 1;
+  }
+
   /** The frames written and not yet played. */
   function buffered() {
     return (Atomics.load(control, WRITE) - Atomics.load(control, READ)) | 0;
@@ -291,5 +296,5 @@ export function createPcmControl(ring: SharedArrayBuffer) {
     Atomics.notify(control, READ);
   }
 
-  return { read, mediaTime, publishOutput, heard, buffered, start, close };
+  return { read, mediaTime, publishOutput, heard, outputRunning, buffered, start, close };
 }

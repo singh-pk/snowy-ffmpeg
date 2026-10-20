@@ -42,6 +42,8 @@ export function createVideoOutput(
     shown: undefined as VideoFrame | undefined,
     latest: -Infinity,
     ended: false,
+    // Waiting for a packet, the ring being empty.
+    waiting: false,
     closed: false,
   };
   const failed = Promise.withResolvers<never>();
@@ -72,7 +74,9 @@ export function createVideoOutput(
 
       if (!packet) {
         // Returns at once once the ring is closed, so the check above ends the loop.
+        state.waiting = true;
         await consumer.wait();
+        state.waiting = false;
         continue;
       }
 
@@ -151,5 +155,7 @@ export function createVideoOutput(
     ended: () => state.ended,
     /** Whether the frame queue is full, so decoding waits for a frame to be shown. */
     full: () => queue.full(),
+    /** Whether it waits for packets with nothing left to decode. */
+    starved: () => state.waiting && decoder.decodeQueueSize === 0,
   };
 }

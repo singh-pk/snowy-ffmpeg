@@ -112,7 +112,7 @@ function play({ id, ring, params, pcm }: Extract<ToRender, { type: "play" }>) {
   if (!state.compositor) throw new Error("play before init");
   const output = createVideoOutput(ring, params, state.compositor);
   const clock = createPcmControl(pcm);
-  const playing = { output, frame: 0, decoded: false, first: Number.NaN };
+  const playing = { output, frame: 0, first: Number.NaN, reported: -1, shown: false };
   const timing = { last: 0, next: 0, gaps: new Float64Array(GAPS).fill(REFRESH) };
 
   // Reports the first failure of this play, unless it has stopped.
@@ -138,25 +138,32 @@ function play({ id, ring, params, pcm }: Extract<ToRender, { type: "play" }>) {
 
     try {
       const seen = clock.heard(performance.timeOrigin + time + refresh);
+      // By the clock as published when it was read: once that runs, this frame is the one due.
+      const running = clock.outputRunning();
       output.present(Math.round(seen * 1e6));
-
-      if (!playing.decoded) {
-        const latest = output.latest();
-        if (Number.isNaN(playing.first) && latest > -Infinity) playing.first = latest;
-        const ahead = latest - playing.first >= PREROLL;
-        const full = output.full();
-
-        if (ahead || full || output.ended()) {
-          playing.decoded = true;
-          post({ type: "decoded", id, full });
-        }
-      }
+      if (!playing.shown) report(running);
     } catch (e) {
       fail(e);
       return;
     }
 
     playing.frame = self.requestAnimationFrame(draw);
+  }
+
+  // How far decoding is, for the main thread's preroll, and whether a frame went up by the
+  // running clock, when it changes; nothing more once one has.
+  function report(shown: boolean) {
+    const latest = output.latest();
+    if (Number.isNaN(playing.first) && latest > -Infinity) playing.first = latest;
+    const ahead = latest - playing.first >= PREROLL || output.ended();
+    const full = output.full();
+    const starved = output.starved();
+    // As bits, so comparing allocates nothing on an animation frame.
+    const now = (ahead ? 1 : 0) | (full ? 2 : 0) | (starved ? 4 : 0) | (shown ? 8 : 0);
+    if (now === playing.reported) return;
+    playing.reported = now;
+    playing.shown = shown;
+    post({ type: "video", id, ahead, full, starved, shown });
   }
 
   async function watch() {

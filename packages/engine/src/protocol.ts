@@ -22,9 +22,11 @@ export type Missing = [feature: PlatformFeature, reason: string];
 
 // After init, the render worker plays video stream packets from `ring` (src/ring.ts), with
 // parameters `params`, timed by the clock in PCM ring `pcm` (src/pcm.ts), until it stops. An
-// error while it plays is reported once, with the play's `id`, and it stops. It says once
-// when a quarter second of video is decoded, or all of it, or as much as the frame queue
-// holds (`full`), so the main thread starts audio with video ready.
+// error while it plays is reported once, with the play's `id`, and it stops. Until it
+// has drawn a frame by the running clock (`shown`, the last report), it reports each change
+// in how far decoding is: a quarter second or all of it decoded (`ahead`), the frame queue
+// full, or waiting for packets with nothing to decode (`starved`), so the main thread
+// starts audio with video ready, and resolves play once it is seen (src/index.ts).
 export type ToRender =
   | { type: "init"; canvas: OffscreenCanvas }
   | {
@@ -39,7 +41,14 @@ export type ToRender =
 export type FromRender =
   | { type: "ready" }
   | { type: "unsupported"; missing: Missing }
-  | { type: "decoded"; id: number; full: boolean }
+  | {
+      type: "video";
+      id: number;
+      ahead: boolean;
+      full: boolean;
+      starved: boolean;
+      shown: boolean;
+    }
   | { type: "error"; id: number; message: string };
 
 /** A stream of a media file. `id` is its index in the file; `codec` is FFmpeg's codec name. */

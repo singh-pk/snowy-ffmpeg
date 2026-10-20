@@ -51,9 +51,6 @@ const PREROLL = 0.25;
 const SETTLED_COUNT = 2;
 const SETTLED_MS = 2;
 const SETTLED_LIMIT = 10;
-// Animation frames published with a settled timestamp before play resolves, so the render
-// worker, a frame behind at most, has drawn the frame on screen by it.
-const DRAWN_AFTER = 2;
 // What the PCM ring mixes to; the context's destination takes stereo everywhere.
 const CHANNELS = 2;
 
@@ -171,13 +168,13 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     next: 0,
     // Whether the last call was play, not pause.
     playing: false,
-    // The last play the render worker has decoded ahead for, and whether its queue was full.
-    decoded: { id: -1, full: false },
+    // How far the render worker has decoded, as it last reported, and for which play.
+    video: { id: -1, ahead: false, full: false, starved: false, shown: false },
     closed: false,
   };
 
   render.addEventListener("message", ({ data }: MessageEvent<FromRender>) => {
-    if (data.type === "decoded") state.decoded = { id: data.id, full: data.full };
+    if (data.type === "video") state.video = data;
     if (data.type === "error" && data.id === state.current) fail(new Error(data.message));
   });
   // An uncaught error in the render worker.
@@ -219,7 +216,7 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     const demuxed = media.send({ type: "demux", ring, streams, audio: { stream: audio.id, pcm } });
     const frame = { id: 0 };
     // The last output timestamp, as context minus performance milliseconds, and when.
-    const output = { offset: Number.NaN, at: 0, agreed: 0, newer: 0, settled: false, frames: 0 };
+    const output = { offset: Number.NaN, at: 0, agreed: 0, newer: 0, settled: false };
     const demux = { done: false };
 
     // The output timestamp, for the render worker (src/pcm.ts), on every animation frame.
@@ -240,8 +237,13 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
       const running = context.state === "running";
       const agreed = output.agreed >= SETTLED_COUNT || output.newer >= SETTLED_LIMIT;
       output.settled = running && (output.settled || agreed);
-      if (!running) output.newer = 0;
-      output.frames = output.settled ? output.frames + 1 : 0;
+
+      // A timestamp from before a pause says nothing of the one after it.
+      if (!running) {
+        output.agreed = 0;
+        output.newer = 0;
+      }
+
       clock.publishOutput(contextTime, performance.timeOrigin + performanceTime, output.settled);
       frame.id = requestAnimationFrame(publish);
     }
@@ -265,22 +267,34 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     }
 
     // Whether it may start, once and for good: video is decoded and audio buffered ahead, or
-    // either can wait no longer. While the context is held, a full PCM ring blocks the media
-    // worker, and so does a full frame queue in the end, so then nothing more would come.
+    // what is missing cannot come while the context is held. A full PCM ring blocks the media
+    // worker, so video gets no further than it is once it is starved, as it is for sparse
+    // video; a full frame queue in the end blocks it too, as it does for a short audio track.
     const prerolled = { done: false };
 
     function primed() {
-      const decoded = state.decoded.id === id;
-      const videoAhead = !params || decoded;
+      const reported = state.video.id === id ? state.video : undefined;
+      const videoAhead = !params || reported?.ahead === true;
+      const starved = reported?.starved === true;
       const audioAhead = clock.buffered() >= PREROLL * context.sampleRate || demux.done;
-      const blocked = clock.buffered() >= frames || (decoded && state.decoded.full);
-      prerolled.done ||= (videoAhead && audioAhead) || blocked;
+      const pcmFull = clock.buffered() >= frames;
+      prerolled.done ||=
+        (videoAhead && audioAhead) ||
+        (pcmFull && (videoAhead || starved)) ||
+        reported?.full === true;
       return prerolled.done;
+    }
+
+    // Whether it is heard, by a settled timestamp, and the frame on screen went up by it.
+    function heard() {
+      const shown = !params || (state.video.id === id && state.video.shown);
+      return output.settled && shown;
     }
 
     publish();
     void watch();
-    return { id, clock, primed, heard: () => output.frames > DRAWN_AFTER, stop: stopPlayback };
+
+    return { id, clock, primed, heard, stop: stopPlayback };
   }
 
   async function stopStarted(playback: Promise<Playback>) {
