@@ -288,11 +288,6 @@ export function createPcmControl(ring: SharedArrayBuffer) {
     return Atomics.load(control, PRODUCER_WAITING) === 1;
   }
 
-  /** The frames written and not yet played. */
-  function buffered() {
-    return (Atomics.load(control, WRITE) - Atomics.load(control, READ)) | 0;
-  }
-
   /** The media time, in seconds, of the first frame, once the clock has played it. */
   function start() {
     return times[START] ?? 0;
@@ -312,7 +307,6 @@ export function createPcmControl(ring: SharedArrayBuffer) {
     heard,
     outputRunning,
     producerWaiting,
-    buffered,
     start,
     close,
   };

@@ -10,8 +10,6 @@ import { expect, test } from "bun:test";
 import { createPcmConsumer, createPcmControl, createPcmProducer, createPcmRing } from "../src/pcm";
 
 const RATE = 1000;
-// The control word the producer raises while it waits for room (src/pcm.ts).
-const PRODUCER_WAITING = 2;
 const QUANTUM = 128;
 const quantum = () => [new Float32Array(QUANTUM), new Float32Array(QUANTUM)];
 
@@ -52,13 +50,16 @@ test("frames arrive intact and in order across the end of the ring", () => {
 
 function startProducer(ring: SharedArrayBuffer, count: number) {
   const worker = new Worker(new URL("support/pcm-producer.ts", import.meta.url));
-  const written = new Promise<number>((resolve) => {
-    worker.addEventListener("message", (e: MessageEvent<number>) => resolve(e.data), {
-      once: true,
-    });
+  const blocked = Promise.withResolvers<void>();
+  const written = Promise.withResolvers<number>();
+
+  worker.addEventListener("message", ({ data }: MessageEvent<number | "blocked">) => {
+    if (data === "blocked") blocked.resolve();
+    else written.resolve(data);
   });
+
   worker.postMessage({ ring, count });
-  return { worker, written };
+  return { worker, blocked: blocked.promise, written: written.promise };
 }
 
 test("frames arrive intact from a producer thread that waits for room", async () => {
@@ -93,9 +94,9 @@ test("frames arrive intact from a producer thread that waits for room", async ()
 
 test("closing the ring stops a producer that waits for room", async () => {
   const ring = createPcmRing(256, 2, RATE);
-  const { worker, written } = startProducer(ring, 10_000);
-  const control = new Int32Array(ring);
-  while (Atomics.load(control, PRODUCER_WAITING) !== 1) await Bun.sleep(1);
+  const { worker, blocked, written } = startProducer(ring, 10_000);
+  // Read nothing, so the producer fills the ring and waits for room.
+  await blocked;
   createPcmControl(ring).close();
   const total = await written;
   expect(total).toBeLessThan(10_000);

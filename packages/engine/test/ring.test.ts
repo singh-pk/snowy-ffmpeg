@@ -144,6 +144,7 @@ test("a watching consumer hears once that the producer's thread blocks", async (
   const producer = createProducer(ring, port1);
   const marked = Promise.withResolvers<void>();
 
+  // The consumer's own listener hears the mark too, which ends no wait: none is in progress.
   port2.addEventListener("message", ({ data }: MessageEvent<string | null>) => {
     if (data === "mark") marked.resolve();
   });

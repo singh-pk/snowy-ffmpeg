@@ -67,9 +67,9 @@ export interface MediaInfo {
 
 // `id` pairs each reply with its request. A demux request writes the packets of `streams` into
 // `ring` (src/ring.ts), waking its consumer through `wake`, and with `audio` decodes that audio
-// stream into the PCM ring `pcm` (src/pcm.ts), resampled to its rate and channels. Before it
-// replies, it says once that the audio is buffered (`buffered`): `preroll` frames of it, a full
-// ring, or all of it. It replies once it has written all the audio and the END record, or once a
+// stream into the PCM ring `pcm` (src/pcm.ts), resampled to its rate and channels. Unless it
+// fails or the PCM ring closes first, it says once, before it replies, that the audio is buffered
+// (`buffered`): `preroll` frames of it, a full ring, or all of it. It replies once it has written all the audio and the END record, or once a
 // consumer has closed its ring. On an error it writes the FAILED record and replies with it.
 export type ToMedia =
   | { type: "open"; id: number; file: File }

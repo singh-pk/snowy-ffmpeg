@@ -110,6 +110,7 @@ function stop() {
 function play({ id, ring, wake, params, pcm }: Extract<ToRender, { type: "play" }>) {
   stop();
   if (!state.compositor) throw new Error("play before init");
+  // Its events all come in later tasks, once `playing` below is made.
   const output = createVideoOutput(ring, wake, params, state.compositor, () => update());
   const clock = createPcmControl(pcm);
   const playing = {

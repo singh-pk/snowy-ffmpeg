@@ -3,7 +3,8 @@
 //
 // A Bun worker that writes `count` stereo frames into a PCM ring (test/pcm.test.ts), CHUNK at
 // a time: channel 0 of frame i holds i + 1, never silence, and channel 1 its negative. Posts
-// how many it wrote once it has written them all or the consumer closes the ring.
+// "blocked" each time it is about to wait for room, and how many it wrote once it has written
+// them all or the consumer closes the ring.
 
 import { createPcmProducer } from "../../src/pcm";
 
@@ -14,7 +15,7 @@ const CHUNK = 300;
 self.addEventListener(
   "message",
   ({ data }: MessageEvent<{ ring: SharedArrayBuffer; count: number }>) => {
-    const producer = createPcmProducer(data.ring);
+    const producer = createPcmProducer(data.ring, () => self.postMessage("blocked"));
     const src = new Float32Array(CHUNK * 2);
     let written = 0;
 

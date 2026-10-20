@@ -188,6 +188,7 @@ function createMedia(core: CoreModule) {
       tell();
       blocking();
     });
+
     const [tbNum, tbDen] = [core._sny_stream_tb_num(st), core._sny_stream_tb_den(st)];
     const frame = core._sny_frame_alloc();
     const resampled = core._sny_frame_alloc();
