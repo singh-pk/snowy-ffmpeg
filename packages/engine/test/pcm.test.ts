@@ -52,26 +52,33 @@ function startProducer(ring: SharedArrayBuffer, count: number) {
   const worker = new Worker(new URL("support/pcm-producer.ts", import.meta.url));
   const blocked = Promise.withResolvers<void>();
   const written = Promise.withResolvers<number>();
+  // Wakes a wait for frames, on each message from the producer.
+  const progress = { next: Promise.withResolvers<void>() };
 
-  worker.addEventListener("message", ({ data }: MessageEvent<number | "blocked">) => {
+  worker.addEventListener("message", ({ data }: MessageEvent<number | "blocked" | "wrote">) => {
     if (data === "blocked") blocked.resolve();
-    else written.resolve(data);
+    if (typeof data === "number") written.resolve(data);
+    progress.next.resolve();
+    progress.next = Promise.withResolvers<void>();
   });
 
   worker.postMessage({ ring, count });
-  return { worker, blocked: blocked.promise, written: written.promise };
+  const wrote = () => progress.next.promise;
+  return { worker, blocked: blocked.promise, written: written.promise, wrote };
 }
 
 test("frames arrive intact from a producer thread that waits for room", async () => {
   const count = 20_000;
   const ring = createPcmRing(256, 2, RATE);
   const consumer = createPcmConsumer(ring);
-  const { worker, written } = startProducer(ring, count);
+  const { worker, written, wrote } = startProducer(ring, count);
   const output = quantum();
   const wrong: number[] = [];
   let next = 0;
 
   while (next < count) {
+    // Taken before the read, so a write after it ends the wait below.
+    const more = wrote();
     consumer.read(output, 0);
     const [left = new Float32Array(), right = new Float32Array()] = output;
     // A short read leaves silence after the last frame, and no frame is silent.
@@ -83,7 +90,7 @@ test("frames arrive intact from a producer thread that waits for room", async ()
     }
 
     next += n;
-    if (n < QUANTUM) await Bun.sleep(0);
+    if (n < QUANTUM) await more;
   }
 
   expect(wrong).toEqual([]);

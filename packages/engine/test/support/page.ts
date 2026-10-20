@@ -122,6 +122,9 @@ export async function play(
   const offsets: number[] = [];
   const rendering = { done: false };
 
+  // Samples the clock, which only the audio thread moves; it waits for nothing. Not every
+  // browser gives an event between quanta when rendering offline: Firefox has no
+  // OfflineAudioContext.suspend.
   async function poll() {
     while (!rendering.done) {
       const clock = control.read();
@@ -290,8 +293,6 @@ export async function checkVideoConfig(p: VideoParams, keyframe: Uint8Array) {
   return { ...result, id, inBandId };
 }
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
 /**
  * Plays video stream `stream` of the file open in `media` through the engine's video output
  * into a `width` × `height` canvas, showing it at each of `times` (microseconds) in turn
@@ -317,7 +318,10 @@ export async function render(
   const ring = createRing(RING_CAPACITY);
   const { port1, port2 } = new MessageChannel();
   const demuxed = media.request({ type: "demux", ring, wake: port1, streams: [stream] }, [port1]);
-  const output = createVideoOutput(ring, port2, p, createCompositor(device, context, format));
+  // Wakes the wait for frames below on every change in how far decoding is.
+  const decoding = { changed: () => {} };
+  const compositor = createCompositor(device, context, format);
+  const output = createVideoOutput(ring, port2, p, compositor, () => decoding.changed());
   // Rows of a texture copy are a multiple of 256 bytes apart.
   const stride = Math.ceil((width * 4) / 256) * 256;
   const buffer = device.createBuffer({
@@ -333,6 +337,16 @@ export async function render(
       await output.done;
     } catch (e) {
       failure.error = e;
+      decoding.changed();
+    }
+  }
+
+  // Resolves once the frames up to `time` are decoded, the end is, or decoding fails.
+  async function decoded(time: number) {
+    while (output.latest() < time && !output.ended() && !failure.error) {
+      const changed = Promise.withResolvers<void>();
+      decoding.changed = changed.resolve;
+      await changed.promise;
     }
   }
 
@@ -340,7 +354,7 @@ export async function render(
 
   try {
     for (const time of times) {
-      while (output.latest() < time && !output.ended() && !failure.error) await sleep(1);
+      await decoded(time);
       if (failure.error) throw failure.error;
       const drawn = output.present(time);
 

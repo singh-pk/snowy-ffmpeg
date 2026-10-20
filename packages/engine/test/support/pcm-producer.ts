@@ -3,8 +3,8 @@
 //
 // A Bun worker that writes `count` stereo frames into a PCM ring (test/pcm.test.ts), CHUNK at
 // a time: channel 0 of frame i holds i + 1, never silence, and channel 1 its negative. Posts
-// "blocked" each time it is about to wait for room, and how many it wrote once it has written
-// them all or the consumer closes the ring.
+// "blocked" each time it is about to wait for room, "wrote" after each chunk, and how many it
+// wrote once it has written them all or the consumer closes the ring.
 
 import { createPcmProducer } from "../../src/pcm";
 
@@ -29,6 +29,7 @@ self.addEventListener(
 
       if (!producer.write(src, 0, n)) break;
       written += n;
+      self.postMessage("wrote");
     }
 
     self.postMessage(written);
