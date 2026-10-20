@@ -100,8 +100,11 @@ export function pcmFormat(ring: SharedArrayBuffer) {
   return { channels, rate };
 }
 
-/** The producer's side of `ring`, for a thread that may block. */
-export function createPcmProducer(ring: SharedArrayBuffer) {
+/**
+ * The producer's side of `ring`, for a thread that may block; `blocking` runs before each
+ * wait for room, after the flag that says so is raised.
+ */
+export function createPcmProducer(ring: SharedArrayBuffer, blocking: () => void = () => {}) {
   const { control, times, samples, channels, capacity } = views(ring);
 
   /** Sets the media time, in seconds, of the first frame; before the first write. */
@@ -127,6 +130,7 @@ export function createPcmProducer(ring: SharedArrayBuffer) {
         // Raised before waiting, so a read after the check above notifies this wait or
         // changes READ before it starts.
         Atomics.store(control, PRODUCER_WAITING, 1);
+        blocking();
         Atomics.wait(control, READ, read);
         Atomics.store(control, PRODUCER_WAITING, 0);
         continue;
@@ -284,11 +288,6 @@ export function createPcmControl(ring: SharedArrayBuffer) {
     return Atomics.load(control, PRODUCER_WAITING) === 1;
   }
 
-  /** The frames written and not yet played. */
-  function buffered() {
-    return (Atomics.load(control, WRITE) - Atomics.load(control, READ)) | 0;
-  }
-
   /** The media time, in seconds, of the first frame, once the clock has played it. */
   function start() {
     return times[START] ?? 0;
@@ -308,7 +307,6 @@ export function createPcmControl(ring: SharedArrayBuffer) {
     heard,
     outputRunning,
     producerWaiting,
-    buffered,
     start,
     close,
   };

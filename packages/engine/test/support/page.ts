@@ -117,9 +117,8 @@ export async function play(
   // No packets: the ring only gets the END record.
   const { port1 } = new MessageChannel();
   const ring = createRing(64);
-  await media.request({ type: "demux", ring, wake: port1, streams: [], audio: { stream, pcm } }, [
-    port1,
-  ]);
+  const audio = { stream, pcm, preroll: 0 };
+  await media.request({ type: "demux", ring, wake: port1, streams: [], audio }, [port1]);
   const offsets: number[] = [];
   const rendering = { done: false };
 
@@ -163,7 +162,8 @@ export function startMedia(url: string) {
 
     return new Promise<FromMedia>((resolve, reject) => {
       worker.addEventListener("message", function reply(e: MessageEvent<FromMedia>) {
-        if (e.data.id !== id) return;
+        // Events before the reply, such as `buffered`, are not it.
+        if (e.data.id !== id || e.data.type === "buffered") return;
         worker.removeEventListener("message", reply);
         if (e.data.type === "error") reject(new Error(e.data.message));
         else resolve(e.data);

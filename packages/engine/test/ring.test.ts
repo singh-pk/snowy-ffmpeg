@@ -14,7 +14,6 @@ import {
   END,
   KEY_FLAG,
   NO_TIMESTAMP,
-  PRODUCER_WAITING,
 } from "../src/ring";
 import { size } from "./support/ring-producer";
 
@@ -66,11 +65,13 @@ test("every packet arrives intact and in order", async () => {
 test("closing the ring stops a producer that waits for room, and ends the consumer", async () => {
   const ring = createRing(4096);
   const { port1, port2 } = new MessageChannel();
-  const consumer = createConsumer(ring, port2);
+  const blocked = Promise.withResolvers<void>();
+  const consumer = createConsumer(ring, port2, blocked.resolve);
+  consumer.watch();
   const { worker, written } = startProducer(ring, port1, 1000);
-  // Read nothing, so the producer fills the ring and waits for room.
-  const control = new Int32Array(ring);
-  while (Atomics.load(control, PRODUCER_WAITING) !== 1) await Bun.sleep(1);
+  // Read nothing, so the producer fills the ring and waits for room, which the watch tells.
+  await blocked.promise;
+  expect(consumer.producerWaiting()).toBe(true);
   consumer.close();
   const total = await written;
   expect(total).toBeLessThan(1000);
@@ -132,6 +133,30 @@ test("a write to an empty ring wakes the waiting consumer, with one message", as
   port1.postMessage("mark");
   await marked.promise;
   expect(messages.count).toBe(1);
+  consumer.close();
+});
+
+test("a watching consumer hears once that the producer's thread blocks", async () => {
+  const ring = createRing(4096);
+  const { port1, port2 } = new MessageChannel();
+  const blocks = { count: 0 };
+  const consumer = createConsumer(ring, port2, () => blocks.count++);
+  const producer = createProducer(ring, port1);
+  const marked = Promise.withResolvers<void>();
+
+  // The consumer's own listener hears the mark too, which ends no wait: none is in progress.
+  port2.addEventListener("message", ({ data }: MessageEvent<string | null>) => {
+    if (data === "mark") marked.resolve();
+  });
+  // Unwatched, a block posts nothing; watched, the first takes the watch, so the second posts
+  // nothing either.
+  producer.blocking();
+  consumer.watch();
+  producer.blocking();
+  producer.blocking();
+  port1.postMessage("mark");
+  await marked.promise;
+  expect(blocks.count).toBe(1);
   consumer.close();
 });
 

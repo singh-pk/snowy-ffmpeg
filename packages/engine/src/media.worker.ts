@@ -153,8 +153,13 @@ function createMedia(core: CoreModule) {
 
   // Decodes audio stream `stream` into PCM ring `pcm`: `decode` takes each of its packets,
   // and returns false once the consumer has closed the ring; `end` drains the decoder and the
-  // resampler. `close` frees it all.
-  function createAudio(stream: number, pcm: SharedArrayBuffer): Audio {
+  // resampler. `close` frees it all. `buffered` runs once, when the ring holds `preroll`
+  // frames, is full, or has all the audio; `blocking` before each wait for room.
+  function createAudio(
+    { stream, pcm, preroll }: AudioRequest,
+    buffered: () => void,
+    blocking: () => void,
+  ): Audio {
     const ctx = demuxer([stream]);
     const st = core._sny_stream(ctx, stream);
 
@@ -171,7 +176,19 @@ function createMedia(core: CoreModule) {
     }
 
     const { channels, rate } = pcmFormat(pcm);
-    const producer = createPcmProducer(pcm);
+    const told = { buffered: false, written: 0 };
+
+    function tell() {
+      if (!told.buffered) buffered();
+      told.buffered = true;
+    }
+
+    // A full ring holds a second and more, more than any preroll.
+    const producer = createPcmProducer(pcm, () => {
+      tell();
+      blocking();
+    });
+
     const [tbNum, tbDen] = [core._sny_stream_tb_num(st), core._sny_stream_tb_den(st)];
     const frame = core._sny_frame_alloc();
     const resampled = core._sny_frame_alloc();
@@ -203,7 +220,10 @@ function createMedia(core: CoreModule) {
       if (frames === 0) return true;
       const at = core._sny_frame_plane(resampled, 0) >>> 2;
       // HEAPF32 is read for each frame: the heap's buffer changes when memory grows.
-      return producer.write(core.HEAPF32, at, frames);
+      if (!producer.write(core.HEAPF32, at, frames)) return false;
+      told.written += frames;
+      if (told.written >= preroll) tell();
+      return true;
     }
 
     function receive() {
@@ -232,7 +252,7 @@ function createMedia(core: CoreModule) {
     }
 
     function end() {
-      if (decode(0)) resample(0);
+      if (decode(0) && resample(0)) tell();
     }
 
     return { stream, decode, end, close: free };
@@ -278,12 +298,13 @@ function createMedia(core: CoreModule) {
   }
 
   // pump, and on an error the FAILED record, so the thread reading the ring stops too; the
-  // error itself goes to whoever asked.
+  // error itself goes to whoever asked. `buffered` runs once the audio is buffered ahead.
   function demux(
     ring: SharedArrayBuffer,
     wake: MessagePort,
     streams: number[],
-    audio?: AudioRequest,
+    audio: AudioRequest | undefined,
+    buffered: () => void,
   ) {
     const producer = createProducer(ring, wake);
     let decoder: Audio | undefined;
@@ -293,7 +314,7 @@ function createMedia(core: CoreModule) {
         throw new RangeError(`demux: stream ${audio.stream} is both demuxed and decoded`);
       }
 
-      if (audio) decoder = createAudio(audio.stream, audio.pcm);
+      if (audio) decoder = createAudio(audio, buffered, producer.blocking);
       pump(producer, streams, decoder);
     } catch (e) {
       producer.fail();
@@ -321,7 +342,8 @@ async function handle(message: ToMedia) {
     if (message.type === "open") {
       post({ type: "opened", id, ...media.open(message.file) });
     } else {
-      media.demux(message.ring, message.wake, message.streams, message.audio);
+      const buffered = () => post({ type: "buffered", id });
+      media.demux(message.ring, message.wake, message.streams, message.audio, buffered);
       post({ type: "demuxed", id });
     }
   } catch (e) {

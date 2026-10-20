@@ -54,11 +54,8 @@ const SETTLED_LIMIT = 10;
 // What the PCM ring mixes to; the context's destination takes stereo everywhere.
 const CHANNELS = 2;
 
-// Resolves on the first animation frame on which `done` returns true; in a hidden page,
-// whose animation frames wait, once it is shown.
-async function until(done: () => boolean) {
-  while (!done()) await new Promise((resolve) => requestAnimationFrame(resolve));
-}
+// A hidden page starts no audio: its animation frames, and so video, wait until it is shown.
+const visible = () => document.visibilityState === "visible";
 
 // A worker that fails to load fires a plain Event, without a message.
 const loadError = (e: Event, worker: string) =>
@@ -77,16 +74,23 @@ function request(worker: Worker, message: ToRender, transfer: Transferable[]) {
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
-// The media worker, as a function per request; replies may come in any order.
+// The media worker, as a function per request; replies may come in any order. `buffered`
+// runs when a demux request says its audio is buffered.
 function createMedia() {
   const worker = new Worker(new URL("./media.worker.js", import.meta.url), { type: "module" });
-  const pending = new Map<number, PromiseWithResolvers<FromMedia>>();
+  const pending = new Map<number, PromiseWithResolvers<FromMedia> & { buffered(): void }>();
   let next = 0;
   // Once set, why every request rejects: the worker failed to load, or the engine closed.
   let failed: Error | undefined;
 
   worker.addEventListener("message", ({ data }: MessageEvent<FromMedia>) => {
     const call = pending.get(data.id);
+
+    if (data.type === "buffered") {
+      call?.buffered();
+      return;
+    }
+
     pending.delete(data.id);
     if (data.type === "error") call?.reject(new Error(data.message));
     else call?.resolve(data);
@@ -100,11 +104,15 @@ function createMedia() {
 
   worker.addEventListener("error", (e) => fail(loadError(e, "media")));
 
-  function send(message: DistributiveOmit<ToMedia, "id">, transfer: Transferable[] = []) {
+  function send(
+    message: DistributiveOmit<ToMedia, "id">,
+    transfer: Transferable[] = [],
+    buffered = () => {},
+  ) {
     if (failed) return Promise.reject(failed);
     const call = Promise.withResolvers<FromMedia>();
     const id = next++;
-    pending.set(id, call);
+    pending.set(id, { ...call, buffered });
     worker.postMessage({ ...message, id }, transfer);
     return call.promise;
   }
@@ -142,10 +150,12 @@ export async function createEngine({ canvas }: EngineOptions): Promise<Engine> {
   return createPlayer(render, media);
 }
 
-// What plays: play `id`, its clock, whether it may start and is heard, and stopping it.
+// What plays: play `id`, its clock, publishing the output timestamp now, whether it may
+// start and is heard, and stopping it.
 interface Playback {
   id: number;
   clock: ReturnType<typeof createPcmControl>;
+  publish(): void;
   primed(): boolean;
   heard(): boolean;
   stop(): void;
@@ -159,8 +169,8 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     context: undefined as AudioContext | undefined,
     // Set at once, so a second play while the first starts joins it.
     playback: undefined as Promise<Playback> | undefined,
-    // The clock of what plays, once it has started.
-    clock: undefined as ReturnType<typeof createPcmControl> | undefined,
+    // What plays, once it has started.
+    started: undefined as Playback | undefined,
     // Why playing stopped, until the next open.
     failure: undefined as Error | undefined,
     // The id of what plays, whose failures count, or -1; and the next one.
@@ -172,10 +182,34 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     video: { id: -1, ahead: false, stuck: false, shown: false },
     closed: false,
   };
+  // Wakes the waits of `until`.
+  const waits = new Set<() => void>();
+
+  // Has each wait of `until` look again; on every event that may change what it waits for.
+  function changed() {
+    for (const wake of waits) wake();
+  }
+
+  // Resolves once `done` returns true, which it checks now and on each change.
+  async function until(done: () => boolean) {
+    while (!done()) {
+      const woken = Promise.withResolvers<void>();
+      waits.add(woken.resolve);
+
+      try {
+        await woken.promise;
+      } finally {
+        waits.delete(woken.resolve);
+      }
+    }
+  }
+
+  document.addEventListener("visibilitychange", changed);
 
   render.addEventListener("message", ({ data }: MessageEvent<FromRender>) => {
     if (data.type === "video") state.video = data;
     if (data.type === "error" && data.id === state.current) fail(new Error(data.message));
+    changed();
   });
   // An uncaught error in the render worker.
   render.addEventListener("error", (e) => fail(loadError(e, "render")));
@@ -221,18 +255,25 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     }
 
     const streams = video && params ? [video.id] : [];
+    const preroll = PREROLL * context.sampleRate;
+    const demux = { buffered: false, done: false };
+
     const demuxed = media.send(
-      { type: "demux", ring, wake: wake.port1, streams, audio: { stream: audio.id, pcm } },
+      { type: "demux", ring, wake: wake.port1, streams, audio: { stream: audio.id, pcm, preroll } },
       [wake.port1],
+      () => {
+        demux.buffered = true;
+        changed();
+      },
     );
+
     const frame = { id: 0 };
     // The last output timestamp, as context minus performance milliseconds, and when.
     const output = { offset: Number.NaN, at: 0, agreed: 0, newer: 0, settled: false };
-    const demux = { done: false };
 
-    // The output timestamp, for the render worker (src/pcm.ts), on every animation frame.
-    // It runs once it has settled, and stays so until the context stops: Firefox's then
-    // wanders by a few milliseconds, which is no reason to stop the clock.
+    // The output timestamp, for the render worker (src/pcm.ts), on every animation frame and
+    // as the context stops. It runs once it has settled, and stays so until the context stops:
+    // Firefox's then wanders by a few milliseconds, which is no reason to stop the clock.
     function publish() {
       const { contextTime = 0, performanceTime = 0 } = context.getOutputTimestamp();
       const offset = contextTime * 1000 - performanceTime;
@@ -247,7 +288,9 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
 
       const running = context.state === "running";
       const agreed = output.agreed >= SETTLED_COUNT || output.newer >= SETTLED_LIMIT;
+      const settled = output.settled;
       output.settled = running && (output.settled || agreed);
+      if (output.settled !== settled) changed();
 
       // A timestamp from before a pause says nothing of the one after it.
       if (!running) {
@@ -256,13 +299,18 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
       }
 
       clock.publishOutput(contextTime, performance.timeOrigin + performanceTime, output.settled);
-      frame.id = requestAnimationFrame(publish);
+    }
+
+    function everyFrame() {
+      publish();
+      frame.id = requestAnimationFrame(everyFrame);
     }
 
     async function watch() {
       try {
         await demuxed;
         demux.done = true;
+        changed();
       } catch (e) {
         if (state.current === id) fail(e instanceof Error ? e : new Error(String(e)));
       }
@@ -285,7 +333,7 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     function primed() {
       const reported = state.video.id === id ? state.video : undefined;
       const videoAhead = !params || reported?.ahead === true;
-      const audioAhead = clock.buffered() >= PREROLL * context.sampleRate || demux.done;
+      const audioAhead = demux.buffered || demux.done;
       prerolled.done ||= (videoAhead && audioAhead) || reported?.stuck === true;
       return prerolled.done;
     }
@@ -296,10 +344,10 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
       return output.settled && shown;
     }
 
-    publish();
+    everyFrame();
     void watch();
 
-    return { id, clock, primed, heard, stop: stopPlayback };
+    return { id, clock, publish, primed, heard, stop: stopPlayback };
   }
 
   async function stopStarted(playback: Promise<Playback>) {
@@ -314,8 +362,9 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
   function stop() {
     if (state.playback) void stopStarted(state.playback);
     state.playback = undefined;
-    state.clock = undefined;
+    state.started = undefined;
     state.current = -1;
+    changed();
   }
 
   async function open(file: File) {
@@ -341,7 +390,7 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     const playback = state.playback;
     const started = await startedOrCleared(playback);
     // Unless an open stopped it while it started.
-    if (state.playback === playback) state.clock = started.clock;
+    if (state.playback === playback) state.started = started;
     const stopped = () => state.current !== started.id;
 
     // Rejects if an open or a failure stopped it while it waited.
@@ -349,7 +398,7 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
       if (stopped()) throw state.failure ?? new DOMException("play: stopped", "AbortError");
     };
 
-    await until(() => stopped() || !state.playing || started.primed());
+    await until(() => stopped() || !state.playing || (started.primed() && visible()));
     check();
     // Unless a pause came while it started.
     if (!state.playing) return;
@@ -371,12 +420,17 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
   async function pause() {
     if (state.failure) throw state.failure;
     state.playing = false;
+    changed();
     await state.context?.suspend();
+    // Published now, not on the next animation frame, so the clock holds once pause resolves,
+    // in a hidden page too.
+    state.started?.publish();
   }
 
   function close() {
     if (state.closed) return;
     state.closed = true;
+    document.removeEventListener("visibilitychange", changed);
     stop();
     void state.context?.close();
     render.terminate();
@@ -388,7 +442,7 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     play,
     pause,
     get currentTime() {
-      return state.clock?.heard(performance.timeOrigin + performance.now()) ?? 0;
+      return state.started?.clock.heard(performance.timeOrigin + performance.now()) ?? 0;
     },
     close,
   };

@@ -6,7 +6,9 @@
 // payload, padded to 32 bytes. A record may wrap around the end of the ring, so a packet of
 // any size up to the capacity fits without wasting the space at the end. The producer blocks
 // (Atomics.wait) while the ring is full; the consumer never blocks, and waits for a message
-// the producer posts on a MessageChannel between them when it writes to an empty ring.
+// the producer posts on a MessageChannel between them when it writes to an empty ring. A
+// consumer that watches gets a message too when the producer's thread blocks, on this ring or
+// on another one it writes.
 //
 // Positions only grow, as 32-bit integers that wrap; the distance between them is the bytes
 // in use. Each side writes only its own position, so neither needs a lock.
@@ -14,10 +16,12 @@
 // Control words, then the records from byte 64, on a cache line of their own.
 const WRITE = 0;
 const READ = 1;
-/** The control word that is 1 while the producer waits for room; for tests. */
-export const PRODUCER_WAITING = 2;
+// 1 while the producer waits for room.
+const PRODUCER_WAITING = 2;
 const CONSUMER_WAITING = 3;
 const CLOSED = 4;
+// 1 while the consumer watches for the producer's thread to block.
+const WATCHING = 5;
 const DATA = 64;
 // A header, and the alignment of every record, so a header never wraps.
 const HEADER = 32;
@@ -53,6 +57,11 @@ export interface Packet {
   data: Uint8Array;
 }
 
+// The message that wakes a waiting consumer, and the one that tells a watching one the
+// producer's thread blocks.
+const WAKE = null;
+const BLOCKED = "blocked";
+
 const padded = (size: number) => HEADER + ((size + HEADER - 1) & -HEADER);
 
 /** A ring of `capacity` bytes of records, a power of two of at least 64. */
@@ -82,6 +91,18 @@ function views(ring: SharedArrayBuffer) {
 export function createProducer(ring: SharedArrayBuffer, wake: MessagePort) {
   const { capacity, control, bytes, words, longs } = views(ring);
 
+  /**
+   * Tells a watching consumer that this thread is about to block, on this ring or another,
+   * after raising that ring's waiting flag. Taken, so a watch gets one message.
+   */
+  function blocking() {
+    const watching = Atomics.load(control, WATCHING) === 1;
+
+    if (watching && Atomics.compareExchange(control, WATCHING, 1, 0) === 1) {
+      wake.postMessage(BLOCKED);
+    }
+  }
+
   // Waits until `need` bytes are free; false once the consumer has closed the ring.
   function reserve(need: number) {
     const written = control[WRITE] ?? 0;
@@ -93,6 +114,7 @@ export function createProducer(ring: SharedArrayBuffer, wake: MessagePort) {
       // Raised before waiting, so a release after the check above notifies this wait or
       // changes READ before it starts.
       Atomics.store(control, PRODUCER_WAITING, 1);
+      blocking();
       Atomics.wait(control, READ, read);
       Atomics.store(control, PRODUCER_WAITING, 0);
     }
@@ -135,7 +157,7 @@ export function createProducer(ring: SharedArrayBuffer, wake: MessagePort) {
     const waiting = Atomics.load(control, CONSUMER_WAITING) === 1;
 
     if (waiting && Atomics.compareExchange(control, CONSUMER_WAITING, 1, 0) === 1) {
-      wake.postMessage(null);
+      wake.postMessage(WAKE);
     }
 
     return true;
@@ -151,7 +173,7 @@ export function createProducer(ring: SharedArrayBuffer, wake: MessagePort) {
     return write(FAILED, 0, 0n, 0n, 0, bytes, 0, 0);
   }
 
-  return { write, end, fail };
+  return { write, end, fail, blocking };
 }
 
 /**
@@ -169,13 +191,23 @@ export function closeRing(ring: SharedArrayBuffer) {
 
 /**
  * The consumer's side of `ring`, for a thread that never blocks, with `wake`, the end of the
- * channel whose other end the producer has.
+ * channel whose other end the producer has. `blocked` runs once for each `watch` when the
+ * producer's thread then blocks.
  */
-export function createConsumer(ring: SharedArrayBuffer, wake: MessagePort) {
+export function createConsumer(
+  ring: SharedArrayBuffer,
+  wake: MessagePort,
+  blocked: () => void = () => {},
+) {
   const { capacity, control, bytes, words, longs } = views(ring);
   // Ends the wait in progress, if any.
   const waiting = { end: () => {} };
-  wake.addEventListener("message", () => waiting.end());
+
+  wake.addEventListener("message", ({ data }: MessageEvent<typeof WAKE | typeof BLOCKED>) => {
+    if (data === BLOCKED) blocked();
+    else waiting.end();
+  });
+
   wake.start();
   const packet: Packet = { stream: 0, flags: 0, pts: 0n, dts: 0n, duration: 0, data: bytes };
   // Where a record that wraps is put back together; it grows to the largest such packet.
@@ -243,5 +275,13 @@ export function createConsumer(ring: SharedArrayBuffer, wake: MessagePort) {
     return Atomics.load(control, PRODUCER_WAITING) === 1;
   }
 
-  return { peek, release, wait, close, producerWaiting };
+  /**
+   * Has `blocked` run when the producer's thread next blocks. Before reading whether it
+   * waits, so a block after the read runs it.
+   */
+  function watch() {
+    Atomics.store(control, WATCHING, 1);
+  }
+
+  return { peek, release, wait, close, producerWaiting, watch };
 }

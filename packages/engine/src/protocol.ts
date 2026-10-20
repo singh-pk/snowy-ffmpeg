@@ -24,9 +24,9 @@ export type Missing = [feature: PlatformFeature, reason: string];
 // `wake`, with parameters `params`, timed by the clock in PCM ring `pcm` (src/pcm.ts), until it
 // stops. An error while it plays is reported once, with the play's `id`, and it stops. Until it
 // has drawn a frame by the running clock (`shown`, the last report), it reports each change in
-// how far decoding is: a quarter second or all of it decoded (`ahead`), or no further while the
-// media worker is blocked (`stuck`), so the main thread starts audio with video ready, and
-// resolves play once it is seen (src/index.ts).
+// how far decoding is, as it happens: a quarter second or all of it decoded (`ahead`), or no
+// further while the media worker is blocked (`stuck`), so the main thread starts audio with
+// video ready, and resolves play once it is seen (src/index.ts).
 export type ToRender =
   | { type: "init"; canvas: OffscreenCanvas }
   | {
@@ -67,9 +67,10 @@ export interface MediaInfo {
 
 // `id` pairs each reply with its request. A demux request writes the packets of `streams` into
 // `ring` (src/ring.ts), waking its consumer through `wake`, and with `audio` decodes that audio
-// stream into the PCM ring `pcm` (src/pcm.ts), resampled to its rate and channels. It replies
-// once it has written all the audio and the END record, or once a consumer has closed its ring.
-// On an error it writes the FAILED record and replies with it.
+// stream into the PCM ring `pcm` (src/pcm.ts), resampled to its rate and channels. Unless it
+// fails or the PCM ring closes first, it says once, before it replies, that the audio is buffered
+// (`buffered`): `preroll` frames of it, a full ring, or all of it. It replies once it has written all the audio and the END record, or once a
+// consumer has closed its ring. On an error it writes the FAILED record and replies with it.
 export type ToMedia =
   | { type: "open"; id: number; file: File }
   | {
@@ -78,10 +79,11 @@ export type ToMedia =
       ring: SharedArrayBuffer;
       wake: MessagePort;
       streams: number[];
-      audio?: { stream: number; pcm: SharedArrayBuffer };
+      audio?: { stream: number; pcm: SharedArrayBuffer; preroll: number };
     };
 
 export type FromMedia =
   | { type: "opened"; id: number; info: MediaInfo; video: Record<number, VideoParams> }
+  | { type: "buffered"; id: number }
   | { type: "demuxed"; id: number }
   | { type: "error"; id: number; message: string };
