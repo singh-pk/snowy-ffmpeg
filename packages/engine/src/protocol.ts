@@ -20,9 +20,35 @@ export type PlatformFeature =
 /** A missing feature, and what exactly was missing. */
 export type Missing = [feature: PlatformFeature, reason: string];
 
-export type ToRender = { type: "init"; canvas: OffscreenCanvas };
+// After init, the render worker plays video stream packets from `ring` (src/ring.ts), with
+// parameters `params`, timed by the clock in PCM ring `pcm` (src/pcm.ts), until it stops. An
+// error while it plays is reported once, with the play's `id`, and it stops. Until it
+// has drawn a frame by the running clock (`shown`, the last report), it reports each change
+// in how far decoding is: a quarter second or all of it decoded (`ahead`), or no further
+// while the media worker is blocked (`stuck`), so the main thread starts audio with video
+// ready, and resolves play once it is seen (src/index.ts).
+export type ToRender =
+  | { type: "init"; canvas: OffscreenCanvas }
+  | {
+      type: "play";
+      id: number;
+      ring: SharedArrayBuffer;
+      params: VideoParams;
+      pcm: SharedArrayBuffer;
+    }
+  | { type: "stop" };
 
-export type FromRender = { type: "ready" } | { type: "unsupported"; missing: Missing };
+export type FromRender =
+  | { type: "ready" }
+  | { type: "unsupported"; missing: Missing }
+  | {
+      type: "video";
+      id: number;
+      ahead: boolean;
+      stuck: boolean;
+      shown: boolean;
+    }
+  | { type: "error"; id: number; message: string };
 
 /** A stream of a media file. `id` is its index in the file; `codec` is FFmpeg's codec name. */
 export type Track =

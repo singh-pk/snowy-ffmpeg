@@ -4,7 +4,8 @@
 // Code for the test and benchmark pages, bundled by serve.ts and imported from PAGE: the
 // packet ring and the hash test/fixtures/expected.json records for a stream's packets, and
 // the audio output with a player that renders it offline; a video stream's first packet and
-// the check of its decoder config; and the video output, drawing into a canvas it reads back.
+// the check of its decoder config; the video output, drawing into a canvas it reads back; and
+// what a playing engine shows.
 
 import { AV_NOPTS_VALUE, AV_PKT_FLAG_KEY } from "@snowy-media/ffmpeg/core";
 import { createAudioOutput } from "../../src/audio";
@@ -15,7 +16,7 @@ import type { FromMedia, ToMedia } from "../../src/protocol";
 import { createConsumer, createRing, END, FAILED, RING_CAPACITY } from "../../src/ring";
 import { createVideoOutput } from "../../src/video";
 import { PCM_CHANNELS, PCM_RATE, probe } from "./audio";
-import { brightnessGrid, readFrameId } from "./frame-id";
+import { brightnessGrid, CELL, readFrameId } from "./frame-id";
 
 export { createAudioOutput } from "../../src/audio";
 export {
@@ -371,4 +372,28 @@ export async function render(
   }
 
   return { shown, grid };
+}
+
+/**
+ * On each animation frame for `ms` milliseconds, the media time of engine `player` and the
+ * number of the frame on `canvas`, whose control it has: the page draws the canvas to read it.
+ */
+export async function watchScreen(
+  player: { readonly currentTime: number },
+  canvas: HTMLCanvasElement,
+  ms: number,
+) {
+  const reader = new OffscreenCanvas(canvas.width, canvas.height).getContext("2d");
+  if (!reader) throw new Error("no 2D context");
+  const until = performance.now() + ms;
+  const seen: [time: number, id: number][] = [];
+
+  while (performance.now() < until) {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    reader.drawImage(canvas, 0, 0);
+    const { data } = reader.getImageData(0, 0, canvas.width, CELL);
+    seen.push([player.currentTime, readFrameId(data, canvas.width * 4, 4)]);
+  }
+
+  return seen;
 }

@@ -9,6 +9,8 @@
 // The ring also carries the clock the worklet publishes: the media time of the next sample it
 // will play, the context time it plays at, and whether it is playing or underrun. It advances
 // only by samples played, so it cannot drift from the audio, and it stops on an underrun.
+// The main thread adds the context's output timestamp, the one thing only it can read: which
+// context time is being heard at which moment, so any thread knows what is heard now.
 //
 // Positions count frames (one sample per channel), only grow, and wrap as 32-bit integers.
 
@@ -31,7 +33,14 @@ const PLAYING = 11;
 // atomic: the stores of WRITE and SEQUENCE that follow publish it, so a reader sees it once
 // the clock has played a frame, and may see 0 before.
 const START = 7;
-const DATA = 64;
+// The output timestamp, written by the main thread under a seqlock of its own, every word
+// with Atomics as for the clock: the context time being heard and when, in whole
+// microseconds as two 32-bit halves each, and whether the context is running.
+const OUTPUT_SEQUENCE = 16;
+const OUTPUT_RUNNING = 17;
+const OUTPUT_TIME = 18;
+const OUTPUT_AT = 20;
+const DATA = 128;
 const HALF = 2 ** 32;
 
 /** The name of the AudioWorkletProcessor that plays a ring (src/audio.worklet.ts). */
@@ -50,7 +59,7 @@ export interface AudioOptions {
 interface Clock {
   pts: number;
   time: number;
-  /** False after an underrun, and before the first sample: the clock is stopped at `pts`. */
+  /** False after an underrun, and before the first sample: the clock stops at `pts` at `time`. */
   playing: boolean;
 }
 
@@ -144,6 +153,8 @@ export function createPcmConsumer(ring: SharedArrayBuffer) {
   const { control, samples, channels, capacity } = views(ring);
   // Frames played since the start, exact in a double for millions of years at any rate.
   let played = 0;
+  // The context frame after the last one played, which an underrun keeps.
+  let end = 0;
 
   function publish(next: number, playing: boolean) {
     const sequence = control[SEQUENCE] ?? 0;
@@ -183,10 +194,16 @@ export function createPcmConsumer(ring: SharedArrayBuffer) {
     }
 
     played += n;
-    publish(frame + frames, n === frames && n > 0);
+    if (n > 0) end = frame + n;
+    publish(end, n === frames && n > 0);
   }
 
-  return { read };
+  /** Whether the ring is closed: nothing will play from it again. */
+  function closed() {
+    return Atomics.load(control, CLOSED) === 1;
+  }
+
+  return { read, closed };
 }
 
 /** The side of `ring` for any other thread: the clock, how full it is, and stopping it. */
@@ -212,10 +229,64 @@ export function createPcmControl(ring: SharedArrayBuffer) {
     }
   }
 
-  /** The media time, in seconds, playing at context time `time`. */
+  /**
+   * The media time, in seconds, playing at context time `time`. Stopped, it is `pts` from
+   * context time `at` on, when the last frame has played, and runs until then: what was heard
+   * at a context time before it is still the audio before the underrun.
+   */
   function mediaTime(time: number) {
     const { pts, time: at, playing } = read();
-    return playing ? pts + time - at : pts;
+    return playing ? pts + time - at : pts + Math.min(0, time - at);
+  }
+
+  /**
+   * Publishes the context's output timestamp, from the main thread: context time
+   * `contextTime` is heard at `at`, in milliseconds on the clock of `performance.timeOrigin +
+   * performance.now()`, which every thread shares; and whether the context is running.
+   */
+  function publishOutput(contextTime: number, at: number, running: boolean) {
+    const sequence = control[OUTPUT_SEQUENCE] ?? 0;
+    const time = Math.round(contextTime * 1e6);
+    const when = Math.round(at * 1e3);
+    Atomics.store(control, OUTPUT_SEQUENCE, (sequence + 1) | 0);
+    Atomics.store(control, OUTPUT_TIME, time % HALF);
+    Atomics.store(control, OUTPUT_TIME + 1, Math.floor(time / HALF));
+    Atomics.store(control, OUTPUT_AT, when % HALF);
+    Atomics.store(control, OUTPUT_AT + 1, Math.floor(when / HALF));
+    Atomics.store(control, OUTPUT_RUNNING, running ? 1 : 0);
+    Atomics.store(control, OUTPUT_SEQUENCE, (sequence + 2) | 0);
+  }
+
+  /**
+   * The media time, in seconds, heard at `at` (milliseconds, as for `publishOutput`): the
+   * context time heard then, from the last output timestamp, carried forward while the context
+   * runs, through the clock.
+   */
+  function heard(at: number) {
+    for (;;) {
+      const sequence = Atomics.load(control, OUTPUT_SEQUENCE);
+      if (sequence & 1) continue;
+      const time = whole(OUTPUT_TIME) / 1e6;
+      const when = whole(OUTPUT_AT) / 1e3;
+      const running = Atomics.load(control, OUTPUT_RUNNING) === 1;
+      if (Atomics.load(control, OUTPUT_SEQUENCE) !== sequence) continue;
+      return mediaTime(running ? time + (at - when) / 1000 : time);
+    }
+  }
+
+  /** Whether the last output timestamp published runs (`publishOutput`). */
+  function outputRunning() {
+    return Atomics.load(control, OUTPUT_RUNNING) === 1;
+  }
+
+  /** Whether the producer waits for room. */
+  function producerWaiting() {
+    return Atomics.load(control, PRODUCER_WAITING) === 1;
+  }
+
+  /** The frames written and not yet played. */
+  function buffered() {
+    return (Atomics.load(control, WRITE) - Atomics.load(control, READ)) | 0;
   }
 
   /** The media time, in seconds, of the first frame, once the clock has played it. */
@@ -230,5 +301,15 @@ export function createPcmControl(ring: SharedArrayBuffer) {
     Atomics.notify(control, READ);
   }
 
-  return { read, mediaTime, start, close };
+  return {
+    read,
+    mediaTime,
+    publishOutput,
+    heard,
+    outputRunning,
+    producerWaiting,
+    buffered,
+    start,
+    close,
+  };
 }

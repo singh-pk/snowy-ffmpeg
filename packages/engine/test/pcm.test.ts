@@ -116,16 +116,18 @@ test("the clock stops on an underrun and resumes with the audio", () => {
   expect(control.read()).toEqual({ pts: 10.128, time: 0.128, playing: true });
   expect(control.mediaTime(0.2)).toBeCloseTo(10.2, 12);
 
-  // 122 frames, then silence: the clock stops after the last frame, whenever it is read.
+  // 122 frames, then silence: the clock stops after the last frame, at its context time, and
+  // runs until then.
   consumer.read(output, 128);
-  expect(control.read()).toEqual({ pts: 10.25, time: 0.256, playing: false });
+  expect(control.read()).toEqual({ pts: 10.25, time: 0.25, playing: false });
   expect(output[0]?.[121]).toBe(249);
   expect(output[0]?.subarray(122).every((v) => v === 0)).toBe(true);
+  expect(control.mediaTime(0.2)).toBeCloseTo(10.2, 12);
   expect(control.mediaTime(5)).toBe(10.25);
 
-  // An empty ring: still stopped, and silent.
+  // An empty ring: still stopped where the last frame played, and silent.
   consumer.read(output, 256);
-  expect(control.read()).toEqual({ pts: 10.25, time: 0.384, playing: false });
+  expect(control.read()).toEqual({ pts: 10.25, time: 0.25, playing: false });
   expect(output[1]?.every((v) => v === 0)).toBe(true);
 
   // The audio continues: so does the clock, from where it stopped.
@@ -149,4 +151,22 @@ test("closing the ring stops the producer and silences the consumer", () => {
 
 test("a ring size that is not a power of two is an error", () => {
   expect(() => createPcmRing(1000, 2, RATE)).toThrow(RangeError);
+});
+
+test("what is heard comes from the output timestamp, carried forward while it runs", () => {
+  const ring = createPcmRing(1024, 2, RATE);
+  const producer = createPcmProducer(ring);
+  const consumer = createPcmConsumer(ring);
+  const control = createPcmControl(ring);
+  producer.start(10);
+  producer.write(frames(0, 1000), 0, 1000);
+  // Rendered up to context time 0.128, which plays media time 10.128.
+  consumer.read(quantum(), 0);
+
+  // Context time 0.1 heard at 5000 ms: 50 ms later, 0.15 is heard, so media time 10.15.
+  control.publishOutput(0.1, 5000, true);
+  expect(control.heard(5050)).toBeCloseTo(10.15, 12);
+  // Suspended: what is heard stays where the output stopped.
+  control.publishOutput(0.1, 5000, false);
+  expect(control.heard(9000)).toBeCloseTo(10.1, 12);
 });
