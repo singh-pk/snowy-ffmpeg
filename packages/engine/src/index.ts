@@ -8,7 +8,7 @@ import type { VideoParams } from "./codec";
 import { createPcmControl, createPcmRing } from "./pcm";
 import { checkMainThread, UnsupportedPlatformError } from "./platform";
 import type { FromMedia, FromRender, MediaInfo, ToMedia, ToRender } from "./protocol";
-import { createConsumer, createRing, RING_CAPACITY } from "./ring";
+import { closeRing, createRing, RING_CAPACITY } from "./ring";
 
 export { UnsupportedPlatformError } from "./platform";
 export type { MediaInfo, PlatformFeature, Track } from "./protocol";
@@ -100,12 +100,12 @@ function createMedia() {
 
   worker.addEventListener("error", (e) => fail(loadError(e, "media")));
 
-  function send(message: DistributiveOmit<ToMedia, "id">) {
+  function send(message: DistributiveOmit<ToMedia, "id">, transfer: Transferable[] = []) {
     if (failed) return Promise.reject(failed);
     const call = Promise.withResolvers<FromMedia>();
     const id = next++;
     pending.set(id, call);
-    worker.postMessage({ ...message, id });
+    worker.postMessage({ ...message, id }, transfer);
     return call.promise;
   }
 
@@ -211,9 +211,20 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     }
 
     const ring = createRing(params ? RING_CAPACITY : NO_VIDEO_RING);
-    if (params) render.postMessage({ type: "play", id, ring, params, pcm } satisfies ToRender);
+    const wake = new MessageChannel();
+
+    if (params) {
+      const message = { type: "play", id, ring, wake: wake.port2, params, pcm } as const;
+      render.postMessage(message satisfies ToRender, [wake.port2]);
+    } else {
+      wake.port2.close();
+    }
+
     const streams = video && params ? [video.id] : [];
-    const demuxed = media.send({ type: "demux", ring, streams, audio: { stream: audio.id, pcm } });
+    const demuxed = media.send(
+      { type: "demux", ring, wake: wake.port1, streams, audio: { stream: audio.id, pcm } },
+      [wake.port1],
+    );
     const frame = { id: 0 };
     // The last output timestamp, as context minus performance milliseconds, and when.
     const output = { offset: Number.NaN, at: 0, agreed: 0, newer: 0, settled: false };
@@ -262,7 +273,7 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
       cancelAnimationFrame(frame.id);
       render.postMessage({ type: "stop" } satisfies ToRender);
       clock.close();
-      createConsumer(ring).close();
+      closeRing(ring);
       node.disconnect();
     }
 

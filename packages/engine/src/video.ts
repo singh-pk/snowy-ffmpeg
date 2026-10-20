@@ -24,16 +24,17 @@ const frameBytes = (frame: VideoFrame) =>
   frame.format ? frame.allocationSize() : frame.codedWidth * frame.codedHeight * 4;
 
 /**
- * Decodes the packets of the stream with parameters `p` from `ring`, and shows them with
- * `compositor`. `done` resolves once the decoder has decoded the last packet or the output is
- * closed, and rejects if decoding fails.
+ * Decodes the packets of the stream with parameters `p` from `ring`, woken by `port`, and shows
+ * them with `compositor`. `done` resolves once the decoder has decoded the last packet or the
+ * output is closed, and rejects if decoding fails.
  */
 export function createVideoOutput(
   ring: SharedArrayBuffer,
+  port: MessagePort,
   p: VideoParams,
   compositor: ReturnType<typeof createCompositor>,
 ) {
-  const consumer = createConsumer(ring);
+  const consumer = createConsumer(ring, port);
   const queue = createFrameQueue(FRAME_BUDGET, frameBytes);
   const [num, den] = p.timeBase;
   // Wakes the decode loop while it waits for room; replaced each time it waits.

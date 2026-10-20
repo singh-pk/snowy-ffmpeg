@@ -20,19 +20,20 @@ export type PlatformFeature =
 /** A missing feature, and what exactly was missing. */
 export type Missing = [feature: PlatformFeature, reason: string];
 
-// After init, the render worker plays video stream packets from `ring` (src/ring.ts), with
-// parameters `params`, timed by the clock in PCM ring `pcm` (src/pcm.ts), until it stops. An
-// error while it plays is reported once, with the play's `id`, and it stops. Until it
-// has drawn a frame by the running clock (`shown`, the last report), it reports each change
-// in how far decoding is: a quarter second or all of it decoded (`ahead`), or no further
-// while the media worker is blocked (`stuck`), so the main thread starts audio with video
-// ready, and resolves play once it is seen (src/index.ts).
+// After init, the render worker plays video stream packets from `ring` (src/ring.ts), woken by
+// `wake`, with parameters `params`, timed by the clock in PCM ring `pcm` (src/pcm.ts), until it
+// stops. An error while it plays is reported once, with the play's `id`, and it stops. Until it
+// has drawn a frame by the running clock (`shown`, the last report), it reports each change in
+// how far decoding is: a quarter second or all of it decoded (`ahead`), or no further while the
+// media worker is blocked (`stuck`), so the main thread starts audio with video ready, and
+// resolves play once it is seen (src/index.ts).
 export type ToRender =
   | { type: "init"; canvas: OffscreenCanvas }
   | {
       type: "play";
       id: number;
       ring: SharedArrayBuffer;
+      wake: MessagePort;
       params: VideoParams;
       pcm: SharedArrayBuffer;
     }
@@ -64,17 +65,18 @@ export interface MediaInfo {
   tracks: Track[];
 }
 
-// `id` pairs each reply with its request. A demux request writes the packets of `streams`
-// into `ring` (src/ring.ts), and with `audio` decodes that audio stream into the PCM ring
-// `pcm` (src/pcm.ts), resampled to its rate and channels. It replies once it has written all
-// the audio and the END record, or once a consumer has closed its ring. On an error it
-// writes the FAILED record and replies with it.
+// `id` pairs each reply with its request. A demux request writes the packets of `streams` into
+// `ring` (src/ring.ts), waking its consumer through `wake`, and with `audio` decodes that audio
+// stream into the PCM ring `pcm` (src/pcm.ts), resampled to its rate and channels. It replies
+// once it has written all the audio and the END record, or once a consumer has closed its ring.
+// On an error it writes the FAILED record and replies with it.
 export type ToMedia =
   | { type: "open"; id: number; file: File }
   | {
       type: "demux";
       id: number;
       ring: SharedArrayBuffer;
+      wake: MessagePort;
       streams: number[];
       audio?: { stream: number; pcm: SharedArrayBuffer };
     };
