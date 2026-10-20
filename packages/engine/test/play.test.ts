@@ -33,6 +33,10 @@ const STALE_LATE = 0.15;
 const CI_LATE = 1;
 const CI_EARLY = 0.15;
 const CI_P99 = 0.15;
+// And Firefox's audio output stalls there: its clock ends 0.3 to 1.2 s short over 20 s, where
+// it ends within 0.1 s on real hardware. So on CI Firefox may lose two seconds; other browsers,
+// and every browser off CI, one.
+const CI_FIREFOX_LOST = 2;
 const ci = process.env.CI === "true";
 const server = await serveEngine(
   `<!doctype html><title>test</title><canvas width="${video.width}" height="${video.height}"></canvas>`,
@@ -137,7 +141,7 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
 
           const last = got.playing.at(-1)?.[0] ?? 0;
           // It played in real time, from the start.
-          expect(last).toBeGreaterThan(SECONDS - 1);
+          expect(last).toBeGreaterThan(SECONDS - (ci && firefox ? CI_FIREFOX_LOST : 1));
           // Watching ends on an animation frame, which may come late on CI.
           expect(last).toBeLessThan(SECONDS + 1);
           // No frame early: a stale read cannot make one look early, in any browser.
