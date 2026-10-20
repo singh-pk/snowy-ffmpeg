@@ -293,7 +293,11 @@ export function videoConfig(p: VideoParams, keyframe: Uint8Array): VideoDecoderC
     num > 0 && den > 0 && num !== den
       ? { displayAspectWidth: p.width * num, displayAspectHeight: p.height * den }
       : {};
-  const size = { codedWidth: p.width, codedHeight: p.height, ...aspect };
+  // With each frame out as soon as the stream allows. Without it, Chromium and Firefox hold more
+  // frames than the stream reorders, and in sparse video those wait seconds for the packets
+  // that let them out. Decoding 4K is about as fast with it
+  // (docs/architecture.md#video-decoder-configs).
+  const size = { codedWidth: p.width, codedHeight: p.height, ...aspect, optimizeForLatency: true };
   if (p.codec === "h264") return { ...h264(p, keyframe), ...size };
   if (p.codec === "hevc") return { ...hevc(p, keyframe), ...size };
   if (p.codec === "vp9") return { codec: vp9Codec(keyframe, p.width, p.height, p.level), ...size };

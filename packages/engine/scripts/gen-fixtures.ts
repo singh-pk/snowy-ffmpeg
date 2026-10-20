@@ -42,11 +42,11 @@ const code = [
 ].join(":");
 
 // Moving test pattern, or flat grey for the long fixture, which only needs the numbers.
-const video = (seconds: number, source = "testsrc2=") => [
+const video = (seconds: number, source = "testsrc2=", fps = FPS) => [
   "-f",
   "lavfi",
   "-i",
-  `${source}size=${WIDTH}x${HEIGHT}:rate=${FPS}:duration=${seconds},format=yuv420p,geq=${code}`,
+  `${source}size=${WIDTH}x${HEIGHT}:rate=${fps}:duration=${seconds},format=yuv420p,geq=${code}`,
 ];
 
 // A 4 kHz burst at every whole second, the same in both channels.
@@ -75,11 +75,19 @@ const OPUS = ["-c:a", "libopus"];
 // No random IDs or version tags, so the output is reproducible.
 const OUT = ["-fflags", "+bitexact"];
 
-// name -> its length, the ffmpeg arguments after the inputs, and those for the video input.
-// Every fixture has FPS frames and one click per second of it.
+// name -> its length, the ffmpeg arguments after the inputs, and those for the video input;
+// and its frame rate and its audio's length, where they are not FPS and its length. Every
+// fixture has a frame for each frame period of it and a click for each second of its audio.
 const fixtures: Record<
   string,
-  { seconds: number; args: string[]; source?: string; input?: string[] }
+  {
+    seconds: number;
+    args: string[];
+    source?: string;
+    input?: string[];
+    fps?: number;
+    audioSeconds?: number;
+  }
 > = {
   "h264-aac.mp4": { seconds: 3, args: [...H264, ...AAC] },
   "h264-aac.mkv": { seconds: 3, args: [...H264, ...AAC] },
@@ -111,6 +119,11 @@ const fixtures: Record<
     args: [...H264, ...AAC],
     input: ["-display_rotation", "90", "-display_hflip", "-noautorotate"],
   },
+  // A frame every two seconds, a longer gap than the PCM ring holds, and so one keyframe
+  // (docs/architecture.md#playback).
+  "sparse-h264-aac.mp4": { seconds: 12, fps: 0.5, args: [...H264, ...AAC] },
+  // Audio for a tenth of a second, less than play buffers before it starts, under 3 s of video.
+  "short-audio-h264-aac.mp4": { seconds: 3, audioSeconds: 0.1, args: [...H264, ...AAC] },
   // Ten minutes, for drift.
   "sync-10min.mp4": { seconds: 600, args: [...H264, ...AAC], source: "color=c=gray:" },
 };
@@ -233,9 +246,10 @@ await rm(dir, { recursive: true, force: true });
 await mkdir(dir, { recursive: true });
 const expected: Record<string, unknown> = {};
 
-for (const [name, { seconds, args, source, input = [] }] of Object.entries(fixtures)) {
+for (const [name, fixture] of Object.entries(fixtures)) {
+  const { seconds, args, source, input = [], fps = FPS, audioSeconds = seconds } = fixture;
   const file = dir + name;
-  const inputs = [...input, ...video(seconds, source), ...clicks(seconds)];
+  const inputs = [...input, ...video(seconds, source, fps), ...clicks(audioSeconds)];
   await $`ffmpeg -hide_banner -loglevel error -y ${inputs} ${args} ${OUT} ${file}`;
   const probe =
     await $`ffprobe -v error -show_format -show_streams -show_entries packet=codec_type,stream_index,pts,dts,size,flags,data_hash -show_data_hash crc32 -of json ${file}`.json();
@@ -245,11 +259,12 @@ for (const [name, { seconds, args, source, input = [] }] of Object.entries(fixtu
   const a = streams.find((s) => s.codec_type === "audio");
   if (!v?.width || !v.height || !a) throw new Error(`${name}: needs a video and an audio stream`);
   const { pts, ids } = await readVideo(file, v.index, v.width, v.height);
-  if (ids.length !== seconds * FPS) throw new Error(`${name}: ${ids.length} frames`);
+  if (ids.length !== seconds * fps) throw new Error(`${name}: ${ids.length} frames`);
   const wrong = ids.findIndex((id, i) => id !== i);
   if (wrong >= 0) throw new Error(`${name}: frame ${wrong} reads as ${ids[wrong]}`);
   const onsets = await readClicks(file, a);
-  if (onsets.length !== seconds) throw new Error(`${name}: ${onsets.length} clicks`);
+  if (onsets.length !== Math.ceil(audioSeconds))
+    throw new Error(`${name}: ${onsets.length} clicks`);
   const late = onsets.findIndex((t, k) => Math.abs(t - k) > CLICK_TOLERANCE);
   if (late >= 0) throw new Error(`${name}: click ${late} starts at ${onsets[late]} s`);
   const resampled = await resample(file, a.index);
