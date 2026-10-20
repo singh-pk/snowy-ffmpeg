@@ -24,9 +24,9 @@ export type Missing = [feature: PlatformFeature, reason: string];
 // parameters `params`, timed by the clock in PCM ring `pcm` (src/pcm.ts), until it stops. An
 // error while it plays is reported once, with the play's `id`, and it stops. Until it
 // has drawn a frame by the running clock (`shown`, the last report), it reports each change
-// in how far decoding is: a quarter second or all of it decoded (`ahead`), the frame queue
-// full, or waiting for packets with nothing to decode (`starved`), so the main thread
-// starts audio with video ready, and resolves play once it is seen (src/index.ts).
+// in how far decoding is: a quarter second or all of it decoded (`ahead`), or no further
+// while the media worker is blocked (`stuck`), so the main thread starts audio with video
+// ready, and resolves play once it is seen (src/index.ts).
 export type ToRender =
   | { type: "init"; canvas: OffscreenCanvas }
   | {
@@ -45,8 +45,7 @@ export type FromRender =
       type: "video";
       id: number;
       ahead: boolean;
-      full: boolean;
-      starved: boolean;
+      stuck: boolean;
       shown: boolean;
     }
   | { type: "error"; id: number; message: string };

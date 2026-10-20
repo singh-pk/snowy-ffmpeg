@@ -27,6 +27,11 @@ const GAPS = 8;
 // The video decoded before the main thread starts audio, in microseconds, as much as the audio
 // it buffers: a decoder that has just started delivers its next frames slowly.
 const PREROLL = 250_000;
+// How long decoding may go without a new frame, in milliseconds, before it counts as stuck
+// while the media worker is blocked: a hardware decoder may hold every frame it has. Longer
+// before the first frame, as a decoder may take that long to start.
+const STALL = 500;
+const FIRST_STALL = 2000;
 
 const state = {
   compositor: undefined as ReturnType<typeof createCompositor> | undefined,
@@ -113,6 +118,8 @@ function play({ id, ring, params, pcm }: Extract<ToRender, { type: "play" }>) {
   const output = createVideoOutput(ring, params, state.compositor);
   const clock = createPcmControl(pcm);
   const playing = { output, frame: 0, first: Number.NaN, reported: -1, shown: false };
+  // The latest frame decoded, and when it was, in animation frame time.
+  const progress = { latest: -Infinity, at: performance.now() };
   const timing = { last: 0, next: 0, gaps: new Float64Array(GAPS).fill(REFRESH) };
 
   // Reports the first failure of this play, unless it has stopped.
@@ -137,11 +144,12 @@ function play({ id, ring, params, pcm }: Extract<ToRender, { type: "play" }>) {
     for (let i = 0; i < GAPS; i++) refresh = Math.min(refresh, timing.gaps[i] ?? REFRESH);
 
     try {
-      const seen = clock.heard(performance.timeOrigin + time + refresh);
-      // By the clock as published when it was read: once that runs, this frame is the one due.
+      // Read first: if the timestamp ran then, the time heard below was carried forward by it,
+      // so the frame put up is the latest due.
       const running = clock.outputRunning();
+      const seen = clock.heard(performance.timeOrigin + time + refresh);
       output.present(Math.round(seen * 1e6));
-      if (!playing.shown) report(running);
+      if (!playing.shown) report(time, running);
     } catch (e) {
       fail(e);
       return;
@@ -150,20 +158,30 @@ function play({ id, ring, params, pcm }: Extract<ToRender, { type: "play" }>) {
     playing.frame = self.requestAnimationFrame(draw);
   }
 
-  // How far decoding is, for the main thread's preroll, and whether a frame went up by the
-  // running clock, when it changes; nothing more once one has.
-  function report(shown: boolean) {
+  // How far decoding is at `time`, for the main thread's preroll, and whether a frame went up
+  // by the running clock, when it changes; nothing more once one has. Stuck is read with the
+  // media worker blocked first: on a full PCM ring, which stays full while the context is
+  // held, or on a full packet ring; after that, video starved or full cannot go on, and video
+  // stalled is taken not to.
+  function report(time: number, shown: boolean) {
+    const blocked = clock.producerWaiting() || output.blocked();
     const latest = output.latest();
     if (Number.isNaN(playing.first) && latest > -Infinity) playing.first = latest;
+
+    if (latest !== progress.latest) {
+      progress.latest = latest;
+      progress.at = time;
+    }
+
     const ahead = latest - playing.first >= PREROLL || output.ended();
-    const full = output.full();
-    const starved = output.starved();
+    const stalled = time - progress.at >= (latest > -Infinity ? STALL : FIRST_STALL);
+    const stuck = blocked && (output.starved() || output.full() || stalled);
     // As bits, so comparing allocates nothing on an animation frame.
-    const now = (ahead ? 1 : 0) | (full ? 2 : 0) | (starved ? 4 : 0) | (shown ? 8 : 0);
+    const now = (ahead ? 1 : 0) | (stuck ? 2 : 0) | (shown ? 4 : 0);
     if (now === playing.reported) return;
     playing.reported = now;
     playing.shown = shown;
-    post({ type: "video", id, ahead, full, starved, shown });
+    post({ type: "video", id, ahead, stuck, shown });
   }
 
   async function watch() {

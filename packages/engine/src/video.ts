@@ -157,5 +157,7 @@ export function createVideoOutput(
     full: () => queue.full(),
     /** Whether it waits for packets with nothing left to decode. */
     starved: () => state.waiting && decoder.decodeQueueSize === 0,
+    /** Whether the packet ring's producer waits for room. */
+    blocked: () => consumer.producerWaiting(),
   };
 }

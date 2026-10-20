@@ -207,5 +207,10 @@ export function createConsumer(ring: SharedArrayBuffer) {
     Atomics.notify(control, WRITE);
   }
 
-  return { peek, release, wait, close };
+  /** Whether the producer waits for room. */
+  function producerWaiting() {
+    return Atomics.load(control, PRODUCER_WAITING) === 1;
+  }
+
+  return { peek, release, wait, close, producerWaiting };
 }

@@ -169,7 +169,7 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     // Whether the last call was play, not pause.
     playing: false,
     // How far the render worker has decoded, as it last reported, and for which play.
-    video: { id: -1, ahead: false, full: false, starved: false, shown: false },
+    video: { id: -1, ahead: false, stuck: false, shown: false },
     closed: false,
   };
 
@@ -267,21 +267,15 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     }
 
     // Whether it may start, once and for good: video is decoded and audio buffered ahead, or
-    // what is missing cannot come while the context is held. A full PCM ring blocks the media
-    // worker, so video gets no further than it is once it is starved, as it is for sparse
-    // video; a full frame queue in the end blocks it too, as it does for a short audio track.
+    // the render worker says video can get no further while the context is held, as for
+    // sparse video or a short audio track. A full PCM ring is audio ahead.
     const prerolled = { done: false };
 
     function primed() {
       const reported = state.video.id === id ? state.video : undefined;
       const videoAhead = !params || reported?.ahead === true;
-      const starved = reported?.starved === true;
       const audioAhead = clock.buffered() >= PREROLL * context.sampleRate || demux.done;
-      const pcmFull = clock.buffered() >= frames;
-      prerolled.done ||=
-        (videoAhead && audioAhead) ||
-        (pcmFull && (videoAhead || starved)) ||
-        reported?.full === true;
+      prerolled.done ||= (videoAhead && audioAhead) || reported?.stuck === true;
       return prerolled.done;
     }
 
