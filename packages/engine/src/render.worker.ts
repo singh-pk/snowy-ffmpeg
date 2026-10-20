@@ -27,11 +27,6 @@ const GAPS = 8;
 // The video decoded before the main thread starts audio, in microseconds, as much as the audio
 // it buffers: a decoder that has just started delivers its next frames slowly.
 const PREROLL = 250_000;
-// How long decoding may go without a new frame, in milliseconds, before it counts as stuck
-// while the media worker is blocked: a hardware decoder may hold every frame it has. Longer
-// before the first frame, as a decoder may take that long to start.
-const STALL = 500;
-const FIRST_STALL = 2000;
 
 const state = {
   compositor: undefined as ReturnType<typeof createCompositor> | undefined,
@@ -115,11 +110,17 @@ function stop() {
 function play({ id, ring, wake, params, pcm }: Extract<ToRender, { type: "play" }>) {
   stop();
   if (!state.compositor) throw new Error("play before init");
-  const output = createVideoOutput(ring, wake, params, state.compositor);
+  const output = createVideoOutput(ring, wake, params, state.compositor, () => update());
   const clock = createPcmControl(pcm);
-  const playing = { output, frame: 0, first: Number.NaN, reported: -1, shown: false };
-  // The latest frame decoded, and when it was, in animation frame time.
-  const progress = { latest: -Infinity, at: performance.now() };
+  const playing = {
+    output,
+    frame: 0,
+    first: Number.NaN,
+    reported: -1,
+    ahead: false,
+    stuck: false,
+    shown: false,
+  };
   const timing = { last: 0, next: 0, gaps: new Float64Array(GAPS).fill(REFRESH) };
 
   // Reports the first failure of this play, unless it has stopped.
@@ -149,7 +150,11 @@ function play({ id, ring, wake, params, pcm }: Extract<ToRender, { type: "play" 
       const running = clock.outputRunning();
       const seen = clock.heard(performance.timeOrigin + time + refresh);
       output.present(Math.round(seen * 1e6));
-      if (!playing.shown) report(time, running);
+
+      if (running && !playing.shown) {
+        playing.shown = true;
+        report();
+      }
     } catch (e) {
       fail(e);
       return;
@@ -158,29 +163,28 @@ function play({ id, ring, wake, params, pcm }: Extract<ToRender, { type: "play" 
     playing.frame = self.requestAnimationFrame(draw);
   }
 
-  // How far decoding is at `time`, for the main thread's preroll, and whether a frame went up
-  // by the running clock, when it changes; nothing more once one has. Stuck is read with the
-  // media worker blocked first: on a full PCM ring, which stays full while the context is
-  // held, or on a full packet ring; after that, video starved or full cannot go on, and video
-  // stalled is taken not to.
-  function report(time: number, shown: boolean) {
+  // How far decoding is, for the main thread's preroll, on each event that may change it, until
+  // a frame is shown by the running clock. Stuck is read with the media worker blocked first:
+  // on a full PCM ring, which stays full while the context is held, or on a full packet ring;
+  // after that, video starved or full gets no further.
+  function update() {
+    if (state.playing !== playing || playing.shown) return;
+    // Watched first, so the media worker blocking after the read below runs this again.
+    output.watch();
     const blocked = clock.producerWaiting() || output.blocked();
     const latest = output.latest();
     if (Number.isNaN(playing.first) && latest > -Infinity) playing.first = latest;
+    playing.ahead = latest - playing.first >= PREROLL || output.ended();
+    playing.stuck = blocked && (output.starved() || output.full());
+    report();
+  }
 
-    if (latest !== progress.latest) {
-      progress.latest = latest;
-      progress.at = time;
-    }
-
-    const ahead = latest - playing.first >= PREROLL || output.ended();
-    const stalled = time - progress.at >= (latest > -Infinity ? STALL : FIRST_STALL);
-    const stuck = blocked && (output.starved() || output.full() || stalled);
-    // As bits, so comparing allocates nothing on an animation frame.
+  // Posts how far decoding is, and whether a frame went up by the running clock, if it changed.
+  function report() {
+    const { ahead, stuck, shown } = playing;
     const now = (ahead ? 1 : 0) | (stuck ? 2 : 0) | (shown ? 4 : 0);
     if (now === playing.reported) return;
     playing.reported = now;
-    playing.shown = shown;
     post({ type: "video", id, ahead, stuck, shown });
   }
 
@@ -194,6 +198,7 @@ function play({ id, ring, wake, params, pcm }: Extract<ToRender, { type: "play" 
 
   playing.frame = self.requestAnimationFrame(draw);
   state.playing = playing;
+  update();
   void watch();
 }
 

@@ -26,15 +26,18 @@ const frameBytes = (frame: VideoFrame) =>
 /**
  * Decodes the packets of the stream with parameters `p` from `ring`, woken by `port`, and shows
  * them with `compositor`. `done` resolves once the decoder has decoded the last packet or the
- * output is closed, and rejects if decoding fails.
+ * output is closed, and rejects if decoding fails. `changed` runs on each event that may change
+ * how far decoding is: a frame decoded, the decoder taking a packet, a wait for packets begun,
+ * the end decoded, and the media worker blocking while `watch`ed.
  */
 export function createVideoOutput(
   ring: SharedArrayBuffer,
   port: MessagePort,
   p: VideoParams,
   compositor: ReturnType<typeof createCompositor>,
+  changed: () => void = () => {},
 ) {
-  const consumer = createConsumer(ring, port);
+  const consumer = createConsumer(ring, port, changed);
   const queue = createFrameQueue(FRAME_BUDGET, frameBytes);
   const [num, den] = p.timeBase;
   // Wakes the decode loop while it waits for room; replaced each time it waits.
@@ -52,10 +55,16 @@ export function createVideoOutput(
     output(frame) {
       queue.push(frame);
       state.latest = Math.max(state.latest, frame.timestamp);
+      changed();
     },
     error: failed.reject,
   });
-  decoder.addEventListener("dequeue", () => wake.room());
+
+  decoder.addEventListener("dequeue", () => {
+    wake.room();
+    changed();
+  });
+
   const micros = (t: number) => Math.round((t * num * 1e6) / den);
 
   // Resolves at once while there is room, or else once a frame is shown, the decoder takes a
@@ -76,6 +85,7 @@ export function createVideoOutput(
       if (!packet) {
         // Returns at once once the ring is closed, so the check above ends the loop.
         state.waiting = true;
+        changed();
         await consumer.wait();
         state.waiting = false;
         continue;
@@ -101,6 +111,7 @@ export function createVideoOutput(
 
     await decoder.flush();
     state.ended = true;
+    changed();
   }
 
   async function finish() {
@@ -160,5 +171,7 @@ export function createVideoOutput(
     starved: () => state.waiting && decoder.decodeQueueSize === 0,
     /** Whether the packet ring's producer waits for room. */
     blocked: () => consumer.producerWaiting(),
+    /** Has `changed` run when the media worker next blocks; before reading whether it is. */
+    watch: () => consumer.watch(),
   };
 }
