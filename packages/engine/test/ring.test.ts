@@ -15,6 +15,7 @@ import {
   KEY_FLAG,
   NO_TIMESTAMP,
   PRODUCER_WAITING,
+  WAIT_LIMIT,
 } from "../src/ring";
 import { size } from "./support/ring-producer";
 
@@ -96,8 +97,22 @@ test("closing an empty ring ends the consumer's own wait for a packet", async ()
     return true;
   }
 
-  const ended = await Promise.race([waited(), timedOut(1000)]);
+  // Sooner than the wait's own limit, so it is the close that ends it.
+  const ended = await Promise.race([waited(), timedOut(WAIT_LIMIT / 2)]);
   expect(ended).toBe(true);
+});
+
+test("a wait for a packet that does not come returns after its limit, to look again", async () => {
+  const consumer = createConsumer(createRing(4096));
+
+  async function waited() {
+    await consumer.wait();
+    return true;
+  }
+
+  const ended = await Promise.race([waited(), timedOut(WAIT_LIMIT * 3)]);
+  expect(ended).toBe(true);
+  expect(consumer.peek()).toBeUndefined();
 });
 
 test("the key flag and the unknown timestamp are FFmpeg's", () => {

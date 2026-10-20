@@ -6,7 +6,7 @@
 // payload, padded to 32 bytes. A record may wrap around the end of the ring, so a packet of
 // any size up to the capacity fits without wasting the space at the end. The producer blocks
 // (Atomics.wait) while the ring is full; the consumer never blocks, and waits with
-// Atomics.waitAsync.
+// Atomics.waitAsync, for at most WAIT_LIMIT.
 //
 // Positions only grow, as 32-bit integers that wrap; the distance between them is the bytes
 // in use. Each side writes only its own position, so neither needs a lock.
@@ -21,6 +21,11 @@ const CLOSED = 4;
 const DATA = 64;
 // A header, and the alignment of every record, so a header never wraps.
 const HEADER = 32;
+/**
+ * How long the consumer waits before it looks again, in milliseconds. WebKit now and then
+ * drops an Atomics.waitAsync waiter, which no notify then reaches (docs/architecture.md#packet-ring).
+ */
+export const WAIT_LIMIT = 100;
 
 /**
  * The engine's ring size: room for seconds of the highest bitrates a browser plays, and for
@@ -186,13 +191,24 @@ export function createConsumer(ring: SharedArrayBuffer) {
     if (Atomics.load(control, PRODUCER_WAITING)) Atomics.notify(control, READ);
   }
 
-  /** Resolves once the ring holds a packet, or at once when it is closed. */
+  /**
+   * Resolves once the ring holds a packet, or at once when it is closed; or after WAIT_LIMIT,
+   * so the caller looks again.
+   */
   async function wait() {
     if (Atomics.load(control, CLOSED)) return;
     // Raised before the check, so a write after it notifies this wait or changes WRITE first.
     Atomics.store(control, CONSUMER_WAITING, 1);
     const waiting = Atomics.waitAsync(control, WRITE, control[READ] ?? 0);
-    if (waiting.async) await waiting.value;
+
+    if (waiting.async) {
+      // A timer of its own: waitAsync's own timeout makes WebKit's wake-ups five times slower.
+      const limit = Promise.withResolvers<void>();
+      const timer = setTimeout(limit.resolve, WAIT_LIMIT);
+      await Promise.race([waiting.value, limit.promise]);
+      clearTimeout(timer);
+    }
+
     Atomics.store(control, CONSUMER_WAITING, 0);
   }
 
