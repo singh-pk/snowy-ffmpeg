@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/singh-pk/snowy-media/main/brand/mark-dark.svg">
+  <img src="https://raw.githubusercontent.com/singh-pk/snowy-media/main/brand/mark.svg" alt="Snowy" height="48">
+</picture>
+
 # @snowy-media/ffmpeg
 
 [![npm](https://img.shields.io/npm/v/@snowy-media/ffmpeg)](https://www.npmjs.com/package/@snowy-media/ffmpeg)

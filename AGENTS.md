@@ -33,6 +33,7 @@ Run `bun run check` before every commit; the hook runs it anyway.
 | `tooling/oxlint-rules/` | repository lint rules (see rule 5) |
 | `scripts/` | repository scripts, such as `settings.ts`, which applies `.github/settings.yml` |
 | `.agents/skills/` | task playbooks, also linked into `.claude/skills` |
+| `brand/` | the logo, avatar and social preview, and the rules for using them |
 | `LICENSES/` | licence texts that SPDX headers refer to ([REUSE](https://reuse.software)) |
 
 Shared configuration lives once, at the root: `tsconfig.base.json`, `.oxlintrc.json`, `.oxfmtrc.json`, `knip.json`, `_typos.toml`, `.markdownlint-cli2.jsonc`, `REUSE.toml`. Packages extend it; never copy it into a package.

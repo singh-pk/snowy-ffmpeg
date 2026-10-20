@@ -13,6 +13,7 @@ path = [
   ".gitignore",
   ".editorconfig",
   "bun.lock",
+  "brand/*.png",
   "packages/*/test/fixtures/**",
 ]
 precedence = "aggregate"
