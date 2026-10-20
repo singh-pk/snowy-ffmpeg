@@ -173,9 +173,9 @@ function play({ id, ring, wake, params, pcm }: Extract<ToRender, { type: "play" 
     // Watched first, so the media worker blocking after the read below runs this again.
     output.watch();
     const blocked = clock.producerWaiting() || output.blocked();
-    const latest = output.latest();
-    if (Number.isNaN(playing.first) && latest > -Infinity) playing.first = latest;
-    playing.ahead = latest - playing.first >= PREROLL || output.ended();
+    const decoded = output.decodedTo();
+    if (Number.isNaN(playing.first) && decoded > -Infinity) playing.first = decoded;
+    playing.ahead = decoded - playing.first >= PREROLL || output.ended();
     playing.stuck = blocked && (output.starved() || output.full());
     report();
   }

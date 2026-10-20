@@ -343,7 +343,7 @@ export async function render(
 
   // Resolves once the frames up to `time` are decoded, the end is, or decoding fails.
   async function decoded(time: number) {
-    while (output.latest() < time && !output.ended() && !failure.error) {
+    while (output.decodedTo() < time && !output.ended() && !failure.error) {
       const changed = Promise.withResolvers<void>();
       decoding.changed = changed.resolve;
       await changed.promise;

@@ -45,16 +45,32 @@ export function createVideoOutput(
   const state = {
     shown: undefined as VideoFrame | undefined,
     latest: -Infinity,
+    // The dts of the last packet given to the decoder, in microseconds: every packet still to
+    // come is due after it.
+    fed: -Infinity,
     ended: false,
     // Waiting for a packet, the ring being empty.
     waiting: false,
     closed: false,
   };
+  // The timestamps of the packets given to the decoder whose frames have not come out. A decoder
+  // may emit frames in any order (Firefox, told to optimize for latency, emits decode order), so
+  // every frame before the earliest of these has come out; later ones may not have.
+  const pending: number[] = [];
   const failed = Promise.withResolvers<never>();
   const decoder = new VideoDecoder({
     output(frame) {
-      queue.push(frame);
+      const at = pending.indexOf(frame.timestamp);
+
+      if (at >= 0) {
+        pending.copyWithin(at, at + 1);
+        pending.length--;
+      }
+
       state.latest = Math.max(state.latest, frame.timestamp);
+      // Out after a later frame went up, it could only take video back.
+      if (state.shown && frame.timestamp <= state.shown.timestamp) frame.close();
+      else queue.push(frame);
       changed();
     },
     error: failed.reject,
@@ -105,11 +121,16 @@ export function createVideoOutput(
         duration: micros(packet.duration),
         data: packet.data,
       });
+      pending.push(chunk.timestamp);
+      state.fed = micros(Number(packet.dts === NO_TIMESTAMP ? pts : packet.dts));
       decoder.decode(chunk);
       consumer.release();
     }
 
     await decoder.flush();
+    // Every frame is out; a packet that made none never will, and no packet is to come.
+    pending.length = 0;
+    state.fed = Infinity;
     state.ended = true;
     changed();
   }
@@ -146,6 +167,18 @@ export function createVideoOutput(
     return true;
   }
 
+  /**
+   * The time, in microseconds, up to which every frame is decoded: the latest timestamp out, but
+   * no later than just before the earliest packet whose frame has not come out, or the last packet
+   * given to the decoder. -Infinity before the first. It never goes back.
+   */
+  function decodedTo() {
+    let earliest = Infinity;
+    // Indexed: an iterator would allocate on every event.
+    for (let i = 0; i < pending.length; i++) earliest = Math.min(earliest, pending[i] ?? Infinity);
+    return Math.min(state.latest, earliest - 1, state.fed);
+  }
+
   /** Stops decoding and closes every frame. */
   function close() {
     state.closed = true;
@@ -161,8 +194,7 @@ export function createVideoOutput(
     done,
     present,
     close,
-    /** The latest timestamp decoded so far, in microseconds. */
-    latest: () => state.latest,
+    decodedTo,
     /** Whether the decoder has decoded every packet. */
     ended: () => state.ended,
     /** Whether the frame queue is full, so decoding waits for a frame to be shown. */
