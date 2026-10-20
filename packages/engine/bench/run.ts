@@ -140,6 +140,9 @@ const benchmarks: Record<string, (tab: Page) => Promise<Timings>> = {
           const consumer = support.createPcmConsumer(pcm);
           const state = { decoding: true };
 
+          // Stands in for the AudioWorklet, which reads on its own clock and waits for nothing:
+          // draining on the worker's events instead stalls it on each refill, up to
+          // 19 % slower.
           async function drain() {
             while (state.decoding) {
               consumer.read(output, 0);
