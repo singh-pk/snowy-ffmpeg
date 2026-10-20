@@ -144,10 +144,9 @@ function play({ id, ring, params, pcm }: Extract<ToRender, { type: "play" }>) {
     for (let i = 0; i < GAPS; i++) refresh = Math.min(refresh, timing.gaps[i] ?? REFRESH);
 
     try {
-      // Read first: if the timestamp ran then, the time heard below was carried forward by it,
-      // so the frame put up is the latest due.
-      const running = clock.outputRunning();
       const seen = clock.heard(performance.timeOrigin + time + refresh);
+      // By the clock as published when it was read: once that runs, this frame is the one due.
+      const running = clock.outputRunning();
       output.present(Math.round(seen * 1e6));
       if (!playing.shown) report(time, running);
     } catch (e) {
