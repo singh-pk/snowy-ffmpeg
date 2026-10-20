@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: MIT
 #
 # Repository settings, security features, topics and labels. GitHub does not read this file: a maintainer
-# applies it, together with .github/rulesets/*.json, with `bun run settings`.
+# applies it, together with .github/rulesets/*.json, with `bun run settings`. The social preview has no API:
+# upload brand/social-preview.png in the repository's settings by hand.
 
 # Fields of the "update a repository" REST API.
 repository:
