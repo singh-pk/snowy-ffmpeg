@@ -160,6 +160,44 @@ test("a watching consumer hears once that the producer's thread blocks", async (
   consumer.close();
 });
 
+test("offer writes only what fits, and a waiting producer hears each release and the close", () => {
+  const ring = createRing(256);
+  const { port1, port2 } = new MessageChannel();
+  const producer = createProducer(ring, port1);
+  const freed = { count: 0 };
+  const consumer = createConsumer(
+    ring,
+    port2,
+    () => {},
+    () => freed.count++,
+  );
+  const data = new Uint8Array(64);
+  // A record of 64 bytes takes 96 with its header, and an END record 32: two of each fill the
+  // 256 bytes.
+  expect(producer.offer(0, 0, 0n, 0n, 1, data, 0, 64)).toBe(true);
+  expect(producer.offer(0, 0, 1n, 1n, 1, data, 0, 64)).toBe(true);
+  expect(producer.offer(0, 0, 2n, 2n, 1, data, 0, 64)).toBe(false);
+  expect(producer.offerEnd()).toBe(true);
+  expect(producer.offerEnd()).toBe(true);
+  expect(producer.offerEnd()).toBe(false);
+  consumer.release();
+  expect(freed.count).toBe(0);
+  producer.waitingForRoom(true);
+  const seen = producer.bell();
+  consumer.release();
+  expect(freed.count).toBe(1);
+  expect(producer.bell()).not.toBe(seen);
+  // Returns at once, the consumer having moved on.
+  producer.sleep(seen);
+  expect(producer.closed()).toBe(false);
+  consumer.close();
+  expect(freed.count).toBe(2);
+  expect(producer.closed()).toBe(true);
+  expect(producer.offer(0, 0, 0n, 0n, 1, data, 0, 1)).toBe(false);
+  expect(producer.offerEnd()).toBe(false);
+  port1.close();
+});
+
 test("the key flag and the unknown timestamp are FFmpeg's", () => {
   expect([KEY_FLAG, NO_TIMESTAMP]).toEqual([AV_PKT_FLAG_KEY, AV_NOPTS_VALUE]);
 });
