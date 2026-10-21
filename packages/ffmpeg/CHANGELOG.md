@@ -11,6 +11,7 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 - `sny_resample`, with `sny_resampler_alloc`, `sny_resampler_flush` and `sny_resampler_free`: resamples and mixes decoded audio for an `AudioContext`, to 32-bit float with the channels interleaved, at any rate, as mono, stereo, quad or 5.1 in the Web Audio API's channel order. Output matches native `ffmpeg -ar -ac` within 10⁻⁶, honouring the stream's downmix levels.
 - `sny_stream_display_matrix` and `sny_stream_rotation`: a stream's display matrix, from the container, before any decoding.
 - `sny_pix_fmt_depth`, `sny_pix_fmt_log2_chroma_w` and `sny_pix_fmt_log2_chroma_h`; `sny_frame_chroma_location`; FFmpeg's names for pixel formats, colour ranges, primaries, transfers, matrices and chroma locations (`sny_pix_fmt_name`, `sny_color_*_name`, `sny_chroma_location_name`).
+- `sny_packet_move`: moves a packet, with its side data, into another without copying, so packets can be queued.
 - Constants: `AV_CODEC_ID_*` for H.264, HEVC, VP8, VP9 and AV1; `AVCOL_*` and `AVCHROMA_LOC_*` for the colour WebCodecs describes; every `AV_DISPOSITION_*` flag.
 
 ### Fixed

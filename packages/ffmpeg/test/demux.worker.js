@@ -166,6 +166,7 @@ async function createDemuxer() {
     core._free(out);
     check(opened, "open");
     const pkt = core._sny_packet_alloc();
+    const moved = core._sny_packet_alloc();
     const decoders = new Map();
 
     try {
@@ -218,7 +219,11 @@ async function createDemuxer() {
         s.packets++;
         if (s.firstPts.length < 3) s.firstPts.push(pts(pkt));
         const d = decoders.get(index);
-        d?.decoder.decode(pkt, d.onFrame);
+        // Decoded after a move, as the engine queues packets, so the expected frames and
+        // samples check that it keeps the data, timestamps and side data.
+        core._sny_packet_move(moved, pkt);
+        if (core._sny_packet_size(pkt) !== 0) throw new Error("packet_move left the source");
+        d?.decoder.decode(moved, d.onFrame);
       }
 
       for (const d of decoders.values()) {
@@ -259,6 +264,7 @@ async function createDemuxer() {
         }
       }
 
+      core._sny_packet_free(moved);
       core._sny_packet_free(pkt);
       core._sny_close(ctx);
     }
