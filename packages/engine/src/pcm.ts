@@ -29,6 +29,10 @@ const SEQUENCE = 6;
 const PLAYED = 7;
 const FRAME = 9;
 const PLAYING = 11;
+// The producer's doorbell: a count that every consumer of the producer's thread adds to when it
+// frees room or closes while the producer waits, on this ring or its packet ring, so one wait
+// covers both rings and a wake-up is never lost (docs/architecture.md#audio-and-clock).
+const BELL = 12;
 // A Float64 word, set before the first frame: the media time of the first frame. Plain, not
 // atomic: the stores of WRITE and SEQUENCE that follow publish it, so a reader sees it once
 // the clock has played a frame, and may see 0 before.
@@ -100,9 +104,16 @@ export function pcmFormat(ring: SharedArrayBuffer) {
   return { channels, rate };
 }
 
+function ringBell(control: Int32Array) {
+  Atomics.add(control, BELL, 1);
+  Atomics.notify(control, BELL);
+}
+
 /**
  * The producer's side of `ring`, for a thread that may block; `blocking` runs before each
- * wait for room, after the flag that says so is raised.
+ * wait of `write` for room, after the flag that says so is raised. `write` is for a producer
+ * that waits on this ring alone, as the tests' does; the media worker `offer`s, and waits on
+ * the doorbell.
  */
 export function createPcmProducer(ring: SharedArrayBuffer, blocking: () => void = () => {}) {
   const { control, times, samples, channels, capacity } = views(ring);
@@ -113,43 +124,66 @@ export function createPcmProducer(ring: SharedArrayBuffer, blocking: () => void 
   }
 
   /**
+   * Copies as many of `frames` frames of `src`, from index `offset`, as the ring has room for.
+   * How many, or -1 once the consumer has closed the ring, so the producer stops.
+   */
+  function offer(src: Float32Array, offset: number, frames: number) {
+    const written = control[WRITE] ?? 0;
+    const read = Atomics.load(control, READ);
+    if (Atomics.load(control, CLOSED)) return -1;
+    const n = Math.min(capacity - ((written - read) | 0), frames);
+    const at = written & (capacity - 1);
+    const first = Math.min(n, capacity - at) * channels;
+    samples.set(src.subarray(offset, offset + first), at * channels);
+    if (first < n * channels) samples.set(src.subarray(offset + first, offset + n * channels), 0);
+    Atomics.store(control, WRITE, (written + n) | 0);
+    return n;
+  }
+
+  /** The doorbell's count, to `sleep` on once the checks after reading it found no room. */
+  function bell() {
+    return Atomics.load(control, BELL);
+  }
+
+  /** Waits until the doorbell rings after `seen`, at once if it already has. */
+  function sleep(seen: number) {
+    Atomics.wait(control, BELL, seen);
+  }
+
+  /**
+   * Raises or lowers the flag that has the consumer ring the doorbell as it reads. Raised
+   * before the bell is read and the ring checked, so a read after the check rings it.
+   */
+  function waitingForRoom(on: boolean) {
+    Atomics.store(control, PRODUCER_WAITING, on ? 1 : 0);
+  }
+
+  /**
    * Copies `frames` frames of `src` from index `offset` into the ring, as room frees up. False
    * once the consumer has closed the ring, so the producer stops.
    */
   function write(src: Float32Array, offset: number, frames: number) {
-    let from = offset;
-    let left = frames;
+    let done = 0;
 
-    while (left > 0) {
-      const written = control[WRITE] ?? 0;
-      const read = Atomics.load(control, READ);
-      if (Atomics.load(control, CLOSED)) return false;
-      const free = capacity - ((written - read) | 0);
+    while (done < frames) {
+      const seen = bell();
+      const n = offer(src, offset + done * channels, frames - done);
+      if (n < 0) return false;
+      done += n;
 
-      if (free === 0) {
-        // Raised before waiting, so a read after the check above notifies this wait or
-        // changes READ before it starts.
-        Atomics.store(control, PRODUCER_WAITING, 1);
+      if (n === 0 && Atomics.load(control, PRODUCER_WAITING)) {
         blocking();
-        Atomics.wait(control, READ, read);
-        Atomics.store(control, PRODUCER_WAITING, 0);
-        continue;
+        sleep(seen);
+        waitingForRoom(false);
+      } else if (n === 0) {
+        waitingForRoom(true);
       }
-
-      const n = Math.min(free, left);
-      const at = written & (capacity - 1);
-      const first = Math.min(n, capacity - at) * channels;
-      samples.set(src.subarray(from, from + first), at * channels);
-      if (first < n * channels) samples.set(src.subarray(from + first, from + n * channels), 0);
-      Atomics.store(control, WRITE, (written + n) | 0);
-      from += n * channels;
-      left -= n;
     }
 
     return true;
   }
 
-  return { start, write };
+  return { start, offer, bell, sleep, waitingForRoom, write };
 }
 
 /** The AudioWorklet's side of `ring`: it never blocks. */
@@ -194,7 +228,7 @@ export function createPcmConsumer(ring: SharedArrayBuffer) {
 
     if (n > 0) {
       Atomics.store(control, READ, (at + n) | 0);
-      if (Atomics.load(control, PRODUCER_WAITING)) Atomics.notify(control, READ);
+      if (Atomics.load(control, PRODUCER_WAITING)) ringBell(control);
     }
 
     played += n;
@@ -297,7 +331,15 @@ export function createPcmControl(ring: SharedArrayBuffer) {
   function close() {
     Atomics.store(control, CLOSED, 1);
     Atomics.store(control, READ, Atomics.load(control, WRITE));
-    Atomics.notify(control, READ);
+    ringBell(control);
+  }
+
+  /**
+   * Wakes the producer if it waits, for the consumer of its packet ring as it frees room or
+   * closes it (src/ring.ts).
+   */
+  function wakeProducer() {
+    ringBell(control);
   }
 
   return {
@@ -309,5 +351,6 @@ export function createPcmControl(ring: SharedArrayBuffer) {
     producerWaiting,
     start,
     close,
+    wakeProducer,
   };
 }

@@ -30,7 +30,8 @@ const expected: Record<string, { video: Video; audio: { resampled: { frames: num
 const video = expected[FILE]?.video ?? { timeBase: "1/1", width: 0, height: 0, pts: [] };
 // Where play starts as video waits for packets, where it starts at the end of the audio, and
 // the long one; each is played, paused and played on, for WATCH seconds a play.
-const STARTS = ["sparse-h264-aac.mp4", "short-audio-h264-aac.mp4", FILE];
+const SPARSE = "sparse-h264-aac.mp4";
+const STARTS = [SPARSE, "short-audio-h264-aac.mp4", FILE];
 const WATCH = 2;
 // How far a play's clock at its last read may be from WATCH seconds on from where it started,
 // in seconds: play resolves, and the watch begins, under 0.15 s after the clock starts.
@@ -277,6 +278,51 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
               expect(o, at).toBeLessThan(lateness(name));
             }
           }
+        }
+      } finally {
+        await browser.close();
+      }
+    }, 60_000);
+
+    // The decoder lets out sparse video's last frames only once it is flushed, at the END
+    // record, so the demuxer reads ahead of the audio to reach it before they are due.
+    test(`plays ${SPARSE} to the end with each frame on time`, async () => {
+      const browser = await type.launch(options);
+
+      try {
+        const tab = await browser.newPage();
+        await tab.goto(server.url.href);
+        await tab.mouse.click(1, 1);
+        const { video: v, audio } = expected[SPARSE] ?? {};
+        if (!v || !audio) throw new Error(`no ${SPARSE}`);
+        const end = audio.resampled.frames / PCM_RATE;
+        const reads = await tab.evaluate(
+          async ({ entry, page, file, watch }) => {
+            const engine: typeof import("../src/index") = await import(entry);
+            const support: typeof import("./support/page") = await import(page);
+            const canvas = document.querySelector("canvas");
+            if (!canvas) throw new Error("no canvas");
+            const player = await engine.createEngine({ canvas });
+            const res = await fetch(`/test/fixtures/${file}`);
+            const blob = await res.blob();
+            await player.open(new File([blob], file));
+            await player.play();
+            const watched = await support.watchScreen(player, canvas, watch);
+            player.close();
+            return watched;
+          },
+          // Half a second past the end, so the last frame is read at the end.
+          { entry: ENTRY, page: PAGE, file: SPARSE, watch: (end + 0.5) * 1000 },
+        );
+
+        console.log(`${name} ${SPARSE}: ${span(reads)}`);
+        expect(Math.abs((reads.at(-1)?.[0] ?? 0) - end)).toBeLessThan(realTime);
+        expect(reads.at(-1)?.[1]).toBe(v.pts.length - 1);
+
+        for (const [time, id] of fresh(reads, firefox)) {
+          const o = offset(v, id, time);
+          expect(-o, `frame ${id} at ${time} s`).toBeLessThan(earliness);
+          expect(o, `frame ${id} at ${time} s`).toBeLessThan(lateness(name));
         }
       } finally {
         await browser.close();

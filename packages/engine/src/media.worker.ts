@@ -40,11 +40,32 @@ const ready = startMedia();
 
 type AudioRequest = NonNullable<Extract<ToMedia, { type: "demux" }>["audio"]>;
 
-// An audio stream being decoded into a PCM ring.
+// How many bytes of compressed audio the media worker queues ahead of the PCM ring: minutes of
+// AAC or Opus, tens of seconds of FLAC. It lets the demuxer run ahead of the audio clock, to the
+// video packets and the end of the file long before they are due.
+const AUDIO_AHEAD = 1 << 22;
+// What a queued packet costs besides its payload: the AVPacket, its buffer and their padding,
+// counted so that small or empty packets are bounded too.
+const PACKET_OVERHEAD = 256;
+
+// An audio stream being decoded into a PCM ring, from a queue of its compressed packets.
 interface Audio {
   stream: number;
-  decode(pkt: Ptr): boolean;
+  /** Moves a packet of the stream out of `pkt` into the queue; false while the queue is full. */
+  queue(pkt: Ptr): boolean;
+  /** Decodes into the PCM ring as far as it has room; whether anything moved. */
+  feed(): boolean;
+  /** No more packets come: the decoder drains once the queue is empty. */
   end(): void;
+  /** Whether it waits for room in the PCM ring. */
+  waiting(): boolean;
+  /** Whether all of it is in the PCM ring, or the ring's consumer has closed it. */
+  done(): boolean;
+  /** The PCM ring's doorbell, which the media worker sleeps on (src/pcm.ts). */
+  bell(): number;
+  sleep(seen: number): void;
+  /** Raises or lowers the PCM ring's waiting flag. */
+  wait(on: boolean): void;
   close(): void;
 }
 
@@ -151,15 +172,11 @@ function createMedia(core: CoreModule) {
     return ctx;
   }
 
-  // Decodes audio stream `stream` into PCM ring `pcm`: `decode` takes each of its packets,
-  // and returns false once the consumer has closed the ring; `end` drains the decoder and the
-  // resampler. `close` frees it all. `buffered` runs once, when the ring holds `preroll`
-  // frames, is full, or has all the audio; `blocking` before each wait for room.
-  function createAudio(
-    { stream, pcm, preroll }: AudioRequest,
-    buffered: () => void,
-    blocking: () => void,
-  ): Audio {
+  // Decodes audio stream `stream` into PCM ring `pcm`, from the packets `queue` takes, as the
+  // ring has room. Once the ring's consumer closes it, the queue takes packets and drops them.
+  // `close` frees it all. `buffered` runs once, when the ring holds `preroll` frames, is full,
+  // or has all the audio.
+  function createAudio({ stream, pcm, preroll }: AudioRequest, buffered: () => void): Audio {
     const ctx = demuxer([stream]);
     const st = core._sny_stream(ctx, stream);
 
@@ -183,24 +200,36 @@ function createMedia(core: CoreModule) {
       told.buffered = true;
     }
 
-    // A full ring holds a second and more, more than any preroll.
-    const producer = createPcmProducer(pcm, () => {
-      tell();
-      blocking();
-    });
-
+    const producer = createPcmProducer(pcm);
     const [tbNum, tbDen] = [core._sny_stream_tb_num(st), core._sny_stream_tb_den(st)];
     const frame = core._sny_frame_alloc();
     const resampled = core._sny_frame_alloc();
     const resampler = core._sny_resampler_alloc();
+    // The packet the decoder last took, kept until the next, so a queue slot is left empty.
+    const spent = core._sny_packet_alloc();
     const out = core._malloc(4);
-    const allocated = frame && resampled && resampler && out;
+    const allocated = frame && resampled && resampler && spent && out;
     const opened = allocated ? core._sny_decoder_open(ctx, stream, out) : 0;
     const dec = allocated && opened >= 0 ? (core.HEAP32[out >>> 2] ?? 0) : 0;
     core._free(out);
-    let started = false;
+    // The queue: packets in a circle of slots, which doubles when full, so it allocates only
+    // as it grows; it is bounded by AUDIO_AHEAD bytes.
+    const queued = { slots: [] as Ptr[], head: 0, count: 0, bytes: 0 };
+    // The resampled frames not yet in the ring: `left` frames from index `at` of HEAPF32.
+    const pending = { at: 0, left: 0 };
+    const phase = {
+      started: false,
+      // No more packets come; the decoder has been sent the end; the resampler is drained.
+      ended: false,
+      sentEnd: false,
+      flushed: false,
+      done: false,
+      closed: false,
+    };
 
     function free() {
+      for (const slot of queued.slots) core._sny_packet_free(slot);
+      core._sny_packet_free(spent);
       core._sny_resampler_free(resampler);
       core._sny_frame_free(resampled);
       core._sny_frame_free(frame);
@@ -213,88 +242,228 @@ function createMedia(core: CoreModule) {
       check(opened, "decoder_open");
     }
 
-    // Resamples `input` (0 at the end) into the ring; false once the ring is closed.
+    function grow() {
+      const { slots, head } = queued;
+      const more = Array.from({ length: Math.max(8, slots.length) }, () =>
+        core._sny_packet_alloc(),
+      );
+
+      if (more.includes(0)) {
+        for (const slot of more) if (slot) core._sny_packet_free(slot);
+        throw new Error("queue: out of memory");
+      }
+
+      queued.slots = [...slots.slice(head), ...slots.slice(0, head), ...more];
+      queued.head = 0;
+    }
+
+    function queue(packet: Ptr) {
+      if (phase.closed) return true;
+      const size = core._sny_packet_size(packet) + PACKET_OVERHEAD;
+      if (queued.count > 0 && queued.bytes + size > AUDIO_AHEAD) return false;
+      if (queued.count === queued.slots.length) grow();
+      const { slots, head, count } = queued;
+      core._sny_packet_move(slots[(head + count) % slots.length] ?? 0, packet);
+      queued.count++;
+      queued.bytes += size;
+      return true;
+    }
+
+    // Sends the decoder the next queued packet, or the end; false if there is neither yet. A
+    // packet the decoder rejects is skipped, as the ffmpeg command line does.
+    function send() {
+      const { slots, head, count } = queued;
+
+      if (count > 0) {
+        const slot = slots[head] ?? 0;
+        queued.bytes -= core._sny_packet_size(slot) + PACKET_OVERHEAD;
+        core._sny_decoder_send(dec, slot);
+        core._sny_packet_move(spent, slot);
+        queued.head = (head + 1) % slots.length;
+        queued.count--;
+        return true;
+      }
+
+      if (!phase.ended || phase.sentEnd) return false;
+      core._sny_decoder_send(dec, 0);
+      phase.sentEnd = true;
+      return true;
+    }
+
+    // Resamples `input` (0 at the end) into the pending frames.
     function resample(input: Ptr) {
       check(core._sny_resample(resampler, input, resampled, rate, channels), "resample");
-      const frames = core._sny_frame_samples(resampled);
-      if (frames === 0) return true;
-      const at = core._sny_frame_plane(resampled, 0) >>> 2;
-      // HEAPF32 is read for each frame: the heap's buffer changes when memory grows.
-      if (!producer.write(core.HEAPF32, at, frames)) return false;
-      told.written += frames;
+      pending.at = core._sny_frame_plane(resampled, 0) >>> 2;
+      pending.left = core._sny_frame_samples(resampled);
+    }
+
+    // Writes pending frames into the ring; false once it is full. A full ring holds a second
+    // and more, more than any preroll.
+    function write() {
+      // HEAPF32 is read for each write: the heap's buffer changes when memory grows.
+      const n = producer.offer(core.HEAPF32, pending.at, pending.left);
+
+      if (n < 0) {
+        phase.closed = true;
+        return true;
+      }
+
+      if (n === 0) {
+        tell();
+        return false;
+      }
+
+      pending.at += n * channels;
+      pending.left -= n;
+      told.written += n;
       if (told.written >= preroll) tell();
       return true;
     }
 
-    function receive() {
-      for (;;) {
-        const ret = core._sny_decoder_receive(dec, frame);
-        if (ret === AVERROR_EAGAIN || ret === AVERROR_EOF) return true;
-        check(ret, "decoder_receive");
+    function feed() {
+      let moved = false;
 
-        if (!started) {
-          const pts = core._sny_frame_pts(frame);
-          producer.start(pts === AV_NOPTS_VALUE ? 0 : (Number(pts) * tbNum) / tbDen);
-          started = true;
+      while (!phase.closed && !phase.done) {
+        if (pending.left > 0) {
+          if (!write()) return moved;
+          moved = true;
+          continue;
         }
 
-        if (!resample(frame)) return false;
+        if (phase.flushed) {
+          phase.done = true;
+          tell();
+          return true;
+        }
+
+        const ret = core._sny_decoder_receive(dec, frame);
+
+        if (ret === AVERROR_EOF) {
+          resample(0);
+          phase.flushed = true;
+        } else if (ret === AVERROR_EAGAIN) {
+          if (!send()) return moved;
+          moved = true;
+        } else {
+          check(ret, "decoder_receive");
+
+          if (!phase.started) {
+            const pts = core._sny_frame_pts(frame);
+            producer.start(pts === AV_NOPTS_VALUE ? 0 : (Number(pts) * tbNum) / tbDen);
+            phase.started = true;
+          }
+
+          resample(frame);
+        }
       }
+
+      // Done or closed counted once, on the pass that got there.
+      return moved;
     }
 
-    // A packet the decoder rejects is skipped, as the ffmpeg command line does.
-    function decode(packet: Ptr) {
-      for (;;) {
-        const ret = core._sny_decoder_send(dec, packet);
-        if (!receive()) return false;
-        if (ret !== AVERROR_EAGAIN) return true;
-      }
-    }
-
-    function end() {
-      if (decode(0) && resample(0)) tell();
-    }
-
-    return { stream, decode, end, close: free };
+    return {
+      stream,
+      queue,
+      feed,
+      end: () => {
+        phase.ended = true;
+      },
+      waiting: () => pending.left > 0 && !phase.closed,
+      done: () => phase.done || phase.closed,
+      bell: producer.bell,
+      sleep: producer.sleep,
+      wait: producer.waitingForRoom,
+      close: free,
+    };
   }
 
-  // Writes the packets of `streams` into `ring` and decodes those of `audio`, from where the
-  // demuxer is to the end of the file, then drains the audio and writes the END record. Returns
+  // Writes `pkt`, a packet of stream `stream`, into `ring`; false if it has no room.
+  function offer(ring: ReturnType<typeof createProducer>, stream: number) {
+    const pts = core._sny_packet_pts(pkt);
+    const dts = core._sny_packet_dts(pkt);
+    const duration = Number(core._sny_packet_duration(pkt));
+    const data = core._sny_packet_data(pkt);
+    const size = core._sny_packet_size(pkt);
+    const flags = core._sny_packet_flags(pkt);
+    // HEAPU8 is read for each packet: the heap's buffer changes when memory grows.
+    return ring.offer(stream, flags, pts, dts, duration, core.HEAPU8, data, size);
+  }
+
+  // Writes the packets of `streams` into `ring` and queues those of `audio`, decoding them into
+  // its PCM ring as that has room, from where the demuxer is to the end of the file. The END
+  // record follows the last packet as soon as it is read, and the audio drains after. Returns
   // early once the packet ring's consumer closes it; once the PCM ring's does, the audio stops
-  // and the packets go on.
+  // and the packets go on. It waits only when neither ring has room for what comes next: on the
+  // PCM ring's doorbell, which both rings' consumers ring, or with no audio on the packet ring.
   function pump(ring: ReturnType<typeof createProducer>, streams: number[], audio?: Audio) {
     const ctx = demuxer(streams);
-    let sound = audio;
     const selected = new Uint8Array(core._sny_nb_streams(ctx));
     for (const s of streams) selected[s] = 1;
+    const sleeper = audio ?? ring;
+    // `held`: `pkt` holds a packet of `stream` that found no room yet. `armed`: the waiting
+    // flags are up, raised before the doorbell was read, so a wait on it misses no room.
+    const at = { held: false, stream: 0, eof: false, ended: false, armed: false };
 
-    for (;;) {
-      const ret = core._sny_read(ctx, pkt);
-      if (ret === AVERROR_EOF) break;
-      check(ret, "read");
-      const stream = core._sny_packet_stream(pkt);
-
-      if (stream === sound?.stream) {
-        if (sound.decode(pkt)) continue;
-        sound = undefined;
-        // Nothing else to demux.
-        if (streams.length === 0) break;
-        continue;
-      }
-
-      if (!selected[stream]) continue;
-      const pts = core._sny_packet_pts(pkt);
-      const dts = core._sny_packet_dts(pkt);
-      const duration = Number(core._sny_packet_duration(pkt));
-      const data = core._sny_packet_data(pkt);
-      const size = core._sny_packet_size(pkt);
-      const flags = core._sny_packet_flags(pkt);
-      // HEAPU8 is read for each packet: the heap's buffer changes when memory grows.
-      if (!ring.write(stream, flags, pts, dts, duration, core.HEAPU8, data, size)) return;
+    function arm(on: boolean) {
+      const ringFull = (at.held && at.stream !== audio?.stream) || (at.eof && !at.ended);
+      ring.waitingForRoom(on && ringFull);
+      audio?.wait(on && audio.waiting());
+      at.armed = on;
     }
 
-    sound?.end();
-    ring.end();
+    for (;;) {
+      const seen = sleeper.bell();
+      let moved = audio?.feed() ?? false;
+      // Nothing else to demux once the audio has stopped.
+      if (streams.length === 0 && audio?.done()) at.eof = true;
+
+      // Places packets in file order until one finds no room.
+      while (!at.eof || at.held) {
+        if (!at.held) {
+          const ret = core._sny_read(ctx, pkt);
+
+          if (ret === AVERROR_EOF) {
+            at.eof = true;
+            audio?.end();
+            moved = true;
+            break;
+          }
+
+          check(ret, "read");
+          at.stream = core._sny_packet_stream(pkt);
+          if (at.stream !== audio?.stream && !selected[at.stream]) continue;
+          at.held = true;
+        }
+
+        const placed = at.stream === audio?.stream ? audio.queue(pkt) : offer(ring, at.stream);
+
+        if (!placed) {
+          if (ring.closed()) return arm(false);
+          break;
+        }
+
+        at.held = false;
+        moved = true;
+      }
+
+      if (at.eof && !at.ended && !at.held) {
+        at.ended = ring.offerEnd();
+        if (ring.closed()) return arm(false);
+        moved ||= at.ended;
+      }
+
+      if (at.ended && (!audio || audio.done())) return arm(false);
+
+      if (moved) {
+        if (at.armed) arm(false);
+      } else if (at.armed) {
+        ring.blocking();
+        sleeper.sleep(seen);
+        arm(false);
+      } else {
+        arm(true);
+      }
+    }
   }
 
   // pump, and on an error the FAILED record, so the thread reading the ring stops too; the
@@ -314,7 +483,7 @@ function createMedia(core: CoreModule) {
         throw new RangeError(`demux: stream ${audio.stream} is both demuxed and decoded`);
       }
 
-      if (audio) decoder = createAudio(audio, buffered, producer.blocking);
+      if (audio) decoder = createAudio(audio, buffered);
       pump(producer, streams, decoder);
     } catch (e) {
       producer.fail();

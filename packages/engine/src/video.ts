@@ -3,8 +3,8 @@
 //
 // Video output in the render worker: decodes a stream's packets from the packet ring with
 // WebCodecs into the frame queue (src/frames.ts), and shows the frame due at a given media
-// time through the compositor. Decoding waits while the queue is full or the decoder has
-// enough packets in hand, so neither memory nor the decoder's backlog grows.
+// time through the compositor. Decoding waits while the queue is full, its frames are a
+// second ahead of the media time, or the decoder has enough packets in hand, so neither memory nor the decoder's backlog grows.
 
 import { makesFrame, type VideoParams, videoConfig } from "./codec";
 import type { createCompositor } from "./compositor";
@@ -19,6 +19,9 @@ import { createConsumer, END, FAILED, KEY_FLAG, NO_TIMESTAMP } from "./ring";
 const FRAME_BUDGET = 1 << 26;
 // Packets handed to the decoder and not yet decoded.
 const DECODE_AHEAD = 8;
+// How far ahead of the media time shown, in microseconds, frames are decoded: the packets come
+// far further ahead, and a decoder holding hundreds of frames stalls Firefox.
+const TIME_AHEAD = 1_000_000;
 
 // A frame's bytes, or as an RGBA texture when the decoder keeps it on the GPU (no format).
 const frameBytes = (frame: VideoFrame) =>
@@ -28,8 +31,9 @@ const frameBytes = (frame: VideoFrame) =>
  * Decodes the packets of the stream with parameters `p` from `ring`, woken by `port`, and shows
  * them with `compositor`. `done` resolves once the decoder has decoded the last packet or the
  * output is closed, and rejects if decoding fails. `changed` runs on each event that may change
- * how far decoding is: a frame decoded, the decoder taking a packet, a wait for packets begun,
- * the end decoded, and the media worker blocking while `watch`ed.
+ * how far decoding is: a frame decoded, the decoder taking a packet, a wait for packets or for the
+ * media time begun, the end decoded, and the media worker blocking while `watch`ed. `freed` runs as the ring frees
+ * room for a media worker that waits, and as it closes (src/ring.ts).
  */
 export function createVideoOutput(
   ring: SharedArrayBuffer,
@@ -37,8 +41,9 @@ export function createVideoOutput(
   p: VideoParams,
   compositor: ReturnType<typeof createCompositor>,
   changed: () => void = () => {},
+  freed: () => void = () => {},
 ) {
-  const consumer = createConsumer(ring, port, changed);
+  const consumer = createConsumer(ring, port, changed, freed);
   const queue = createFrameQueue(FRAME_BUDGET, frameBytes);
   const [num, den] = p.timeBase;
   // Wakes the decode loop while it waits for room; replaced each time it waits.
@@ -48,6 +53,11 @@ export function createVideoOutput(
     ended: false,
     // Waiting for a packet, the ring being empty.
     waiting: false,
+    // The media time last shown, and the first frame's: decoding runs TIME_AHEAD past the later.
+    at: -Infinity,
+    first: -Infinity,
+    // Waiting for the media time to reach the frames decoded.
+    far: false,
     closed: false,
   };
   const decoding = createDecodeTracker();
@@ -55,6 +65,7 @@ export function createVideoOutput(
   const decoder = new VideoDecoder({
     output(frame) {
       decoding.out(frame.timestamp);
+      if (state.first === -Infinity) state.first = frame.timestamp;
       // Out after a later frame went up, it could only take video back.
       if (state.shown && frame.timestamp <= state.shown.timestamp) frame.close();
       else queue.push(frame);
@@ -70,12 +81,23 @@ export function createVideoOutput(
 
   const micros = (t: number) => Math.round((t * num * 1e6) / den);
 
-  // Resolves at once while there is room, or else once a frame is shown, the decoder takes a
-  // packet, or the output closes.
+  // Whether every frame is decoded to TIME_AHEAD past the media time: measured from what the
+  // decoder has let out, not its latest frame, so a frame it holds back is never cut off.
+  const far = () => decoding.decodedTo() > Math.max(state.at, state.first) + TIME_AHEAD;
+
+  // Resolves once there is room, or the output closes. It looks again on each wake (a frame
+  // shown, the media time nearing the frames decoded, the decoder taking a packet): one wake
+  // does not mean all have room.
   async function room() {
-    const woken = Promise.withResolvers<void>();
-    wake.room = woken.resolve;
-    if (queue.full() || decoder.decodeQueueSize >= DECODE_AHEAD) await woken.promise;
+    for (;;) {
+      if (state.closed) return;
+      state.far = far();
+      if (!state.far && !queue.full() && decoder.decodeQueueSize < DECODE_AHEAD) return;
+      if (state.far) changed();
+      const woken = Promise.withResolvers<void>();
+      wake.room = woken.resolve;
+      await woken.promise;
+    }
   }
 
   // Ends when the decoder has decoded the last packet, or at once when the output closes.
@@ -136,9 +158,11 @@ export function createVideoOutput(
    * screen, and closes the frame it replaces. Whether a new frame went up.
    */
   function present(time: number) {
+    state.at = time;
     const frame = queue.take(time);
+    // Waiting for the media time, only its nearing lets decoding on.
+    if (state.far ? !far() : frame) wake.room();
     if (!frame) return false;
-    wake.room();
     const replaced = state.shown;
     // Owned before drawing, so a draw that throws leaves it for close.
     state.shown = frame;
@@ -171,8 +195,8 @@ export function createVideoOutput(
     decodedTo: decoding.decodedTo,
     /** Whether the decoder has decoded every packet. */
     ended: () => state.ended,
-    /** Whether the frame queue is full, so decoding waits for a frame to be shown. */
-    full: () => queue.full(),
+    /** Whether the frame queue is full or far enough ahead, so decoding waits for the media time. */
+    full: () => queue.full() || far(),
     /** Whether it waits for packets with nothing left to decode. */
     starved: () => state.waiting && decoder.decodeQueueSize === 0,
     /** Whether the packet ring's producer waits for room. */
