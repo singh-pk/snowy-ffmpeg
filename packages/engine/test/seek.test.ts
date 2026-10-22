@@ -1,0 +1,209 @@
+// SPDX-FileCopyrightText: 2026 The Snowy Authors
+// SPDX-License-Identifier: MIT
+//
+// engine.seek in Chromium, Firefox and WebKit, through the public API alone: paused, each seek
+// puts up exactly the frame due at its target, the one FFmpeg's timestamps say, and the clock
+// reads the target; and a seek while playing plays on from there, with the frame due on screen.
+// Each fixture takes SNOWY_SEEKS seeks (default 10) to the start, the end, frames' own times,
+// between frames and at random; the gate is `SNOWY_SEEKS=50 bun test test/seek.test.ts`.
+// Usage: bun run test.
+
+import { afterAll, describe, expect, test } from "bun:test";
+import { browsers } from "./support/browsers";
+import { ENTRY, PAGE, serveEngine } from "./support/serve";
+
+interface Video {
+  codec: string;
+  timeBase: string;
+  width: number;
+  height: number;
+  shown: [number, number];
+  pts: number[];
+  keyframes: number[];
+}
+
+const expected: Record<string, { video?: Video; audio?: unknown; duration: number }> =
+  await Bun.file(new URL("fixtures/expected.json", import.meta.url)).json();
+const SEEKS = Number(process.env.SNOWY_SEEKS ?? 10);
+// The time a seek may take, in milliseconds, with the reads after it.
+const SEEK_TIME = 1000;
+// What a browser cannot decode at all, and what it fails on (test/render.test.ts).
+const UNSUPPORTED: Record<string, string[]> = { firefox: ["hevc"], webkit: ["av1"] };
+const FAILS: Record<string, string[]> = { webkit: ["altref-vp8-opus.webm"] };
+// The long file, sought into while it plays.
+const LONG = "sync-10min.mp4";
+const PLAYING_AT = 300;
+// How long the screen is read after a seek, in milliseconds: a read may show the canvas as it
+// was up to four frames before, so the last read is the one checked.
+const SETTLE = 100;
+// How far the clock may read from the target, in seconds: the audio starts on a whole sample.
+const SAMPLE = 1e-4;
+const [width, height] = [320, 180];
+const server = await serveEngine(
+  `<!doctype html><title>test</title><canvas width="${width}" height="${height}"></canvas>`,
+);
+
+afterAll(() => server.stop(true));
+
+// A frame's time in microseconds, rounded as the engine rounds it.
+function micros(v: Video, pts: number) {
+  const [num = 1, den = 1] = v.timeBase.split("/").map(Number);
+  return Math.round((pts * num * 1e6) / den);
+}
+
+// The frame of `v` on screen after a seek to `target` microseconds: the latest due then, or
+// the first before it is.
+function frameAt(v: Video, target: number) {
+  const after = v.pts.findIndex((pts) => micros(v, pts) > target);
+  return Math.max(0, (after < 0 ? v.pts.length : after) - 1);
+}
+
+// Numbers in [0, 1) from `seed`, the same on every run (mulberry32).
+function random(seed: number) {
+  let t = seed;
+  return () => {
+    t = (t + 0x6d2b79f5) | 0;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+    return ((r ^ (r >>> 14)) >>> 0) / 2 ** 32;
+  };
+}
+
+// SEEKS targets in microseconds: the start, the end, a frame's time, halfway between two
+// frames, back to the first frame, just before the last keyframe (where an open GOP's leading
+// pictures are), and the rest at random, in an order that goes both ways.
+function targets(v: Video, duration: number, seed: number) {
+  const next = random(seed);
+  const end = Math.round(duration * 1e6);
+  const mid = Math.floor(v.pts.length / 2);
+  const between = Math.floor((micros(v, v.pts[mid] ?? 0) + micros(v, v.pts[mid + 1] ?? 0)) / 2);
+  const key = micros(v, v.keyframes.at(-1) ?? 0);
+  const fixed = [0, end, micros(v, v.pts[mid] ?? 0), between, micros(v, v.pts[0] ?? 0)];
+  if (key > 0) fixed.push(key - 1);
+  const all = fixed.slice(0, SEEKS);
+  while (all.length < SEEKS) all.push(Math.floor(next() * end));
+  return all;
+}
+
+const fixtures = Object.entries(expected).filter(
+  ([file, { video, audio }]) =>
+    video && audio && file !== LONG && video.shown[0] === width && video.shown[1] === height,
+);
+
+for (const [name, [type, options]] of Object.entries(browsers)) {
+  describe(name, () => {
+    const playable = fixtures.filter(
+      ([file, { video }]) =>
+        !UNSUPPORTED[name]?.includes(video?.codec ?? "") && !FAILS[name]?.includes(file),
+    );
+
+    test(
+      `lands exactly on ${SEEKS} seeks in each of ${playable.length} files, paused`,
+      async () => {
+        const browser = await type.launch(options);
+        const plan = playable.map(([file, { video, duration }], i) => ({
+          file,
+          targets: video ? targets(video, duration, i + 1) : [],
+        }));
+
+        try {
+          const tab = await browser.newPage();
+          await tab.goto(server.url.href);
+          const got = await tab.evaluate(
+            async ({ entry, page, plan: files, settle }) => {
+              const engine: typeof import("../src/index") = await import(entry);
+              const support: typeof import("./support/page") = await import(page);
+              const canvas = document.querySelector("canvas");
+              if (!canvas) throw new Error("no canvas");
+              const player = await engine.createEngine({ canvas });
+              const all: { file: string; seen: [clock: number, id: number][] }[] = [];
+
+              for (const { file, targets: times } of files) {
+                const res = await fetch(`/test/fixtures/${file}`);
+                const blob = await res.blob();
+                await player.open(new File([blob], file));
+                const seen: [number, number][] = [];
+
+                for (const target of times) {
+                  await player.seek(target / 1e6);
+                  const reads = await support.watchScreen(player, canvas, settle);
+                  seen.push([player.currentTime, reads.at(-1)?.[1] ?? -1]);
+                }
+
+                all.push({ file, seen });
+              }
+
+              player.close();
+              return all;
+            },
+            { entry: ENTRY, page: PAGE, plan, settle: SETTLE },
+          );
+
+          for (const [i, { file, targets: times }] of plan.entries()) {
+            const v = expected[file]?.video;
+            if (!v) throw new Error(`no video in ${file}`);
+            const seen = got[i]?.seen ?? [];
+            const frames = times.map((t) => frameAt(v, t));
+            expect(
+              seen.map(([, id]) => id),
+              `${file} at ${times.join(", ")} µs`,
+            ).toEqual(frames);
+
+            for (const [k, t] of times.entries()) {
+              const clock = seen[k]?.[0] ?? Number.NaN;
+              expect(Math.abs(clock - t / 1e6), `${file}: clock at ${t} µs`).toBeLessThan(SAMPLE);
+            }
+          }
+        } finally {
+          await browser.close();
+        }
+      },
+      60_000 + SEEKS * playable.length * SEEK_TIME,
+    );
+
+    test(`plays on from a seek while ${LONG} plays`, async () => {
+      const browser = await type.launch(options);
+      const v = expected[LONG]?.video;
+      if (!v) throw new Error(`no video in ${LONG}`);
+
+      try {
+        const tab = await browser.newPage();
+        await tab.goto(server.url.href);
+        // A user gesture, so audio may start.
+        await tab.mouse.click(1, 1);
+        const reads = await tab.evaluate(
+          async ({ entry, page, file, at }) => {
+            const engine: typeof import("../src/index") = await import(entry);
+            const support: typeof import("./support/page") = await import(page);
+            const canvas = document.querySelector("canvas");
+            if (!canvas) throw new Error("no canvas");
+            const player = await engine.createEngine({ canvas });
+            const res = await fetch(`/test/fixtures/${file}`);
+            const blob = await res.blob();
+            await player.open(new File([blob], file));
+            await player.play();
+            await support.watchScreen(player, canvas, 500);
+            await player.seek(at);
+            const seen = await support.watchScreen(player, canvas, 2000);
+            player.close();
+            return seen;
+          },
+          { entry: ENTRY, page: PAGE, file: LONG, at: PLAYING_AT },
+        );
+
+        const [num = 1, den = 1] = v.timeBase.split("/").map(Number);
+        const due = (id: number) => ((v.pts[id] ?? 0) * num) / den;
+        // It plays on from the target, in real time.
+        expect(reads[0]?.[0] ?? 0).toBeGreaterThanOrEqual(PLAYING_AT);
+        expect(reads.at(-1)?.[0] ?? 0).toBeGreaterThan(PLAYING_AT + 1.5);
+        // On a frame sought to, no further than a frame from the one due at the clock. The
+        // play test bounds sync itself; this checks the seek lands in it.
+        const newest = reads.at(-1);
+        const id = newest?.[1] ?? 0;
+        expect(Math.abs(due(id) - (newest?.[0] ?? 0))).toBeLessThan(0.1);
+      } finally {
+        await browser.close();
+      }
+    }, 60_000);
+  });
+}

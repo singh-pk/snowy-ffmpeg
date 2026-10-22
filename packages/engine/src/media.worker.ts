@@ -9,6 +9,7 @@
 import {
   AV_NOPTS_VALUE,
   AV_TIME_BASE,
+  AVSEEK_FLAG_BACKWARD,
   AVERROR_EAGAIN,
   AVERROR_EOF,
   AVMEDIA_TYPE_ATTACHMENT,
@@ -47,6 +48,8 @@ const AUDIO_AHEAD = 1 << 22;
 // What a queued packet costs besides its payload: the AVPacket, its buffer and their padding,
 // counted so that small or empty packets are bounded too.
 const PACKET_OVERHEAD = 256;
+// The frames of silence written at a time, from a buffer of zeros made once.
+const SILENCE = 1024;
 
 // An audio stream being decoded into a PCM ring, from a queue of its compressed packets.
 interface Audio {
@@ -76,8 +79,8 @@ function post(message: FromMedia) {
 function createMedia(core: CoreModule) {
   const source = createFileSource(core);
   const str = (ptr: Ptr) => (ptr ? core.UTF8ToString(ptr) : "");
-  // The open file's demuxer, or 0.
-  const state = { ctx: 0 };
+  // The open file's demuxer, or 0, and whether it has read past its start since it opened.
+  const state = { ctx: 0, read: false };
   const pkt = core._sny_packet_alloc();
 
   function check(ret: number, what: string) {
@@ -110,6 +113,7 @@ function createMedia(core: CoreModule) {
     const st = core._sny_stream(state.ctx, id);
     const data = core._sny_codec_extradata(st);
     const tag = core._sny_codec_tag(st);
+    const start = core._sny_stream_start_time(st);
     return {
       codec: str(core._sny_codec_name(st)),
       // A little-endian four-character code, or 0.
@@ -122,6 +126,7 @@ function createMedia(core: CoreModule) {
       level: core._sny_codec_level(st),
       sampleAspect: [core._sny_codec_sar_num(st), core._sny_codec_sar_den(st)],
       timeBase: [core._sny_stream_tb_num(st), core._sny_stream_tb_den(st)],
+      start: start === AV_NOPTS_VALUE ? 0 : Number(start),
       matrix: Array.from({ length: 9 }, (_, i) => core._sny_stream_display_matrix(st, i)),
     };
   }
@@ -144,6 +149,7 @@ function createMedia(core: CoreModule) {
     core._free(out);
     check(opened, "open");
     state.ctx = ctx;
+    state.read = false;
     check(core._sny_find_stream_info(ctx), "find_stream_info");
     const tracks = Array.from({ length: core._sny_nb_streams(ctx) }, (_, i) => track(i));
     const duration = core._sny_duration(ctx);
@@ -175,8 +181,15 @@ function createMedia(core: CoreModule) {
   // Decodes audio stream `stream` into PCM ring `pcm`, from the packets `queue` takes, as the
   // ring has room. Once the ring's consumer closes it, the queue takes packets and drops them.
   // `close` frees it all. `buffered` runs once, when the ring holds `preroll` frames, is full,
-  // or has all the audio.
-  function createAudio({ stream, pcm, preroll }: AudioRequest, buffered: () => void): Audio {
+  // or has all the audio. The audio before `from` (microseconds) is dropped; after a seek
+  // (`sought`), silence fills from `from` to where the audio starts, so the clock starts at the
+  // target: Opus, for one, drops its first frames after a seek.
+  function createAudio(
+    { stream, pcm, preroll }: AudioRequest,
+    from: number,
+    sought: boolean,
+    buffered: () => void,
+  ): Audio {
     const ctx = demuxer([stream]);
     const st = core._sny_stream(ctx, stream);
 
@@ -215,8 +228,10 @@ function createMedia(core: CoreModule) {
     // The queue: packets in a circle of slots, which doubles when full, so it allocates only
     // as it grows; it is bounded by AUDIO_AHEAD bytes.
     const queued = { slots: [] as Ptr[], head: 0, count: 0, bytes: 0 };
-    // The resampled frames not yet in the ring: `left` frames from index `at` of HEAPF32.
-    const pending = { at: 0, left: 0 };
+    // The resampled frames not yet in the ring: `left` frames from index `at` of HEAPF32; how
+    // many more to drop, as they come before `from`; and the frames of silence before them.
+    const pending = { at: 0, left: 0, skip: 0, silence: 0 };
+    const zeros = new Float32Array(SILENCE * channels);
     const phase = {
       started: false,
       // No more packets come; the decoder has been sent the end; the resampler is drained.
@@ -295,13 +310,20 @@ function createMedia(core: CoreModule) {
       check(core._sny_resample(resampler, input, resampled, rate, channels), "resample");
       pending.at = core._sny_frame_plane(resampled, 0) >>> 2;
       pending.left = core._sny_frame_samples(resampled);
+      const skipped = Math.min(pending.skip, pending.left);
+      pending.at += skipped * channels;
+      pending.left -= skipped;
+      pending.skip -= skipped;
     }
 
     // Writes pending frames into the ring; false once it is full. A full ring holds a second
     // and more, more than any preroll.
     function write() {
+      const silent = pending.silence > 0;
       // HEAPF32 is read for each write: the heap's buffer changes when memory grows.
-      const n = producer.offer(core.HEAPF32, pending.at, pending.left);
+      const n = silent
+        ? producer.offer(zeros, 0, Math.min(pending.silence, SILENCE))
+        : producer.offer(core.HEAPF32, pending.at, pending.left);
 
       if (n < 0) {
         phase.closed = true;
@@ -313,8 +335,13 @@ function createMedia(core: CoreModule) {
         return false;
       }
 
-      pending.at += n * channels;
-      pending.left -= n;
+      if (silent) {
+        pending.silence -= n;
+      } else {
+        pending.at += n * channels;
+        pending.left -= n;
+      }
+
       told.written += n;
       if (told.written >= preroll) tell();
       return true;
@@ -324,7 +351,7 @@ function createMedia(core: CoreModule) {
       let moved = false;
 
       while (!phase.closed && !phase.done) {
-        if (pending.left > 0) {
+        if (pending.silence > 0 || pending.left > 0) {
           if (!write()) return moved;
           moved = true;
           continue;
@@ -349,7 +376,12 @@ function createMedia(core: CoreModule) {
 
           if (!phase.started) {
             const pts = core._sny_frame_pts(frame);
-            producer.start(pts === AV_NOPTS_VALUE ? 0 : (Number(pts) * tbNum) / tbDen);
+            const first = pts === AV_NOPTS_VALUE ? 0 : (Number(pts) * tbNum) / tbDen;
+            const late = (first - from / 1e6) * rate;
+            // Rounded down: the clock starts no later than `from`, so it shows no frame due after.
+            pending.skip = Math.max(0, Math.floor(-late));
+            pending.silence = sought ? Math.max(0, Math.round(late)) : 0;
+            producer.start(sought && late > 0 ? from / 1e6 : first + pending.skip / rate);
             phase.started = true;
           }
 
@@ -368,7 +400,7 @@ function createMedia(core: CoreModule) {
       end: () => {
         phase.ended = true;
       },
-      waiting: () => pending.left > 0 && !phase.closed,
+      waiting: () => (pending.silence > 0 || pending.left > 0) && !phase.closed,
       done: () => phase.done || phase.closed,
       bell: producer.bell,
       sleep: producer.sleep,
@@ -466,12 +498,61 @@ function createMedia(core: CoreModule) {
     }
   }
 
+  // Moves the demuxer to the keyframe of `stream` at or before `from` (microseconds), or to its
+  // first keyframe when `from` is before it; whether it moved. A demuxer just opened is at the
+  // start already.
+  function seek(stream: number, from: number) {
+    if (from === 0 && !state.read) return false;
+    const st = core._sny_stream(state.ctx, stream);
+    const [num, den] = [core._sny_stream_tb_num(st), core._sny_stream_tb_den(st)];
+    // Exact, and rounded down, so the keyframe found is never after the target.
+    const ts = (BigInt(from) * BigInt(den)) / (BigInt(num) * 1_000_000n);
+    let at = ts;
+
+    if (core._sny_seek(state.ctx, stream, at, AVSEEK_FLAG_BACKWARD) < 0) {
+      check(core._sny_seek(state.ctx, stream, ts, 0), "seek");
+      return true;
+    }
+
+    // Some demuxers, MP4's among them, seek by dts, so the keyframe found can be due after the
+    // target, as an open-GOP CRA is, its leading pictures before it: then the one before.
+    // It stops at the stream's first keyframe, which a seek before it finds again.
+    let previous: bigint | undefined;
+
+    for (;;) {
+      const key = firstPacket(stream);
+      if (key === undefined || key.pts <= ts) break;
+      if (previous !== undefined && key.dts >= previous) break;
+      previous = key.dts;
+      const before = (key.dts < at ? key.dts : at) - 1n;
+      if (core._sny_seek(state.ctx, stream, before, AVSEEK_FLAG_BACKWARD) < 0) break;
+      at = before;
+    }
+
+    // Back to the keyframe kept, whose packets the reads above passed.
+    check(core._sny_seek(state.ctx, stream, at, AVSEEK_FLAG_BACKWARD), "seek");
+    return true;
+  }
+
+  // The pts (or dts, without one) and dts of the next packet of `stream`, read past.
+  function firstPacket(stream: number) {
+    for (;;) {
+      const ret = core._sny_read(state.ctx, pkt);
+      if (ret === AVERROR_EOF) return undefined;
+      check(ret, "read");
+      if (core._sny_packet_stream(pkt) !== stream) continue;
+      const [pts, dts] = [core._sny_packet_pts(pkt), core._sny_packet_dts(pkt)];
+      return { pts: pts === AV_NOPTS_VALUE ? dts : pts, dts: dts === AV_NOPTS_VALUE ? pts : dts };
+    }
+  }
+
   // pump, and on an error the FAILED record, so the thread reading the ring stops too; the
   // error itself goes to whoever asked. `buffered` runs once the audio is buffered ahead.
   function demux(
     ring: SharedArrayBuffer,
     wake: MessagePort,
     streams: number[],
+    from: number,
     audio: AudioRequest | undefined,
     buffered: () => void,
   ) {
@@ -483,7 +564,12 @@ function createMedia(core: CoreModule) {
         throw new RangeError(`demux: stream ${audio.stream} is both demuxed and decoded`);
       }
 
-      if (audio) decoder = createAudio(audio, buffered);
+      demuxer(streams);
+      if (!Number.isSafeInteger(from) || from < 0) throw new RangeError(`demux: from ${from}`);
+      const first = streams[0] ?? audio?.stream;
+      const sought = first !== undefined && seek(first, from);
+      state.read = true;
+      if (audio) decoder = createAudio(audio, from, sought, buffered);
       pump(producer, streams, decoder);
     } catch (e) {
       producer.fail();
@@ -512,7 +598,8 @@ async function handle(message: ToMedia) {
       post({ type: "opened", id, ...media.open(message.file) });
     } else {
       const buffered = () => post({ type: "buffered", id });
-      media.demux(message.ring, message.wake, message.streams, message.audio, buffered);
+      const { ring, wake, streams, from, audio } = message;
+      media.demux(ring, wake, streams, from, audio, buffered);
       post({ type: "demuxed", id });
     }
   } catch (e) {

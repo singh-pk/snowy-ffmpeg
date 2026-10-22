@@ -33,9 +33,10 @@ const PLAYING = 11;
 // frees room or closes while the producer waits, on this ring or its packet ring, so one wait
 // covers both rings and a wake-up is never lost (docs/architecture.md#audio-and-clock).
 const BELL = 12;
-// A Float64 word, set before the first frame: the media time of the first frame. Plain, not
-// atomic: the stores of WRITE and SEQUENCE that follow publish it, so a reader sees it once
-// the clock has played a frame, and may see 0 before.
+// A Float64 word: the media time of the first frame. The ring is made with the time playing
+// starts from, and the producer sets it before the first frame. Plain, not atomic: the stores
+// of WRITE and SEQUENCE that follow publish it, so a reader sees it once the clock has played
+// a frame, and may see the time it was made with before.
 const START = 7;
 // The output timestamp, written by the main thread under a seqlock of its own, every word
 // with Atomics as for the clock: the context time being heard and when, in whole
@@ -67,8 +68,11 @@ interface Clock {
   playing: boolean;
 }
 
-/** A ring of `frames` frames, a power of two, of `channels` channels at `rate` Hz. */
-export function createPcmRing(frames: number, channels: number, rate: number) {
+/**
+ * A ring of `frames` frames, a power of two, of `channels` channels at `rate` Hz, whose clock
+ * reads `start` seconds until the producer says where its audio starts.
+ */
+export function createPcmRing(frames: number, channels: number, rate: number, start = 0) {
   if (frames < 1 || (frames & (frames - 1)) !== 0) {
     throw new RangeError(`PCM ring of ${frames} frames is not a power of two`);
   }
@@ -81,6 +85,7 @@ export function createPcmRing(frames: number, channels: number, rate: number) {
   const control = new Int32Array(ring, 0, DATA / 4);
   control[CHANNELS] = channels;
   control[RATE] = rate;
+  new Float64Array(ring, 0, DATA / 8)[START] = start;
   return ring;
 }
 

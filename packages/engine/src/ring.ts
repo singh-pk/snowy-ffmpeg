@@ -352,6 +352,11 @@ export function createConsumer(
     return Atomics.load(control, PRODUCER_WAITING) === 1;
   }
 
+  /** Whether either side has closed the ring. */
+  function closed() {
+    return Atomics.load(control, CLOSED) === 1;
+  }
+
   /**
    * Has `blocked` run when the producer's thread next blocks. Before reading whether it
    * waits, so a block after the read runs it.
@@ -360,5 +365,5 @@ export function createConsumer(
     Atomics.store(control, WATCHING, 1);
   }
 
-  return { peek, release, wait, close, producerWaiting, watch };
+  return { peek, release, wait, close, closed, producerWaiting, watch };
 }

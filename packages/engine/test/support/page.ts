@@ -118,7 +118,7 @@ export async function play(
   const { port1 } = new MessageChannel();
   const ring = createRing(64);
   const audio = { stream, pcm, preroll: 0 };
-  await media.request({ type: "demux", ring, wake: port1, streams: [], audio }, [port1]);
+  await media.request({ type: "demux", ring, wake: port1, streams: [], from: 0, audio }, [port1]);
   const offsets: number[] = [];
   const rendering = { done: false };
 
@@ -185,7 +185,9 @@ export async function firstPacket(media: ReturnType<typeof startMedia>, stream: 
   const ring = createRing(1 << 22);
   const { port1, port2 } = new MessageChannel();
   const consumer = createConsumer(ring, port2);
-  const demuxed = media.request({ type: "demux", ring, wake: port1, streams: [stream] }, [port1]);
+  const demuxed = media.request({ type: "demux", ring, wake: port1, streams: [stream], from: 0 }, [
+    port1,
+  ]);
 
   for (;;) {
     const packet = consumer.peek();
@@ -317,7 +319,9 @@ export async function render(
   context.configure({ device, format, usage, alphaMode: "opaque" });
   const ring = createRing(RING_CAPACITY);
   const { port1, port2 } = new MessageChannel();
-  const demuxed = media.request({ type: "demux", ring, wake: port1, streams: [stream] }, [port1]);
+  const demuxed = media.request({ type: "demux", ring, wake: port1, streams: [stream], from: 0 }, [
+    port1,
+  ]);
   // Wakes the wait for frames below on every change in how far decoding is.
   const decoding = { changed: () => {} };
   const compositor = createCompositor(device, context, format);

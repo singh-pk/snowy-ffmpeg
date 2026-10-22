@@ -4,11 +4,19 @@
 // Codec strings from bitstream fields, in Bun, for what the fixtures do not cover: the HEVC
 // example of ISO/IEC 14496-15 Annex E, a VP9 profile 2 keyframe, AV1 sequence headers with
 // the fields the fixtures leave out, non-square pixels, and a codec WebCodecs does not
-// decode. test/video.test.ts checks every fixture in the browsers.
+// decode, and HEVC RASL pictures in both packet formats. test/video.test.ts checks every
+// fixture in the browsers.
 // Usage: bun test test/codec.test.ts
 
 import { expect, test } from "bun:test";
-import { hevcCodec, makesFrame, type VideoParams, videoConfig, vp9Codec } from "../src/codec";
+import {
+  hevcCodec,
+  isRasl,
+  makesFrame,
+  type VideoParams,
+  videoConfig,
+  vp9Codec,
+} from "../src/codec";
 
 // A stream without a configuration record, a level or a display matrix.
 const STREAM: VideoParams = {
@@ -20,6 +28,7 @@ const STREAM: VideoParams = {
   level: -99,
   sampleAspect: [1, 1],
   timeBase: [1, 1000],
+  start: 0,
   matrix: [],
 };
 
@@ -155,4 +164,29 @@ test("a VP8 alt-ref frame makes no frame; every other packet does", () => {
   expect(makesFrame(p, new Uint8Array([0x11, 0, 0]))).toBe(true);
   expect(makesFrame(p, new Uint8Array([0x01, 0, 0]))).toBe(false);
   expect(makesFrame(STREAM, new Uint8Array([0x00]))).toBe(true);
+});
+
+// HEVC NAL units of `type`: a 2-byte header and a byte of payload.
+const nal = (type: number) => [type << 1, 1, 0xaf];
+// A packet of `nals` with 4-byte lengths, as a configuration record has them, or Annex B.
+const prefixed = (...nals: number[][]) =>
+  new Uint8Array(nals.flatMap((n) => [0, 0, 0, n.length].concat(n)));
+const started = (...nals: number[][]) => new Uint8Array(nals.flatMap((n) => [0, 0, 1].concat(n)));
+
+test("an HEVC RASL picture is told by its first picture NAL unit, in either packet format", () => {
+  const [sei, cra, raslN, raslR, trail] = [nal(39), nal(21), nal(8), nal(9), nal(1)];
+  const annexB = { ...STREAM, codec: "hevc" };
+  const record = { ...annexB, extradata: new Uint8Array(23).fill(1, 0, 1).fill(3, 21, 22) };
+
+  for (const [p, packet] of [
+    [record, prefixed],
+    [annexB, started],
+  ] as const) {
+    expect(isRasl(p, packet(sei, raslN))).toBe(true);
+    expect(isRasl(p, packet(raslR))).toBe(true);
+    expect(isRasl(p, packet(sei, cra))).toBe(false);
+    expect(isRasl(p, packet(trail))).toBe(false);
+  }
+
+  expect(isRasl(STREAM, started(raslN))).toBe(false);
 });

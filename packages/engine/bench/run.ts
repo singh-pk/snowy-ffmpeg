@@ -155,7 +155,9 @@ const benchmarks: Record<string, (tab: Page) => Promise<Timings>> = {
           const ring = support.createRing(64);
           const { port1 } = new MessageChannel();
           const audio = { stream: 1, pcm, preroll: 0 };
-          await media.request({ type: "demux", ring, wake: port1, streams: [], audio }, [port1]);
+          await media.request({ type: "demux", ring, wake: port1, streams: [], from: 0, audio }, [
+            port1,
+          ]);
           const ms = performance.now() - start;
           state.decoding = false;
           await draining;

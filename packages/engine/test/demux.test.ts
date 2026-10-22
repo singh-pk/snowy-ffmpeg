@@ -52,7 +52,7 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
               const ring = support.createRing(1 << 16);
               const { port1, port2 } = new MessageChannel();
               const hashed = support.hashRing(ring, port2, dts);
-              await media.request({ type: "demux", ring, wake: port1, streams }, [port1]);
+              await media.request({ type: "demux", ring, wake: port1, streams, from: 0 }, [port1]);
               all[n] = await hashed;
             }
 
@@ -99,7 +99,7 @@ test("a pump that fails ends the ring with FAILED", async () => {
           const hashed = support.hashRing(ring, port2, false);
 
           try {
-            await media.request({ type: "demux", ring, wake: port1, streams }, [port1]);
+            await media.request({ type: "demux", ring, wake: port1, streams, from: 0 }, [port1]);
             const ended = await hashed;
             return ["replied", ended];
           } catch (e) {

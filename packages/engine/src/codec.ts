@@ -28,6 +28,8 @@ export interface VideoParams {
   sampleAspect: [number, number];
   /** The stream's time base, as a fraction of a second. */
   timeBase: [number, number];
+  /** When its first frame is due, in the time base; 0 when unknown. */
+  start: number;
   /** FFmpeg's display matrix (src/compositor.ts), the identity when the stream has none. */
   matrix: number[];
 }
@@ -126,12 +128,47 @@ export function hevcCodec(prefix: string, ptl: Uint8Array) {
   return `${prefix}.${space}${first & 31}.${reversed.toString(16).toUpperCase()}.${tier}${ptl[11] ?? 0}${tail}`;
 }
 
-function hevc(p: VideoParams, keyframe: Uint8Array): VideoDecoderConfig {
-  // FFmpeg's test: some writers leave configurationVersion 0.
+// Whether an HEVC stream's extradata is a configuration record, with its packets' NAL units
+// length-prefixed; if not, they are Annex B. FFmpeg's test: some writers leave
+// configurationVersion 0.
+function hevcRecord(p: VideoParams) {
   const [v = 0, b1 = 0, b2 = 0] = p.extradata;
-  const record = p.extradata.length >= 23 && (v > 0 || b1 > 0 || b2 > 1);
+  return p.extradata.length >= 23 && (v > 0 || b1 > 0 || b2 > 1);
+}
 
-  if (record) {
+/**
+ * Whether a packet is an HEVC RASL picture: one that refers to pictures before the CRA it
+ * follows, so a decoder starting at that CRA leaves it out (H.265 8.1.3).
+ */
+export function isRasl(p: VideoParams, data: Uint8Array) {
+  if (p.codec !== "hevc") return false;
+  // The first picture NAL unit's type, below 32, decides; parameter sets and SEI come before.
+  const type = (at: number) => ((data[at] ?? 0) >> 1) & 63;
+
+  if (hevcRecord(p)) {
+    const size = ((p.extradata[21] ?? 0) & 3) + 1;
+
+    for (let i = 0; i + size < data.length;) {
+      let length = 0;
+      for (let k = 0; k < size; k++) length = length * 256 + (data[i + k] ?? 0);
+      if (type(i + size) < 32) return type(i + size) === 8 || type(i + size) === 9;
+      i += size + length;
+    }
+
+    return false;
+  }
+
+  for (let i = 0; i + 3 < data.length; i++) {
+    if (data[i] !== 0 || data[i + 1] !== 0 || data[i + 2] !== 1) continue;
+    if (type(i + 3) < 32) return type(i + 3) === 8 || type(i + 3) === 9;
+    i += 2;
+  }
+
+  return false;
+}
+
+function hevc(p: VideoParams, keyframe: Uint8Array): VideoDecoderConfig {
+  if (hevcRecord(p)) {
     const prefix = p.tag === "hev1" ? "hev1" : "hvc1";
     return { codec: hevcCodec(prefix, p.extradata.subarray(1, 13)), description: p.extradata };
   }
