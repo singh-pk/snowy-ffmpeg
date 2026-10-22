@@ -39,6 +39,15 @@ export interface Engine {
    * once the page is shown.
    */
   seek(time: number): Promise<void>;
+  /**
+   * Goes to `time` as a scrub does, paused: the frame due then is on screen once it resolves,
+   * as with `seek`, but calls while one is under way only replace where it goes next, so
+   * however often it is called the screen follows as fast as it can decode. Forward, with no
+   * keyframe on the way, it decodes on instead of starting again, showing the frames it passes.
+   * Each call resolves once the frame of the last target is up; paused in a hidden page, once
+   * the page is shown. Playing, it is `seek`.
+   */
+  fastSeek(time: number): Promise<void>;
   /** The media time, in seconds, of what is being heard and seen now. */
   readonly currentTime: number;
   /** Stops the engine's workers. */
@@ -187,11 +196,20 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     next: 0,
     // Whether the last call was play, not pause.
     playing: false,
-    // Where the next play starts, in microseconds; and how many seeks there have been.
+    // Where the next play starts, in microseconds, or where a scrub has moved the paused one
+    // on to (`moved`, so its audio starts before); and how many seeks there have been.
     from: 0,
+    moved: false,
+    // Whether what plays has played: paused, its frame is then where the clock stopped, or up
+    // to two frames on, not at `from`.
+    played: false,
     seeks: 0,
+    // The first video stream's keyframe times, in microseconds, as far as its index goes.
+    index: { keyframes: [] as number[], end: -Infinity },
+    // The target of the scrub under way, which it goes on to next, and the scrub.
+    scrub: { to: undefined as number | undefined, running: undefined as Promise<void> | undefined },
     // How far the render worker has decoded, as it last reported, and for which play.
-    video: { id: -1, ahead: false, stuck: false, drawn: false, shown: false },
+    video: { id: -1, ahead: false, stuck: false, drawn: false, shown: false, reached: -1 },
     closed: false,
   };
   // Wakes the waits of `until`.
@@ -229,6 +247,8 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
   function fail(error: Error) {
     state.failure ??= error;
     state.from = 0;
+    state.moved = false;
+    state.played = false;
     stop();
   }
 
@@ -398,9 +418,13 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     state.failure = undefined;
     state.opened = undefined;
     state.from = 0;
+    state.moved = false;
+    state.played = false;
     const reply = await media.send({ type: "open", file });
     if (reply.type !== "opened") throw new Error(`open: unexpected ${reply.type}`);
     state.opened = { info: reply.info, video: reply.video };
+    const video = reply.info.tracks.find((t) => t.kind === "video");
+    state.index = (video && reply.index[video.id]) ?? { keyframes: [], end: -Infinity };
     return reply.info;
   }
 
@@ -423,6 +447,15 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
   async function play() {
     if (state.failure) throw state.failure;
     state.playing = true;
+    state.played = true;
+    state.scrub.to = undefined;
+
+    // Moved on by a scrub, its audio starts before where it is: it starts again from there.
+    if (state.moved) {
+      stop();
+      state.moved = false;
+      state.seeks++;
+    }
 
     // A seek while it starts stops what it starts, and it goes on with the seek's.
     for (;;) {
@@ -477,16 +510,77 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     state.started?.publish();
   }
 
-  async function seek(time: number) {
+  // `time` in seconds as a start in microseconds, at most the duration; or what is wrong.
+  function target(time: number) {
     if (state.failure) throw state.failure;
     const duration = state.opened?.info.duration;
     if (!state.opened) throw new Error("seek: no file is open");
     if (!Number.isFinite(time) || time < 0) throw new RangeError(`seek: ${time} s`);
-    stop();
-    state.from = Math.min(
-      Math.round(Math.min(time, duration ?? time) * 1e6),
-      Number.MAX_SAFE_INTEGER,
+    return Math.min(Math.round(Math.min(time, duration ?? time) * 1e6), Number.MAX_SAFE_INTEGER);
+  }
+
+  async function seek(time: number) {
+    const to = target(time);
+    state.scrub.to = undefined;
+    return go(to);
+  }
+
+  async function fastSeek(time: number) {
+    const to = target(time);
+    if (state.playing) return seek(time);
+    state.scrub.to = to;
+    state.scrub.running ??= scrub();
+    return state.scrub.running;
+  }
+
+  // Goes to each target a scrub is given in turn, the last one each time, until none is left.
+  async function scrub() {
+    try {
+      for (let to = state.scrub.to; to !== undefined; to = state.scrub.to) {
+        state.scrub.to = undefined;
+        await (movable(to) ? move(to) : go(to));
+      }
+    } finally {
+      state.scrub.running = undefined;
+    }
+  }
+
+  // Whether the paused play can go on to `to` by decoding on: it has not played, so the frame
+  // up is the one due at `from`, `to` is ahead of it, and the index says no keyframe comes up to
+  // it, which starting again would decode from instead.
+  function movable(to: number) {
+    const { started, from } = state;
+    if (state.played || !started?.drawn() || state.video.id !== started.id) return false;
+    const { keyframes, end } = state.index;
+    if (to < from || to > end) return false;
+    return !keyframes.some((k) => k > from && k <= to);
+  }
+
+  // Moves the paused play on to `to` (microseconds); resolves once its frame is up.
+  async function move(to: number) {
+    const id = state.current;
+    const seeks = state.seeks;
+    // Its audio is never heard, as a play starts again from the scrub: stopped, it no longer
+    // fills, so the media worker demuxes on for the video however far the scrub goes.
+    if (!state.moved) state.started?.clock.close();
+    state.from = to;
+    state.moved = true;
+    render.postMessage({ type: "scrub", id, to } satisfies ToRender);
+    await until(
+      () => state.current !== id || (state.video.id === id && state.video.reached === to),
     );
+    // Stopped: by a seek or a play, which take over, or else by an open or a failure.
+    if (state.current === id || (state.seeks !== seeks && !state.failure)) return;
+    throw state.failure ?? new DOMException("seek: stopped", "AbortError");
+  }
+
+  // Starts playing again from `from` (microseconds); paused, resolves once the frame due then is
+  // drawn.
+  async function go(from: number) {
+    stop();
+    state.from = from;
+    state.moved = false;
+    state.played = false;
     const seeks = ++state.seeks;
     if (state.playing) return play();
 
@@ -519,9 +613,11 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     play,
     pause,
     seek,
+    fastSeek,
     get currentTime() {
       const now = performance.timeOrigin + performance.now();
-      return state.started?.clock.heard(now) ?? state.from / 1e6;
+      if (state.moved || !state.started) return state.from / 1e6;
+      return state.started.clock.heard(now);
     },
     close,
   };

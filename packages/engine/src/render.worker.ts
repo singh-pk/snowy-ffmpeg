@@ -31,7 +31,9 @@ const PREROLL = 250_000;
 const state = {
   compositor: undefined as ReturnType<typeof createCompositor> | undefined,
   // What plays, and its animation frame request.
-  playing: undefined as { output: ReturnType<typeof createVideoOutput>; frame: number } | undefined,
+  playing: undefined as
+    | { id: number; output: ReturnType<typeof createVideoOutput>; frame: number; target: number }
+    | undefined,
 };
 
 function post(message: FromRender) {
@@ -100,6 +102,13 @@ async function init(canvas: OffscreenCanvas) {
   post({ type: "ready" });
 }
 
+// Moves the play `id`, if it still plays, on to `to`.
+function scrub({ id, to }: Extract<ToRender, { type: "scrub" }>) {
+  if (state.playing?.id !== id) return;
+  state.playing.target = to;
+  state.playing.output.moveTo(to);
+}
+
 function stop() {
   if (!state.playing) return;
   self.cancelAnimationFrame(state.playing.frame);
@@ -123,14 +132,19 @@ function play({ id, ring, wake, params, pcm, from }: Extract<ToRender, { type: "
     from,
   );
   const playing = {
+    id,
     output,
     frame: 0,
     first: Number.NaN,
     reported: -1,
+    reportedReached: -1,
     ahead: false,
     stuck: false,
     drawn: false,
     shown: false,
+    // Where it plays from, which a scrub moves on, and the last such target reached, or -1.
+    target: from,
+    reached: -1,
   };
   const timing = { last: 0, next: 0, gaps: new Float64Array(GAPS).fill(REFRESH) };
 
@@ -161,11 +175,13 @@ function play({ id, ring, wake, params, pcm, from }: Extract<ToRender, { type: "
       const running = clock.outputRunning();
       const seen = clock.heard(performance.timeOrigin + time + refresh);
       // The clock starts up to a sample before `from`: the frame shown is never one before.
-      const drawn = output.present(Math.max(Math.round(seen * 1e6), from));
+      const drawn = output.present(Math.max(Math.round(seen * 1e6), playing.target));
+      const reached = output.reached(playing.target) ? playing.target : playing.reached;
 
-      if ((drawn && !playing.drawn) || (running && !playing.shown)) {
+      if ((drawn && !playing.drawn) || (running && !playing.shown) || reached !== playing.reached) {
         playing.drawn ||= drawn;
         playing.shown ||= running;
+        playing.reached = reached;
         report();
       }
     } catch (e) {
@@ -195,11 +211,12 @@ function play({ id, ring, wake, params, pcm, from }: Extract<ToRender, { type: "
 
   // Posts how far decoding is, and whether a frame went up by the running clock, if it changed.
   function report() {
-    const { ahead, stuck, drawn, shown } = playing;
+    const { ahead, stuck, drawn, shown, reached } = playing;
     const now = (ahead ? 1 : 0) | (stuck ? 2 : 0) | (drawn ? 4 : 0) | (shown ? 8 : 0);
-    if (now === playing.reported) return;
+    if (now === playing.reported && reached === playing.reportedReached) return;
     playing.reported = now;
-    post({ type: "video", id, ahead, stuck, drawn, shown });
+    playing.reportedReached = reached;
+    post({ type: "video", id, ahead, stuck, drawn, shown, reached });
   }
 
   async function watch() {
@@ -219,5 +236,6 @@ function play({ id, ring, wake, params, pcm, from }: Extract<ToRender, { type: "
 self.addEventListener("message", ({ data }: MessageEvent<ToRender>) => {
   if (data.type === "init") void init(data.canvas);
   else if (data.type === "play") play(data);
+  else if (data.type === "scrub") scrub(data);
   else stop();
 });
