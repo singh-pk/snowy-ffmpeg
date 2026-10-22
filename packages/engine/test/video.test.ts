@@ -19,7 +19,8 @@ const files = Object.entries(expected).map(([name, e]) => ({ name, stream: e.vid
 // What each browser's WebCodecs cannot decode; the engine's own decoders are for these.
 const UNSUPPORTED: Record<string, string[]> = { firefox: ["hevc"] };
 // What it decodes only in hardware, which a machine may lack while the browser still says it
-// decodes it: WebKit's AV1 needs an Apple M3 or later, so CI's runners fail to decode it.
+// decodes it: CI's virtual runners report a hardware AV1 decoder they lack, so Playwright's
+// WebKit says it supports AV1 and then fails to decode it.
 const HARDWARE: Record<string, string[]> = { webkit: ["av1"] };
 const server = await serveEngine("<!doctype html><title>test</title>");
 
