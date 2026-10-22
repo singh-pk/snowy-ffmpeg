@@ -8,6 +8,7 @@
 
 import {
   AV_NOPTS_VALUE,
+  AVINDEX_KEYFRAME,
   AV_TIME_BASE,
   AVSEEK_FLAG_BACKWARD,
   AVERROR_EAGAIN,
@@ -24,7 +25,7 @@ import type { VideoParams } from "./codec";
 import { createFileSource } from "./io";
 import { createPcmProducer, pcmFormat } from "./pcm";
 import { createProducer } from "./ring";
-import type { FromMedia, MediaInfo, ToMedia, Track } from "./protocol";
+import type { FromMedia, Opened, ToMedia, Track } from "./protocol";
 
 // The kinds of the other streams; data and an unknown type (-1) are "data".
 const OTHER = new Map([
@@ -138,7 +139,7 @@ function createMedia(core: CoreModule) {
 
   // Opens `file` in place of the open one and describes it, with its video streams'
   // parameters.
-  function open(file: File): { info: MediaInfo; video: Record<number, VideoParams> } {
+  function open(file: File): Opened {
     close();
     source.open(file);
     const out = core._malloc(4);
@@ -154,14 +155,41 @@ function createMedia(core: CoreModule) {
     const tracks = Array.from({ length: core._sny_nb_streams(ctx) }, (_, i) => track(i));
     const duration = core._sny_duration(ctx);
     const video: Record<number, VideoParams> = {};
-    for (const t of tracks) if (t.kind === "video") video[t.id] = videoParams(t.id);
+    const index: Opened["index"] = {};
+
+    for (const t of tracks) {
+      if (t.kind !== "video") continue;
+      video[t.id] = videoParams(t.id);
+      index[t.id] = keyframes(t.id);
+    }
+
     // AV_NOPTS_VALUE, the only negative duration, is an unknown one.
     const info = {
       format: str(core._sny_format_name(ctx)),
       duration: duration < 0n ? undefined : Number(duration) / AV_TIME_BASE,
       tracks,
     };
-    return { info, video };
+    return { info, video, index };
+  }
+
+  // The times of stream `id`'s keyframes in its demuxer's index, in microseconds, when they
+  // are due or for some demuxers (MP4's) decoded, and of its last entry, up to which the index
+  // is known: a fragmented MP4's, for one, holds only the fragments read so far.
+  function keyframes(id: number) {
+    const st = core._sny_stream(state.ctx, id);
+    const [num, den] = [core._sny_stream_tb_num(st), core._sny_stream_tb_den(st)];
+    const micros = (entry: number) =>
+      Math.round((Number(core._sny_index_ts(entry)) * num * 1e6) / den);
+    const times: number[] = [];
+    let end = -Infinity;
+
+    for (let i = 0; i < core._sny_index_count(st); i++) {
+      const entry = core._sny_index_entry(st, i);
+      end = Math.max(end, micros(entry));
+      if (core._sny_index_flags(entry) & AVINDEX_KEYFRAME) times.push(micros(entry));
+    }
+
+    return { keyframes: times, end };
   }
 
   // The open file's demuxer, after checking that `streams` are all streams of it.

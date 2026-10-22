@@ -63,6 +63,8 @@ export function createVideoOutput(
     far: false,
     // Just past the first packet, where pictures that lead it are left out.
     leading: false,
+    // Where it plays from, which a scrub moves on.
+    from,
     closed: false,
   };
   const decoding = createDecodeTracker();
@@ -74,7 +76,7 @@ export function createVideoOutput(
       // Out after a later frame went up, it could only take video back.
       if (state.shown && frame.timestamp <= state.shown.timestamp) frame.close();
       else queue.push(frame);
-      if (frame.timestamp < from) queue.drop(from);
+      if (frame.timestamp < state.from) queue.drop(state.from);
       changed();
     },
     error: failed.reject,
@@ -180,7 +182,7 @@ export function createVideoOutput(
     state.at = time;
     // From a seek, nothing goes up until the frame due at its target is decoded: the frames
     // before it come first, and would flash by. Its end, as at a seek to the end, has them all.
-    const sought = state.shown || state.ended || decoding.decodedTo() >= from;
+    const sought = state.shown || state.ended || decoding.decodedTo() >= state.from;
     // Before the stream's first frame, as at a seek to the start of a file whose video starts
     // later, that frame stands for the time before it.
     const frame = sought ? queue.take(Math.max(time, start)) : undefined;
@@ -200,6 +202,18 @@ export function createVideoOutput(
     return true;
   }
 
+  // Goes on to `to` (microseconds), later than where it plays from: the frames before it are
+  // dropped as from a seek, and the latest due up to it goes up as it is decoded.
+  function moveTo(to: number) {
+    state.from = to;
+    queue.drop(to);
+  }
+
+  /** Whether the frame due at `time` (microseconds) is the one on screen. */
+  function reached(time: number) {
+    return state.shown !== undefined && (state.ended || decoding.decodedTo() >= time);
+  }
+
   /** Stops decoding and closes every frame. */
   function close() {
     state.closed = true;
@@ -214,6 +228,8 @@ export function createVideoOutput(
   return {
     done,
     present,
+    moveTo,
+    reached,
     close,
     /** The time, in microseconds, up to which every frame is decoded (src/decoding.ts). */
     decodedTo: decoding.decodedTo,

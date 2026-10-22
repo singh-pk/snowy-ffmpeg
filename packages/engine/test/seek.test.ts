@@ -3,7 +3,9 @@
 //
 // engine.seek in Chromium, Firefox and WebKit, through the public API alone: paused, each seek
 // puts up exactly the frame due at its target, the one FFmpeg's timestamps say, and the clock
-// reads the target; and a seek while playing plays on from there, with the frame due on screen.
+// reads the target; a seek while playing plays on from there, with the frame due on screen;
+// and a scrub, fastSeek on every animation frame, shows frames on the way, never past it, and
+// plays on from where it is let go.
 // Each fixture takes SNOWY_SEEKS seeks (default 10) to the start, the end, frames' own times,
 // between frames and at random; the gate is `SNOWY_SEEKS=50 bun test test/seek.test.ts`.
 // Usage: bun run test.
@@ -33,11 +35,24 @@ const FAILS: Record<string, string[]> = { webkit: ["altref-vp8-opus.webm"] };
 // The long file, sought into while it plays.
 const LONG = "sync-10min.mp4";
 const PLAYING_AT = 300;
+// The file scrubbed through, and for how many animation frames each way: from its start to
+// SCRUB_TO s, through its keyframes, and back.
+const SCRUBBED = "h264-aac.mp4";
+const SCRUB_FRAMES = 90;
+const SCRUB_TO = 2.9;
+// Where the drag back ends, in seconds; and, after playing on from there and pausing, where a
+// scrub goes back to, behind the clock, with no keyframe between.
+const SCRUB_BACK = 0.5;
+const SCRUB_AGAIN = 0.6;
 // How long the screen is read after a seek, in milliseconds: a read may show the canvas as it
 // was up to four frames before, so the last read is the one checked.
 const SETTLE = 100;
 // How far the clock may read from the target, in seconds: the audio starts on a whole sample.
 const SAMPLE = 1e-4;
+// How far the frame on screen may be from the one due at the clock while it plays, in seconds:
+// a frame and more, or on CI, whose virtual machines do not draw in real time, the play test's
+// bound there (test/play.test.ts).
+const SYNC = process.env.CI === "true" ? 1 : 0.1;
 const [width, height] = [320, 180];
 const server = await serveEngine(
   `<!doctype html><title>test</title><canvas width="${width}" height="${height}"></canvas>`,
@@ -200,7 +215,112 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
         // play test bounds sync itself; this checks the seek lands in it.
         const newest = reads.at(-1);
         const id = newest?.[1] ?? 0;
-        expect(Math.abs(due(id) - (newest?.[0] ?? 0))).toBeLessThan(0.1);
+        expect(Math.abs(due(id) - (newest?.[0] ?? 0))).toBeLessThan(SYNC);
+      } finally {
+        await browser.close();
+      }
+    }, 60_000);
+
+    test(`scrubs through ${SCRUBBED} and back, then plays on from where it is let go`, async () => {
+      const browser = await type.launch(options);
+      const v = expected[SCRUBBED]?.video;
+      if (!v) throw new Error(`no video in ${SCRUBBED}`);
+
+      try {
+        const tab = await browser.newPage();
+        await tab.goto(server.url.href);
+        // A user gesture, so audio may start.
+        await tab.mouse.click(1, 1);
+        const got = await tab.evaluate(
+          async ({ entry, page, file, frames, to, back, again, settle }) => {
+            const engine: typeof import("../src/index") = await import(entry);
+            const support: typeof import("./support/page") = await import(page);
+            const canvas = document.querySelector("canvas");
+            if (!canvas) throw new Error("no canvas");
+            const screen: HTMLCanvasElement = canvas;
+            const player = await engine.createEngine({ canvas });
+            const res = await fetch(`/test/fixtures/${file}`);
+            const blob = await res.blob();
+            await player.open(new File([blob], file));
+            await player.seek(0);
+
+            // A drag from `from` to `until` seconds, a fastSeek on every animation frame, with
+            // the screen read on each, along with the scrub's target, which currentTime reads.
+            async function drag(from: number, until: number) {
+              const watching = support.watchScreen(player, screen, (frames * 1000) / 60 + 200);
+              const scrubs: Promise<void>[] = [];
+
+              for (let i = 1; i <= frames; i++) {
+                await new Promise((resolve) => requestAnimationFrame(resolve));
+                scrubs.push(player.fastSeek(from + ((until - from) * i) / frames));
+              }
+
+              const seen = await watching;
+              await Promise.all(scrubs);
+              return seen;
+            }
+
+            const forward = await drag(0, to);
+            const backward = await drag(to, back);
+            const landed = await support.watchScreen(player, canvas, settle);
+            await player.play();
+            const playing = await support.watchScreen(player, canvas, 600);
+            await player.pause();
+            await player.fastSeek(again);
+            const after = await support.watchScreen(player, canvas, settle);
+            // And, played and paused again, a scrub just past the clock, short of the frame up.
+            await player.play();
+            await support.watchScreen(player, canvas, 300);
+            await player.pause();
+            const near = player.currentTime + 0.01;
+            await player.fastSeek(near);
+            const nearly = await support.watchScreen(player, canvas, settle);
+            player.close();
+            const [landedAt, againAt] = [landed.at(-1)?.[1] ?? -1, after.at(-1)?.[1] ?? -1];
+            const nearAt = nearly.at(-1)?.[1] ?? -1;
+            return { forward, backward, landed: landedAt, playing, again: againAt, near, nearAt };
+          },
+          {
+            entry: ENTRY,
+            page: PAGE,
+            file: SCRUBBED,
+            frames: SCRUB_FRAMES,
+            to: SCRUB_TO,
+            back: SCRUB_BACK,
+            again: SCRUB_AGAIN,
+            settle: SETTLE,
+          },
+        );
+
+        const [num = 1, den = 1] = v.timeBase.split("/").map(Number);
+        const due = (id: number) => ((v.pts[id] ?? 0) * num) / den;
+        // Frames on the way, more than the keyframes passed, and none past the scrub either way:
+        // forward, its clock starts up to a sample before its target; back, a frame lasts up to
+        // the longest gap between two.
+        const keys = v.keyframes.filter((k) => (k * num) / den <= SCRUB_TO).length;
+        const longest = Math.max(...v.pts.slice(1).map((pts, i) => pts - (v.pts[i] ?? 0)));
+        expect(new Set(got.forward.map(([, id]) => id)).size).toBeGreaterThan(2 * keys);
+        expect(new Set(got.backward.map(([, id]) => id)).size).toBeGreaterThan(2 * keys);
+
+        for (const [time, id] of got.forward) {
+          expect(due(id), `forward: frame ${id} at ${time} s`).toBeLessThanOrEqual(time + SAMPLE);
+        }
+
+        for (const [time, id] of got.backward) {
+          expect(due(id), `back: frame ${id} at ${time} s`).toBeGreaterThanOrEqual(
+            time - (longest * num) / den,
+          );
+        }
+
+        // Exactly where it is let go, and it plays on from there, in sync.
+        expect(got.landed).toBe(frameAt(v, Math.round(SCRUB_BACK * 1e6)));
+        expect(got.playing[0]?.[0] ?? 0).toBeGreaterThanOrEqual(SCRUB_BACK - SAMPLE);
+        expect(got.playing.at(-1)?.[0] ?? 0).toBeGreaterThan(SCRUB_BACK + 0.3);
+        const last = got.playing.at(-1);
+        expect(Math.abs(due(last?.[1] ?? 0) - (last?.[0] ?? 0))).toBeLessThan(SYNC);
+        // Back behind where it paused, exactly.
+        expect(got.again).toBe(frameAt(v, Math.round(SCRUB_AGAIN * 1e6)));
+        expect(got.nearAt, `at ${got.near} s`).toBe(frameAt(v, Math.round(got.near * 1e6)));
       } finally {
         await browser.close();
       }

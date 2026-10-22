@@ -39,6 +39,8 @@ export type ToRender =
       pcm: SharedArrayBuffer;
       from: number;
     }
+  // The play `id`, paused, goes on to `to` (microseconds) by decoding on: a scrub forward.
+  | { type: "scrub"; id: number; to: number }
   | { type: "stop" };
 
 export type FromRender =
@@ -52,6 +54,8 @@ export type FromRender =
       // A frame is on screen, whether or not the clock runs.
       drawn: boolean;
       shown: boolean;
+      // The last target (microseconds) whose frame due is on screen, or -1.
+      reached: number;
     }
   | { type: "error"; id: number; message: string };
 
@@ -60,6 +64,17 @@ export type Track =
   | { id: number; kind: "video"; codec: string; width: number; height: number }
   | { id: number; kind: "audio"; codec: string; sampleRate: number; channels: number }
   | { id: number; kind: "subtitle" | "data" | "attachment"; codec: string };
+
+/** An open file: what it holds, and for each video stream its parameters and keyframes. */
+export interface Opened {
+  info: MediaInfo;
+  video: Record<number, VideoParams>;
+  /**
+   * The times of its keyframes in the demuxer's index, in microseconds, and of the index's last
+   * entry, so how far it is known; none and -Infinity without one.
+   */
+  index: Record<number, { keyframes: number[]; end: number }>;
+}
 
 export interface MediaInfo {
   /** FFmpeg's names for the container format, such as "mov,mp4,m4a,3gp,3g2,mj2". */
@@ -91,7 +106,7 @@ export type ToMedia =
     };
 
 export type FromMedia =
-  | { type: "opened"; id: number; info: MediaInfo; video: Record<number, VideoParams> }
+  | ({ type: "opened"; id: number } & Opened)
   | { type: "buffered"; id: number }
   | { type: "demuxed"; id: number }
   | { type: "error"; id: number; message: string };
