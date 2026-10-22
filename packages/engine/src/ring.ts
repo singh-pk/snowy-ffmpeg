@@ -120,6 +120,11 @@ export function createProducer(ring: SharedArrayBuffer, wake: MessagePort) {
     }
   }
 
+  // Whether `need` bytes are free.
+  function fits(need: number) {
+    return capacity - (((control[WRITE] ?? 0) - Atomics.load(control, READ)) | 0) >= need;
+  }
+
   /**
    * Copies `size` bytes of `src` from `offset` into a record, waiting for room. False once the
    * consumer has closed the ring, so the producer stops.
@@ -134,10 +139,43 @@ export function createProducer(ring: SharedArrayBuffer, wake: MessagePort) {
     offset: number,
     size: number,
   ) {
+    return put(stream, flags, pts, dts, duration, src, offset, size, true);
+  }
+
+  /**
+   * Copies `size` bytes of `src` from `offset` into a record if the ring has room for it, for
+   * a producer that waits on more than this ring. False if it has not, or once the consumer
+   * has closed the ring (`closed`).
+   */
+  function offer(
+    stream: number,
+    flags: number,
+    pts: bigint,
+    dts: bigint,
+    duration: number,
+    src: Uint8Array,
+    offset: number,
+    size: number,
+  ) {
+    return put(stream, flags, pts, dts, duration, src, offset, size, false);
+  }
+
+  // Writes a record, waiting for room if `wait`, or else only if it fits.
+  function put(
+    stream: number,
+    flags: number,
+    pts: bigint,
+    dts: bigint,
+    duration: number,
+    src: Uint8Array,
+    offset: number,
+    size: number,
+    wait: boolean,
+  ) {
     const need = padded(size);
     if (need > capacity) throw new RangeError(`a ${size}-byte packet exceeds the ring`);
     if ((duration | 0) !== duration) throw new RangeError(`packet duration ${duration}`);
-    if (!reserve(need)) return false;
+    if (wait ? !reserve(need) : Atomics.load(control, CLOSED) || !fits(need)) return false;
     const written = control[WRITE] ?? 0;
     const at = written & (capacity - 1);
     words[at >> 2] = size;
@@ -163,9 +201,14 @@ export function createProducer(ring: SharedArrayBuffer, wake: MessagePort) {
     return true;
   }
 
-  /** Writes the END record after the last packet. */
+  /** Writes the END record after the last packet, waiting for room, as the tests' producer does. */
   function end() {
     return write(END, 0, 0n, 0n, 0, bytes, 0, 0);
+  }
+
+  /** Writes the END record if the ring has room for it, as `offer`. */
+  function offerEnd() {
+    return offer(END, 0, 0n, 0n, 0, bytes, 0, 0);
   }
 
   /** Writes the FAILED record in place of the remaining packets. */
@@ -173,7 +216,34 @@ export function createProducer(ring: SharedArrayBuffer, wake: MessagePort) {
     return write(FAILED, 0, 0n, 0n, 0, bytes, 0, 0);
   }
 
-  return { write, end, fail, blocking };
+  /** Whether the consumer has closed the ring. */
+  function closed() {
+    return Atomics.load(control, CLOSED) === 1;
+  }
+
+  /**
+   * Raises or lowers the flag that has the consumer wake the producer as it frees room. Raised
+   * before the producer reads where it waits from and checks the ring, so a release after the
+   * check wakes it.
+   */
+  function waitingForRoom(on: boolean) {
+    Atomics.store(control, PRODUCER_WAITING, on ? 1 : 0);
+  }
+
+  /**
+   * A count to `sleep` on, for a producer that waits on this ring alone: the consumer's
+   * position, which every release and a close move.
+   */
+  function bell() {
+    return Atomics.load(control, READ);
+  }
+
+  /** Waits until the count moves from `seen`, at once if it already has. */
+  function sleep(seen: number) {
+    Atomics.wait(control, READ, seen);
+  }
+
+  return { write, offer, end, offerEnd, fail, blocking, closed, waitingForRoom, bell, sleep };
 }
 
 /**
@@ -192,12 +262,14 @@ export function closeRing(ring: SharedArrayBuffer) {
 /**
  * The consumer's side of `ring`, for a thread that never blocks, with `wake`, the end of the
  * channel whose other end the producer has. `blocked` runs once for each `watch` when the
- * producer's thread then blocks.
+ * producer's thread then blocks. `freed` runs as it frees room while the producer waits, and as
+ * it closes the ring, for a producer that waits on more than this ring (src/pcm.ts).
  */
 export function createConsumer(
   ring: SharedArrayBuffer,
   wake: MessagePort,
   blocked: () => void = () => {},
+  freed: () => void = () => {},
 ) {
   const { capacity, control, bytes, words, longs } = views(ring);
   // Ends the wait in progress, if any.
@@ -245,7 +317,11 @@ export function createConsumer(
     const read = control[READ] ?? 0;
     const size = words[(read & (capacity - 1)) >> 2] ?? 0;
     Atomics.store(control, READ, (read + padded(size)) | 0);
-    if (Atomics.load(control, PRODUCER_WAITING)) Atomics.notify(control, READ);
+
+    if (Atomics.load(control, PRODUCER_WAITING)) {
+      Atomics.notify(control, READ);
+      freed();
+    }
   }
 
   /** Resolves once the ring holds a packet, or at once when it is closed. */
@@ -266,6 +342,7 @@ export function createConsumer(
   /** Stops the producer, and ends a wait of this consumer's own: no write will. */
   function close() {
     closeRing(ring);
+    freed();
     waiting.end();
     wake.close();
   }

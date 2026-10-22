@@ -341,9 +341,12 @@ export async function render(
     }
   }
 
-  // Resolves once the frames up to `time` are decoded, the end is, or decoding fails.
+  // Resolves once the frames up to `time` are decoded, the end is, or decoding fails. Decoding
+  // waits for the media time while the queue is full, so what is due then goes up, as on each
+  // animation frame in the render worker.
   async function decoded(time: number) {
     while (output.decodedTo() < time && !output.ended() && !failure.error) {
+      if (output.full()) output.present(time);
       const changed = Promise.withResolvers<void>();
       decoding.changed = changed.resolve;
       await changed.promise;

@@ -157,6 +157,34 @@ test("closing the ring stops the producer and silences the consumer", () => {
   expect(output[0]?.every((v) => v === 0)).toBe(true);
 });
 
+test("offer writes what fits, and the doorbell rings as room frees up for a waiting producer", () => {
+  const ring = createPcmRing(256, 2, RATE);
+  const producer = createPcmProducer(ring);
+  const consumer = createPcmConsumer(ring);
+  const control = createPcmControl(ring);
+  expect(producer.offer(frames(0, 300), 0, 300)).toBe(256);
+  expect(producer.offer(frames(256, 1), 0, 1)).toBe(0);
+  // Read with no producer waiting, the doorbell stays quiet.
+  const quiet = producer.bell();
+  consumer.read(quantum(), 0);
+  expect(producer.bell()).toBe(quiet);
+  expect(producer.offer(frames(256, 1), 0, 1)).toBe(1);
+  // Raised before the bell is read, as the media worker does, so the read after rings it.
+  producer.waitingForRoom(true);
+  const seen = producer.bell();
+  consumer.read(quantum(), 0);
+  expect(producer.bell()).not.toBe(seen);
+  // Returns at once, the bell having moved.
+  producer.sleep(seen);
+  const woken = producer.bell();
+  control.wakeProducer();
+  expect(producer.bell()).not.toBe(woken);
+  const closing = producer.bell();
+  control.close();
+  expect(producer.bell()).not.toBe(closing);
+  expect(producer.offer(frames(0, 1), 0, 1)).toBe(-1);
+});
+
 test("a ring size that is not a power of two is an error", () => {
   expect(() => createPcmRing(1000, 2, RATE)).toThrow(RangeError);
 });
