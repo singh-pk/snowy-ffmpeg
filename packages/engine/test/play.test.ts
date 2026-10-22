@@ -28,10 +28,12 @@ const FILE = "sync-10min.mp4";
 const expected: Record<string, { video: Video; audio: { resampled: { frames: number } } }> =
   await Bun.file(new URL("fixtures/expected.json", import.meta.url)).json();
 const video = expected[FILE]?.video ?? { timeBase: "1/1", width: 0, height: 0, pts: [] };
-// Where play starts as video waits for packets, where it starts at the end of the audio, and
-// the long one; each is played, paused and played on, for WATCH seconds a play.
+// Where play starts as video waits for packets, where it starts at the end of the audio, where
+// it starts before the first frame, and the long one; each is played, paused and played on,
+// for WATCH seconds a play. Frame 0 reads like a black canvas, so the late video plays after a
+// file that leaves another frame up, to catch a first frame not shown.
 const SPARSE = "sparse-h264-aac.mp4";
-const STARTS = [SPARSE, "short-audio-h264-aac.mp4", FILE];
+const STARTS = [SPARSE, "short-audio-h264-aac.mp4", "late-video-h264-aac.mp4", FILE];
 const WATCH = 2;
 // How far a play's clock at its last read may be from WATCH seconds on from where it started,
 // in seconds: play resolves, and the watch begins, under 0.15 s after the clock starts.
@@ -67,10 +69,11 @@ const server = await serveEngine(
 afterAll(() => server.stop(true));
 
 // How far `time` is from the time frame `id` of `v` is due, in seconds: 0 while it is due,
-// negative while it is early, positive once it is late.
+// negative while it is early, positive once it is late. The first frame is due from the start,
+// before its own time (docs/architecture.md#video-output).
 function offset(v: Video, id: number, time: number) {
   const [num = 1, den = 1] = v.timeBase.split("/").map(Number);
-  const due = ((v.pts[id] ?? 0) * num) / den;
+  const due = id === 0 ? -Infinity : ((v.pts[id] ?? 0) * num) / den;
   const next = ((v.pts[id + 1] ?? Infinity) * num) / den;
   if (time < due) return time - due;
   return time >= next ? time - next : 0;
@@ -95,11 +98,13 @@ function frameAt(v: Video, time: number) {
 // first read, in Firefox and now and then in Chromium, may show a frame from five or more
 // frames before, with the frame due on the next read under a millisecond later in Chromium.
 // That is no late frame: play prerolls a quarter second of video before the clock starts. So
-// the first read is left out in every browser.
+// the first read is left out in every browser. It may even show the file played before, so it
+// does not count as the newest frame read.
 function fresh(reads: [time: number, id: number][], firefox: boolean) {
   const newest = { id: -1 };
   return reads.filter(([, id], i) => {
-    const stale = i === 0 || (firefox && id < newest.id);
+    if (i === 0) return false;
+    const stale = firefox && id < newest.id;
     newest.id = Math.max(newest.id, id);
     return !stale;
   });
