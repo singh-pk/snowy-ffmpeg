@@ -6,7 +6,7 @@
 // time through the compositor. Decoding waits while the queue is full, its frames are a
 // second ahead of the media time, or the decoder has enough packets in hand, so neither memory nor the decoder's backlog grows.
 
-import { makesFrame, type VideoParams, videoConfig } from "./codec";
+import { isRasl, makesFrame, type VideoParams, videoConfig } from "./codec";
 import type { createCompositor } from "./compositor";
 import { createDecodeTracker } from "./decoding";
 import { createFrameQueue } from "./frames";
@@ -31,9 +31,11 @@ const frameBytes = (frame: VideoFrame) =>
  * Decodes the packets of the stream with parameters `p` from `ring`, woken by `port`, and shows
  * them with `compositor`. `done` resolves once the decoder has decoded the last packet or the
  * output is closed, and rejects if decoding fails. `changed` runs on each event that may change
- * how far decoding is: a frame decoded, the decoder taking a packet, a wait for packets or for the
- * media time begun, the end decoded, and the media worker blocking while `watch`ed. `freed` runs as the ring frees
- * room for a media worker that waits, and as it closes (src/ring.ts).
+ * how far decoding is: a frame decoded, the decoder taking a packet, a wait for packets or for
+ * the media time begun, the end decoded, and the media worker blocking while `watch`ed. `freed`
+ * runs as the ring frees room for a media worker that waits, and as it closes (src/ring.ts). It
+ * plays from `from` (microseconds), its packets starting at a keyframe before it: of the frames
+ * before, it keeps only the last, the one due then.
  */
 export function createVideoOutput(
   ring: SharedArrayBuffer,
@@ -42,6 +44,7 @@ export function createVideoOutput(
   compositor: ReturnType<typeof createCompositor>,
   changed: () => void = () => {},
   freed: () => void = () => {},
+  from = 0,
 ) {
   const consumer = createConsumer(ring, port, changed, freed);
   const queue = createFrameQueue(FRAME_BUDGET, frameBytes);
@@ -58,6 +61,8 @@ export function createVideoOutput(
     first: -Infinity,
     // Waiting for the media time to reach the frames decoded.
     far: false,
+    // Just past the first packet, where pictures that lead it are left out.
+    leading: false,
     closed: false,
   };
   const decoding = createDecodeTracker();
@@ -69,6 +74,7 @@ export function createVideoOutput(
       // Out after a later frame went up, it could only take video back.
       if (state.shown && frame.timestamp <= state.shown.timestamp) frame.close();
       else queue.push(frame);
+      if (frame.timestamp < from) queue.drop(from);
       changed();
     },
     error: failed.reject,
@@ -80,6 +86,7 @@ export function createVideoOutput(
   });
 
   const micros = (t: number) => Math.round((t * num * 1e6) / den);
+  const start = micros(p.start);
 
   // Whether every frame is decoded to TIME_AHEAD past the media time: measured from what the
   // decoder has let out, not its latest frame, so a frame it holds back is never cut off.
@@ -108,7 +115,9 @@ export function createVideoOutput(
       const packet = consumer.peek();
 
       if (!packet) {
-        // Returns at once once the ring is closed, so the check above ends the loop.
+        // Closed by the main thread, as a seek or an open stops this play, no packet comes; a
+        // wait would return at once, and again, starving the stop message behind it.
+        if (consumer.closed()) return;
         state.waiting = true;
         changed();
         await consumer.wait();
@@ -118,7 +127,17 @@ export function createVideoOutput(
 
       if (packet.stream === END) break;
       if (packet.stream === FAILED) throw new Error("demuxing failed");
-      if (decoder.state === "unconfigured") decoder.configure(videoConfig(p, packet.data));
+      const first = decoder.state === "unconfigured";
+      if (first) decoder.configure(videoConfig(p, packet.data));
+
+      // Started at a CRA, as after a seek, the RASL pictures after it refer to pictures the
+      // decoder never had.
+      if (!first && state.leading && isRasl(p, packet.data)) {
+        consumer.release();
+        continue;
+      }
+
+      state.leading = first;
       // A missing pts takes the dts, right for a stream without B-frames. A raw stream with
       // them has neither and is not played yet.
       const pts = packet.pts === NO_TIMESTAMP ? packet.dts : packet.pts;
@@ -159,7 +178,12 @@ export function createVideoOutput(
    */
   function present(time: number) {
     state.at = time;
-    const frame = queue.take(time);
+    // From a seek, nothing goes up until the frame due at its target is decoded: the frames
+    // before it come first, and would flash by. Its end, as at a seek to the end, has them all.
+    const sought = state.shown || state.ended || decoding.decodedTo() >= from;
+    // Before the stream's first frame, as at a seek to the start of a file whose video starts
+    // later, that frame stands for the time before it.
+    const frame = sought ? queue.take(Math.max(time, start)) : undefined;
     // Waiting for the media time, only its nearing lets decoding on.
     if (state.far ? !far() : frame) wake.room();
     if (!frame) return false;

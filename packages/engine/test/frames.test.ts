@@ -63,3 +63,15 @@ test("a frame wider than the canvas is centred between bars above and below", ()
   expect(at(1, -0.5)).toEqual([1, 1]);
   expect(at(0, 1)[1]).toBeLessThan(0);
 });
+
+test("dropping before a time keeps the latest frame due then, and the later ones", () => {
+  const { all, closed } = frames(0, 33, 66, 100);
+  const queue = createFrameQueue(1000, () => 1);
+  for (const f of all) queue.push(f);
+  queue.drop(80);
+  expect(closed).toEqual([0, 33]);
+  expect(queue.take(80)?.timestamp).toBe(66);
+  queue.drop(80);
+  expect(queue.take(100)?.timestamp).toBe(100);
+  expect(closed).toEqual([0, 33]);
+});

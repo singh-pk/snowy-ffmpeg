@@ -107,7 +107,7 @@ function stop() {
   state.playing = undefined;
 }
 
-function play({ id, ring, wake, params, pcm }: Extract<ToRender, { type: "play" }>) {
+function play({ id, ring, wake, params, pcm, from }: Extract<ToRender, { type: "play" }>) {
   stop();
   if (!state.compositor) throw new Error("play before init");
   const clock = createPcmControl(pcm);
@@ -120,6 +120,7 @@ function play({ id, ring, wake, params, pcm }: Extract<ToRender, { type: "play" 
     state.compositor,
     () => update(),
     clock.wakeProducer,
+    from,
   );
   const playing = {
     output,
@@ -128,6 +129,7 @@ function play({ id, ring, wake, params, pcm }: Extract<ToRender, { type: "play" 
     reported: -1,
     ahead: false,
     stuck: false,
+    drawn: false,
     shown: false,
   };
   const timing = { last: 0, next: 0, gaps: new Float64Array(GAPS).fill(REFRESH) };
@@ -158,10 +160,12 @@ function play({ id, ring, wake, params, pcm }: Extract<ToRender, { type: "play" 
       // so the frame put up is the latest due.
       const running = clock.outputRunning();
       const seen = clock.heard(performance.timeOrigin + time + refresh);
-      output.present(Math.round(seen * 1e6));
+      // The clock starts up to a sample before `from`: the frame shown is never one before.
+      const drawn = output.present(Math.max(Math.round(seen * 1e6), from));
 
-      if (running && !playing.shown) {
-        playing.shown = true;
+      if ((drawn && !playing.drawn) || (running && !playing.shown)) {
+        playing.drawn ||= drawn;
+        playing.shown ||= running;
         report();
       }
     } catch (e) {
@@ -182,7 +186,8 @@ function play({ id, ring, wake, params, pcm }: Extract<ToRender, { type: "play" 
     output.watch();
     const blocked = clock.producerWaiting() || output.blocked();
     const decoded = output.decodedTo();
-    if (Number.isNaN(playing.first) && decoded > -Infinity) playing.first = decoded;
+    // From the target: the frames before it are decoded, and all but one dropped.
+    if (Number.isNaN(playing.first) && decoded > -Infinity) playing.first = Math.max(decoded, from);
     playing.ahead = decoded - playing.first >= PREROLL || output.ended();
     playing.stuck = blocked && (output.starved() || output.full());
     report();
@@ -190,11 +195,11 @@ function play({ id, ring, wake, params, pcm }: Extract<ToRender, { type: "play" 
 
   // Posts how far decoding is, and whether a frame went up by the running clock, if it changed.
   function report() {
-    const { ahead, stuck, shown } = playing;
-    const now = (ahead ? 1 : 0) | (stuck ? 2 : 0) | (shown ? 4 : 0);
+    const { ahead, stuck, drawn, shown } = playing;
+    const now = (ahead ? 1 : 0) | (stuck ? 2 : 0) | (drawn ? 4 : 0) | (shown ? 8 : 0);
     if (now === playing.reported) return;
     playing.reported = now;
-    post({ type: "video", id, ahead, stuck, shown });
+    post({ type: "video", id, ahead, stuck, drawn, shown });
   }
 
   async function watch() {

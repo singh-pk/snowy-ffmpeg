@@ -39,22 +39,36 @@ export function createFrameQueue<F extends QueuedFrame>(
     bytes += n;
   }
 
+  // Drops the first `n` frames, without closing them.
+  function shift(n: number) {
+    for (let i = 0; i < n; i++) bytes -= sizes[i] ?? 0;
+    frames.copyWithin(0, n);
+    sizes.copyWithin(0, n);
+    frames.length -= n;
+    sizes.length -= n;
+  }
+
+  /**
+   * Closes the frames due at `time` (microseconds) but the latest: they would never be shown
+   * in time, as at a seek's target.
+   */
+  function drop(time: number) {
+    let due = 0;
+    while (due < frames.length && (frames[due]?.timestamp ?? 0) <= time) due++;
+    if (due < 2) return;
+    for (let i = 0; i < due - 1; i++) frames[i]?.close();
+    shift(due - 1);
+  }
+
   /**
    * The latest frame due at `time` (microseconds), which the caller then owns, after closing
    * the earlier ones: they were never shown in time. Undefined while no frame is due.
    */
   function take(time: number) {
-    let due = 0;
-    while (due < frames.length && (frames[due]?.timestamp ?? 0) <= time) due++;
-    if (due === 0) return undefined;
-
-    for (let i = 0; i < due - 1; i++) frames[i]?.close();
-    const frame = frames[due - 1];
-    for (let i = 0; i < due; i++) bytes -= sizes[i] ?? 0;
-    frames.copyWithin(0, due);
-    sizes.copyWithin(0, due);
-    frames.length -= due;
-    sizes.length -= due;
+    drop(time);
+    const frame = frames[0];
+    if (!frame || frame.timestamp > time) return undefined;
+    shift(1);
     return frame;
   }
 
@@ -71,5 +85,5 @@ export function createFrameQueue<F extends QueuedFrame>(
     bytes = 0;
   }
 
-  return { push, take, full, clear };
+  return { push, drop, take, full, clear };
 }

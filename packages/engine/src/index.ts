@@ -31,6 +31,14 @@ export interface Engine {
   play(): Promise<void>;
   /** Pauses; `play` goes on from here. Rejects if playing has failed. */
   pause(): Promise<void>;
+  /**
+   * Goes to `time`, in seconds, at most the duration: the frame due then is on screen once it
+   * resolves, and audio goes on from there if it was playing. A play still starting goes on
+   * from `time` instead; a seek that a later one replaces resolves. Rejects if playing has
+   * failed, or with an AbortError if an open stops it. Paused in a hidden page, it resolves
+   * once the page is shown.
+   */
+  seek(time: number): Promise<void>;
   /** The media time, in seconds, of what is being heard and seen now. */
   readonly currentTime: number;
   /** Stops the engine's workers. */
@@ -157,6 +165,7 @@ interface Playback {
   clock: ReturnType<typeof createPcmControl>;
   publish(): void;
   primed(): boolean;
+  drawn(): boolean;
   heard(): boolean;
   stop(): void;
 }
@@ -178,8 +187,11 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     next: 0,
     // Whether the last call was play, not pause.
     playing: false,
+    // Where the next play starts, in microseconds; and how many seeks there have been.
+    from: 0,
+    seeks: 0,
     // How far the render worker has decoded, as it last reported, and for which play.
-    video: { id: -1, ahead: false, stuck: false, shown: false },
+    video: { id: -1, ahead: false, stuck: false, drawn: false, shown: false },
     closed: false,
   };
   // Wakes the waits of `until`.
@@ -216,10 +228,11 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
 
   function fail(error: Error) {
     state.failure ??= error;
+    state.from = 0;
     stop();
   }
 
-  // Starts the open file playing into `context` from its start, as play `id`.
+  // Starts the open file playing into `context` from `state.from`, as play `id`.
   async function startPlayback(context: AudioContext, id: number): Promise<Playback> {
     const opened = state.opened;
     if (!opened) throw new Error("play: no file is open");
@@ -229,7 +242,8 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     const video = opened.info.tracks.find((t) => t.kind === "video");
     const params = video && opened.video[video.id];
     const frames = pcmFrames(context.sampleRate);
-    const pcm = createPcmRing(frames, CHANNELS, context.sampleRate);
+    const from = state.from;
+    const pcm = createPcmRing(frames, CHANNELS, context.sampleRate, from / 1e6);
     const clock = createPcmControl(pcm);
     // Held while it prerolls: a context made in a user gesture starts running by itself, and
     // one that played the last file still runs.
@@ -248,7 +262,7 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     const wake = new MessageChannel();
 
     if (params) {
-      const message = { type: "play", id, ring, wake: wake.port2, params, pcm } as const;
+      const message = { type: "play", id, ring, wake: wake.port2, params, pcm, from } as const;
       render.postMessage(message satisfies ToRender, [wake.port2]);
     } else {
       wake.port2.close();
@@ -259,7 +273,14 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     const demux = { buffered: false, done: false };
 
     const demuxed = media.send(
-      { type: "demux", ring, wake: wake.port1, streams, audio: { stream: audio.id, pcm, preroll } },
+      {
+        type: "demux",
+        ring,
+        wake: wake.port1,
+        streams,
+        from,
+        audio: { stream: audio.id, pcm, preroll },
+      },
       [wake.port1],
       () => {
         demux.buffered = true;
@@ -338,6 +359,11 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
       return prerolled.done;
     }
 
+    // Whether the frame due at the start is on screen; without video, once it may start.
+    function drawn() {
+      return params ? state.video.id === id && state.video.drawn : primed();
+    }
+
     // Whether it is heard, by a settled timestamp, and the frame on screen went up by it.
     function heard() {
       const shown = !params || (state.video.id === id && state.video.shown);
@@ -347,7 +373,7 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     everyFrame();
     void watch();
 
-    return { id, clock, publish, primed, heard, stop: stopPlayback };
+    return { id, clock, publish, primed, drawn, heard, stop: stopPlayback };
   }
 
   async function stopStarted(playback: Promise<Playback>) {
@@ -371,15 +397,15 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     stop();
     state.failure = undefined;
     state.opened = undefined;
+    state.from = 0;
     const reply = await media.send({ type: "open", file });
     if (reply.type !== "opened") throw new Error(`open: unexpected ${reply.type}`);
     state.opened = { info: reply.info, video: reply.video };
     return reply.info;
   }
 
-  async function play() {
-    if (state.failure) throw state.failure;
-    state.playing = true;
+  // What plays, started from `state.from` unless something does, and its context.
+  async function begin() {
     const context = (state.context ??= new AudioContext({ latencyHint: "playback" }));
 
     if (!state.playback) {
@@ -391,6 +417,30 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     const started = await startedOrCleared(playback);
     // Unless an open stopped it while it started.
     if (state.playback === playback) state.started = started;
+    return { context, started };
+  }
+
+  async function play() {
+    if (state.failure) throw state.failure;
+    state.playing = true;
+
+    // A seek while it starts stops what it starts, and it goes on with the seek's.
+    for (;;) {
+      const seeks = state.seeks;
+
+      try {
+        await playOnce();
+        return;
+      } catch (e) {
+        if (state.seeks === seeks || state.failure) throw e;
+        // A pause that came meanwhile wins.
+        if (!state.playing) return;
+      }
+    }
+  }
+
+  async function playOnce() {
+    const { context, started } = await begin();
     const stopped = () => state.current !== started.id;
 
     // Rejects if an open or a failure stopped it while it waited.
@@ -427,6 +477,33 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     state.started?.publish();
   }
 
+  async function seek(time: number) {
+    if (state.failure) throw state.failure;
+    const duration = state.opened?.info.duration;
+    if (!state.opened) throw new Error("seek: no file is open");
+    if (!Number.isFinite(time) || time < 0) throw new RangeError(`seek: ${time} s`);
+    stop();
+    state.from = Math.min(
+      Math.round(Math.min(time, duration ?? time) * 1e6),
+      Number.MAX_SAFE_INTEGER,
+    );
+    const seeks = ++state.seeks;
+    if (state.playing) return play();
+
+    try {
+      const { started } = await begin();
+      await until(() => state.current !== started.id || started.drawn());
+      if (state.current === started.id) return;
+    } catch (e) {
+      if (state.seeks === seeks) throw e;
+    }
+
+    // Stopped: by a later seek, which takes over, or else by an open or a failure.
+    if (state.seeks === seeks || state.failure) {
+      throw state.failure ?? new DOMException("seek: stopped", "AbortError");
+    }
+  }
+
   function close() {
     if (state.closed) return;
     state.closed = true;
@@ -441,8 +518,10 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     open,
     play,
     pause,
+    seek,
     get currentTime() {
-      return state.started?.clock.heard(performance.timeOrigin + performance.now()) ?? 0;
+      const now = performance.timeOrigin + performance.now();
+      return state.started?.clock.heard(now) ?? state.from / 1e6;
     },
     close,
   };
