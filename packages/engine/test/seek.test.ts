@@ -49,6 +49,10 @@ const SCRUB_AGAIN = 0.6;
 const SETTLE = 100;
 // How far the clock may read from the target, in seconds: the audio starts on a whole sample.
 const SAMPLE = 1e-4;
+// How far the frame on screen may be from the one due at the clock while it plays, in seconds:
+// a frame and more, or on CI, whose virtual machines do not draw in real time, the play test's
+// bound there (test/play.test.ts).
+const SYNC = process.env.CI === "true" ? 1 : 0.1;
 const [width, height] = [320, 180];
 const server = await serveEngine(
   `<!doctype html><title>test</title><canvas width="${width}" height="${height}"></canvas>`,
@@ -211,7 +215,7 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
         // play test bounds sync itself; this checks the seek lands in it.
         const newest = reads.at(-1);
         const id = newest?.[1] ?? 0;
-        expect(Math.abs(due(id) - (newest?.[0] ?? 0))).toBeLessThan(0.1);
+        expect(Math.abs(due(id) - (newest?.[0] ?? 0))).toBeLessThan(SYNC);
       } finally {
         await browser.close();
       }
@@ -313,7 +317,7 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
         expect(got.playing[0]?.[0] ?? 0).toBeGreaterThanOrEqual(SCRUB_BACK - SAMPLE);
         expect(got.playing.at(-1)?.[0] ?? 0).toBeGreaterThan(SCRUB_BACK + 0.3);
         const last = got.playing.at(-1);
-        expect(Math.abs(due(last?.[1] ?? 0) - (last?.[0] ?? 0))).toBeLessThan(0.1);
+        expect(Math.abs(due(last?.[1] ?? 0) - (last?.[0] ?? 0))).toBeLessThan(SYNC);
         // Back behind where it paused, exactly.
         expect(got.again).toBe(frameAt(v, Math.round(SCRUB_AGAIN * 1e6)));
         expect(got.nearAt, `at ${got.near} s`).toBe(frameAt(v, Math.round(got.near * 1e6)));
