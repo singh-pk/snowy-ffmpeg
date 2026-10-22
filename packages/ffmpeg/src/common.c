@@ -68,6 +68,12 @@ API int64_t sny_packet_pos(const AVPacket *pkt) { return pkt->pos; }
 API int sny_packet_flags(const AVPacket *pkt) { return pkt->flags; }
 API uint8_t *sny_packet_data(const AVPacket *pkt) { return pkt->data; }
 API int sny_packet_size(const AVPacket *pkt) { return pkt->size; }
+// Moves src's data, side data and timestamps into dst, freeing what dst held, and leaves src
+// blank: a packet is queued without copying or allocating.
+API void sny_packet_move(AVPacket *dst, AVPacket *src) {
+  av_packet_unref(dst);
+  av_packet_move_ref(dst, src);
+}
 
 // Makes pkt a new packet of `size` bytes with these timestamps and flags, and returns its
 // data for JavaScript to fill, or NULL when out of memory. This is how a packet core
