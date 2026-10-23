@@ -61,10 +61,10 @@ export class InvalidMessageError extends Error {
   }
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
+export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const isCount = (value: unknown, min: number): value is number =>
+export const isCount = (value: unknown, min: number): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= min;
 
 const isSeq = (value: unknown) => isCount(value, 1);
