@@ -33,6 +33,6 @@ body:
     id: browser
     attributes:
       label: Browser and version
-      placeholder: Chrome 156, Firefox 157, Safari 27
+      placeholder: Chrome 156 on macOS 26
     validations:
       required: true

@@ -1,11 +1,11 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: LGPL-2.1-or-later
 //
-// Opens every fixture with the WASM core in Chromium, Firefox and WebKit, decodes its audio
-// and video, and compares the result with native FFmpeg 9.0.2. Usage: bun test (after building dist/).
+// Opens every fixture with the WASM core in Chromium, decodes its audio and video,
+// and compares the result with native FFmpeg 9.0.2. Usage: bun test (after building dist/).
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { type Browser, type BrowserType, chromium, firefox, webkit } from "playwright";
+import { type Browser, chromium } from "playwright";
 import expected from "./fixtures/expected.json";
 import { serve } from "../../../tooling/test-server";
 
@@ -43,76 +43,70 @@ interface Result {
 const fixtures: Record<string, Result> = expected;
 const names = Object.keys(fixtures);
 
-for (const [engine, type] of [
-  ["chromium", chromium],
-  ["firefox", firefox],
-  ["webkit", webkit],
-] as [string, BrowserType][]) {
-  describe(engine, () => {
-    let browser: Browser;
-    let isolated = false;
-    let results: Record<string, Result> = {};
-    let transferred: Record<string, Result> = {};
+describe("every fixture", () => {
+  let browser: Browser;
+  let isolated = false;
+  let results: Record<string, Result> = {};
+  let transferred: Record<string, Result> = {};
 
-    beforeAll(async () => {
-      browser = await type.launch();
-      const page = await browser.newPage();
-      page.on("console", (m) => m.type() === "error" && console.error(`[${engine}]`, m.text()));
-      page.on("pageerror", (e) => console.error(`[${engine}]`, e.message));
-      await page.goto(server.url.href);
-      isolated = await page.evaluate(() => crossOriginIsolated);
-      const run = (url: string) =>
-        page.evaluate(
-          ({ worker: src, list }) =>
-            new Promise<Record<string, Result>>((resolve) => {
-              const worker = new Worker(src, { type: "module" });
-              worker.addEventListener("message", (e) => resolve(e.data));
-              worker.addEventListener("error", (e) => resolve({ worker: { error: e.message } }));
-              worker.postMessage(list);
-            }),
-          { worker: url, list: names },
-        );
+  beforeAll(async () => {
+    browser = await chromium.launch();
+    const page = await browser.newPage();
+    page.on("console", (m) => m.type() === "error" && console.error(m.text()));
+    page.on("pageerror", (e) => console.error(e.message));
+    await page.goto(server.url.href);
+    isolated = await page.evaluate(() => crossOriginIsolated);
+    const run = (url: string) =>
+      page.evaluate(
+        ({ worker: src, list }) =>
+          new Promise<Record<string, Result>>((resolve) => {
+            const worker = new Worker(src, { type: "module" });
+            worker.addEventListener("message", (e) => resolve(e.data));
+            worker.addEventListener("error", (e) => resolve({ worker: { error: e.message } }));
+            worker.postMessage(list);
+          }),
+        { worker: url, list: names },
+      );
 
-      results = await run("/test/demux.worker.js");
-      transferred = await run("/test/demux.worker.js?transfer");
-    }, 120_000);
-    afterAll(() => browser?.close());
+    results = await run("/test/demux.worker.js");
+    transferred = await run("/test/demux.worker.js?transfer");
+  }, 120_000);
+  afterAll(() => browser?.close());
 
-    test("page is cross-origin isolated", () => expect(isolated).toBe(true));
-    test("a decoder asking for more threads than the pool fails", () =>
-      expect(results.threadPool as unknown).toBe("rejected"));
-    test("a subtitle decoder refuses packets and frames", () =>
-      expect(results.subtitleDecoder as unknown).toBe("rejected"));
-    test("a flushed resampler starts afresh", () =>
-      expect(results.resampleTwice as unknown).toBe("same"));
+  test("page is cross-origin isolated", () => expect(isolated).toBe(true));
+  test("a decoder asking for more threads than the pool fails", () =>
+    expect(results.threadPool as unknown).toBe("rejected"));
+  test("a subtitle decoder refuses packets and frames", () =>
+    expect(results.subtitleDecoder as unknown).toBe("rejected"));
+  test("a flushed resampler starts afresh", () =>
+    expect(results.resampleTwice as unknown).toBe("same"));
 
-    for (const name of names) {
-      test(name, () => {
-        const { streams = [], ...rest } = results[name] ?? {};
-        const { streams: want = [], ...wantRest } = fixtures[name] ?? {};
-        expect(rest).toEqual({ ...wantRest, rewind: "ok" });
-        expect(streams.map(withoutSamples)).toEqual(want.map(withoutSamples));
+  for (const name of names) {
+    test(name, () => {
+      const { streams = [], ...rest } = results[name] ?? {};
+      const { streams: want = [], ...wantRest } = fixtures[name] ?? {};
+      expect(rest).toEqual({ ...wantRest, rewind: "ok" });
+      expect(streams.map(withoutSamples)).toEqual(want.map(withoutSamples));
 
-        for (const [i, s] of streams.entries()) {
-          const w = want[i]?.audio;
-          if (s.audio && w) expect(audioDiff(s.audio, w)).toBeLessThanOrEqual(FLOAT_TOLERANCE);
+      for (const [i, s] of streams.entries()) {
+        const w = want[i]?.audio;
+        if (s.audio && w) expect(audioDiff(s.audio, w)).toBeLessThanOrEqual(FLOAT_TOLERANCE);
 
-          if (s.audio?.resampled && w?.resampled) {
-            expect(s.audio.resampled.samples).toBe(w.resampled.samples);
-            const diff = probeDiff(s.audio.resampled.probe, w.resampled.probe);
-            expect(diff).toBeLessThanOrEqual(FLOAT_TOLERANCE);
-          }
-
-          // Every decoded frame, converted, must be something WebCodecs can display.
-          if (s.video) expect(s.video.videoFrame).toBe("ok");
+        if (s.audio?.resampled && w?.resampled) {
+          expect(s.audio.resampled.samples).toBe(w.resampled.samples);
+          const diff = probeDiff(s.audio.resampled.probe, w.resampled.probe);
+          expect(diff).toBeLessThanOrEqual(FLOAT_TOLERANCE);
         }
 
-        // Copying a stream to another module must not change a single sample.
-        expect(transferred[name]).toEqual(results[name]);
-      });
-    }
-  });
-}
+        // Every decoded frame, converted, must be something WebCodecs can display.
+        if (s.video) expect(s.video.videoFrame).toBe("ok");
+      }
+
+      // Copying a stream to another module must not change a single sample.
+      expect(transferred[name]).toEqual(results[name]);
+    });
+  }
+});
 
 // A stream with its decoded output reduced to what must match exactly: decoded video
 // entirely, audio but for its float samples.

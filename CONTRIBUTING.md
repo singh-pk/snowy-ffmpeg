@@ -17,8 +17,8 @@ You need [Bun](https://bun.sh) (the version in the root `package.json`), and Doc
 ```sh
 bun install                 # every package's dependencies; also enables the pre-commit hook
 bun run build               # every package; FFmpeg's first build takes a while
-bunx playwright install     # browsers for the tests, once
-bun test                    # every package, in Chromium, Firefox and WebKit
+bunx playwright install chromium  # the browser for the tests, once
+bun test                    # every package, in Chromium
 ```
 
 Each package lives in `packages/<name>` with its own README, `docs/`, CHANGELOG and, where it has more rules, AGENTS.md. Inside a package, `bun run build`, `bun test` and its other scripts work on that package alone.

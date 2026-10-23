@@ -1,14 +1,13 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// engine.open in Chromium, Firefox and WebKit: for every fixture it reports what native
+// engine.open in Chromium: for every fixture it reports what native
 // ffprobe reports (test/fixtures/expected.json), and it rejects a file that is not media, an
 // engine that is closed and a media worker that failed to load. Usage: bun run test.
 
-import { afterAll, describe, expect, test } from "bun:test";
-import { chromium } from "playwright";
+import { afterAll, expect, test } from "bun:test";
 import { serve } from "../../../tooling/test-server";
-import { browsers } from "./support/browsers";
+import { launch } from "./support/browsers";
 import type { Track } from "../src/index";
 import { ENTRY, serveEngine } from "./support/serve";
 
@@ -32,81 +31,76 @@ afterAll(async () => {
   await broken.stop(true);
 });
 
-for (const [name, [type, options]] of Object.entries(browsers)) {
-  describe(name, () => {
-    test("opens every fixture", async () => {
-      const browser = await type.launch(options);
+test("opens every fixture", async () => {
+  const browser = await launch();
 
-      try {
-        const tab = await browser.newPage();
-        await tab.goto(server.url.href);
+  try {
+    const tab = await browser.newPage();
+    await tab.goto(server.url.href);
 
-        // Each fixture's MediaInfo, or the error; and the error for a file that is not media.
-        const { opened, notMedia } = await tab.evaluate(
-          async ({ entry, names }) => {
-            const engine: typeof import("../src/index") = await import(entry);
-            const started = await engine.createEngine({ canvas: document.createElement("canvas") });
+    // Each fixture's MediaInfo, or the error; and the error for a file that is not media.
+    const { opened, notMedia } = await tab.evaluate(
+      async ({ entry, names }) => {
+        const engine: typeof import("../src/index") = await import(entry);
+        const started = await engine.createEngine({ canvas: document.createElement("canvas") });
 
-            async function open(path: string) {
-              const res = await fetch(path);
-              const blob = await res.blob();
+        async function open(path: string) {
+          const res = await fetch(path);
+          const blob = await res.blob();
 
-              try {
-                const info = await started.open(new File([blob], path.split("/").pop() ?? ""));
-                return info;
-              } catch (e) {
-                return String(e);
-              }
-            }
-
-            const infos = [];
-
-            for (const n of names) {
-              const info = await open(`/test/fixtures/${n}`);
-              infos.push(info);
-            }
-
-            const rejected = await open("/test/fixtures/expected.json");
-            started.close();
-            return { opened: infos, notMedia: rejected };
-          },
-          { entry: ENTRY, names: Object.keys(expected) },
-        );
-
-        for (const [i, [file, e]] of Object.entries(expected).entries()) {
-          const info = opened[i];
-          if (typeof info !== "object") throw new Error(`${file}: ${String(info)}`);
-          expect(info.format, file).toBe(e.format);
-          // ffprobe prints the duration to the microsecond, the unit FFmpeg keeps it in.
-          expect(info.duration, file).toBeCloseTo(e.duration, 6);
-          const { id, codec, width, height } = e.video;
-          const audio = e.audio;
-          const tracks: Track[] = [
-            { id, kind: "video", codec, width, height },
-            {
-              id: audio.id,
-              kind: "audio",
-              codec: audio.codec,
-              sampleRate: audio.sampleRate,
-              channels: audio.channels,
-            },
-          ];
-          expect(info.tracks, file).toEqual(tracks.toSorted((a, b) => a.id - b.id));
+          try {
+            const info = await started.open(new File([blob], path.split("/").pop() ?? ""));
+            return info;
+          } catch (e) {
+            return String(e);
+          }
         }
 
-        expect(notMedia).toStartWith("Error: open: ");
-      } finally {
-        await browser.close();
-      }
-    }, 60_000);
-  });
-}
+        const infos = [];
+
+        for (const n of names) {
+          const info = await open(`/test/fixtures/${n}`);
+          infos.push(info);
+        }
+
+        const rejected = await open("/test/fixtures/expected.json");
+        started.close();
+        return { opened: infos, notMedia: rejected };
+      },
+      { entry: ENTRY, names: Object.keys(expected) },
+    );
+
+    for (const [i, [file, e]] of Object.entries(expected).entries()) {
+      const info = opened[i];
+      if (typeof info !== "object") throw new Error(`${file}: ${String(info)}`);
+      expect(info.format, file).toBe(e.format);
+      // ffprobe prints the duration to the microsecond, the unit FFmpeg keeps it in.
+      expect(info.duration, file).toBeCloseTo(e.duration, 6);
+      const { id, codec, width, height } = e.video;
+      const audio = e.audio;
+      const tracks: Track[] = [
+        { id, kind: "video", codec, width, height },
+        {
+          id: audio.id,
+          kind: "audio",
+          codec: audio.codec,
+          sampleRate: audio.sampleRate,
+          channels: audio.channels,
+        },
+      ];
+      expect(info.tracks, file).toEqual(tracks.toSorted((a, b) => a.id - b.id));
+    }
+
+    expect(notMedia).toStartWith("Error: open: ");
+  } finally {
+    await browser.close();
+  }
+}, 60_000);
 
 // Three opens of a file that is not media, the last one after close, and an open that is
-// pending when its engine closes. The code is the same in every browser, so Chromium alone
-// runs it.
+// pending when its engine closes.
 async function failures(url: URL) {
-  const browser = await chromium.launch(browsers.chromium?.[1]);
+  const browser = await launch();
 
   try {
     const tab = await browser.newPage();

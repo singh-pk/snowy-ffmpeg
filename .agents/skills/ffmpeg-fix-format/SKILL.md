@@ -16,4 +16,4 @@ Paths and commands are relative to `packages/ffmpeg/`.
    - **I/O:** seeks past the end, short reads or `AVSEEK_SIZE` handling in `test/support/file-source.js` and `src/demux.c` `read_cb`/`seek_cb`.
    - **Probing:** `sny_set_probe_limits` too small for the file.
    - **API gap:** JavaScript needs a value the module doesn't export; use the `ffmpeg-add-api` skill.
-5. **Fix, then prove it:** the new fixture passes in all three browsers, every other fixture still passes, and `bun run check` is clean. Keep fixtures under 100 KB.
+5. **Fix, then prove it:** the new fixture passes in Chromium, every other fixture still passes, and `bun run check` is clean. Keep fixtures under 100 KB.

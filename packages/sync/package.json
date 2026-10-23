@@ -1,0 +1,13 @@
+{
+  "name": "@snowy-media/sync",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Watch-together sessions for Snowy: a local file streamed to a group, with shared chat, over a stateless MoQ relay and WebRTC peer groups",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/singh-pk/snowy-media.git",
+    "directory": "packages/sync"
+  },
+  "type": "module"
+}

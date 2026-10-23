@@ -14,7 +14,7 @@
 FFmpeg 9 compiled to WebAssembly as small, lazily loaded modules for playing and editing video in the browser. It is the media engine of [Snowy](https://github.com/singh-pk/snowy-media).
 
 - **Every format.** The `core` module opens every single-file container FFmpeg knows (350 demuxers) and decodes every common audio codec and every subtitle codec. Video is decoded by `video` (H.264, HEVC, VP9, AV1 through dav1d, ProRes, MPEG-2 and the other codecs real files use) and the remaining codecs by `video-ext` and `audio-ext`, each loaded only when a file needs it.
-- **Fast.** It demuxes a 750 MB 1080p file in 0.25–1 s in Chromium, Firefox and WebKit alike, where other browser demuxers slow down by up to 100× in some engines ([benchmarks](bench/README.md)).
+- **Fast.** It demuxes a 750 MB 1080p file in under a second in Chromium, where libav.js takes about 4 s ([benchmarks](bench/README.md)).
 - **Exact.** Every fixture demuxes to the same streams, packets and timestamps as native `ffprobe`, and decodes to the same audio and the same video frames, byte for byte, as native `ffmpeg`.
 - **Reproducible.** Pinned, checksummed and GPG-verified sources; CI checks that the output is byte-identical.
 
@@ -36,7 +36,7 @@ Each module is its own entry point: `@snowy-media/ffmpeg/core`, `/audio-ext`, `/
 
 ## Requirements
 
-A [cross-origin isolated](https://developer.mozilla.org/docs/Web/API/Window/crossOriginIsolated) page (COOP + COEP headers) in a browser with WebAssembly SIMD and threads: current Chromium, Firefox and Safari. Modules run in a dedicated worker.
+A [cross-origin isolated](https://developer.mozilla.org/docs/Web/API/Window/crossOriginIsolated) page (COOP + COEP headers) in current stable desktop Chromium (Chrome, Edge), which has WebAssembly SIMD and threads. Modules run in a dedicated worker.
 
 ## Usage
 
@@ -150,7 +150,7 @@ const picture = new VideoFrame(video.HEAPU8.slice(dst, dst + size), {
 video._free(dst);
 ```
 
-`_sny_to_video_format` passes a frame through untouched when Chromium, Firefox and WebKit all accept its pixel format, and otherwise converts it with libswscale (10-bit to 8-bit, 4:2:2 and 4:4:4 to I420 or RGB). The decoder's own frame stays available, planes and all, through `_sny_frame_data` and `_sny_frame_linesize`, for a WebGL or WebGPU renderer that wants full precision. Every decoder produces exactly what native FFmpeg does.
+`_sny_to_video_format` passes a frame through untouched when it is I420, I420A, NV12 or 8-bit RGB, at an even size unless RGB, and otherwise converts it with libswscale (10-bit to 8-bit, 4:2:2 and 4:4:4 to I420 or RGB). The decoder's own frame stays available, planes and all, through `_sny_frame_data` and `_sny_frame_linesize`, for a WebGL or WebGPU renderer that wants full precision. Every decoder produces exactly what native FFmpeg does.
 
 Every `_sny_*` call that can fail returns a negative AVERROR code, and `_sny_strerror` describes it. The full API is in [`src/`](src): [`demux.c`](src/demux.c), [`decode.c`](src/decode.c), [`audio.c`](src/audio.c), [`video.c`](src/video.c) and [`common.c`](src/common.c); `dist/core/index.d.ts` types every function and constant. [docs/architecture.md](docs/architecture.md) explains the design.
 
@@ -171,7 +171,7 @@ Requires Docker with buildx, and [Bun](https://bun.sh).
 ```sh
 bun install
 bun run build   # dist/<module>/ for each module: module .js, .wasm, index.js, index.d.ts
-bun test        # Chromium, Firefox, WebKit (run `bunx playwright install` once)
+bun test        # Chromium (run `bunx playwright install chromium` once)
 ```
 
 ## Contributing

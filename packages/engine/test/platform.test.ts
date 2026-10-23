@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// createEngine's platform check in Chromium, Firefox and WebKit: it starts where the baseline
+// createEngine's platform check in Chromium: it starts where the baseline
 // is met, and names the missing feature where it is not. Usage: bun run test.
 
-import { afterAll, describe, expect, test } from "bun:test";
-import { type BrowserType, chromium, firefox, type LaunchOptions, type Page } from "playwright";
-import { browsers } from "./support/browsers";
+import { afterAll, expect, test } from "bun:test";
+import type { LaunchOptions, Page } from "playwright";
+import { launch } from "./support/browsers";
 import { ENTRY, serveEngine } from "./support/serve";
 
 const page = "<!doctype html><title>test</title>";
@@ -18,15 +18,9 @@ afterAll(async () => {
   await notIsolated.stop(true);
 });
 
-// Chromium and Firefox with WebGPU switched off; WebKit has no switch.
-const withoutWebGPU: [string, BrowserType, LaunchOptions][] = [
-  ["chromium", chromium, { args: ["--disable-features=WebGPU"] }],
-  ["firefox", firefox, { headless: false, firefoxUserPrefs: { "dom.webgpu.enabled": false } }],
-];
-
 // Opens `url` in a fresh browser and starts an engine: "ok", or the feature it names missing.
-async function start(type: BrowserType, options: LaunchOptions, url: URL) {
-  const browser = await type.launch(options);
+async function start(url: URL, options?: LaunchOptions) {
+  const browser = await launch(options);
 
   try {
     const tab: Page = await browser.newPage();
@@ -48,23 +42,17 @@ async function start(type: BrowserType, options: LaunchOptions, url: URL) {
   }
 }
 
-for (const [name, [type, options]] of Object.entries(browsers)) {
-  describe(name, () => {
-    test("starts on a cross-origin isolated page", async () => {
-      const result = await start(type, options, isolated.url);
-      expect(result).toBe("ok");
-    }, 60_000);
+test("starts on a cross-origin isolated page", async () => {
+  const result = await start(isolated.url);
+  expect(result).toBe("ok");
+}, 60_000);
 
-    test("names cross-origin isolation when the page lacks it", async () => {
-      const result = await start(type, options, notIsolated.url);
-      expect(result).toBe("cross-origin-isolation");
-    }, 60_000);
-  });
-}
+test("names cross-origin isolation when the page lacks it", async () => {
+  const result = await start(notIsolated.url);
+  expect(result).toBe("cross-origin-isolation");
+}, 60_000);
 
-for (const [name, type, options] of withoutWebGPU) {
-  test(`${name}: names WebGPU when it is off`, async () => {
-    const result = await start(type, options, isolated.url);
-    expect(result).toBe("webgpu");
-  }, 60_000);
-}
+test("names WebGPU when it is off", async () => {
+  const result = await start(isolated.url, { args: ["--disable-features=WebGPU"] });
+  expect(result).toBe("webgpu");
+}, 60_000);

@@ -15,7 +15,7 @@ The playback pipeline of [Snowy](https://github.com/singh-pk/snowy-media): it re
 
 ## Requirements
 
-A page served with cross-origin isolation (`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`) in a browser with WebAssembly SIMD and threads, AudioWorklet, WebGPU on an `OffscreenCanvas` in a worker, and WebCodecs. There is no fallback: where something is missing, `createEngine` says what.
+A page served with cross-origin isolation (`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`) in desktop Chromium (Chrome, Edge), which has all it needs: WebAssembly SIMD and threads, AudioWorklet, WebGPU on an `OffscreenCanvas` in a worker, and WebCodecs. There is no fallback: where something is missing, `createEngine` says what.
 
 ```ts
 import { createEngine, UnsupportedPlatformError } from "@snowy-media/engine";
