@@ -97,10 +97,14 @@ function frameAt(v: Video, time: number) {
 // first read, in Firefox and now and then in Chromium, may show a frame from five or more
 // frames before, with the frame due on the next read under a millisecond later in Chromium.
 // That is no late frame: play prerolls a quarter second of video before the clock starts. So
-// the first read is left out in every browser.
-function fresh(reads: [time: number, id: number][], firefox: boolean) {
-  const newest = { id: -1 };
-  return reads.filter(([, id], i) => {
+// the first read is left out in every browser. Firefox's reads also trail while nothing is
+// drawn, so a play's first reads there can show the frame left up by the file played before,
+// far ahead: until one is no more than two frames ahead of the frame due, they are left out.
+function fresh(v: Video, reads: [time: number, id: number][], firefox: boolean) {
+  const newest = { id: -1, started: !firefox };
+  return reads.filter(([time, id], i) => {
+    if (!newest.started && id - frameAt(v, time) > 2) return false;
+    newest.started = true;
     const stale = i === 0 || (firefox && id < newest.id);
     newest.id = Math.max(newest.id, id);
     return !stale;
@@ -145,7 +149,7 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
 
           // Stale reads come more under load (4 % locally, 6 % on CI); most reads must still be
           // checked.
-          const checked = fresh(got.playing, firefox);
+          const checked = fresh(video, got.playing, firefox);
           expect(got.playing.length - checked.length).toBeLessThan(got.playing.length / 10);
           const early = { offset: 0, time: 0, id: 0 };
           const late = { offset: 0, time: 0, id: 0 };
@@ -230,10 +234,6 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
               await player.play();
               const second = await support.watchScreen(player, canvas, seconds * 1000);
               plays.push({ first, paused, second });
-              // Back to the first frame: the next file's first reads can still show what is up,
-              // and frame 0 is ahead of none of its frames.
-              await player.pause();
-              await player.seek(0);
             }
 
             player.close();
@@ -272,7 +272,7 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
 
           // Each frame due on screen as it plays.
           for (const [phase, reads] of Object.entries({ first: play.first, second: play.second })) {
-            const checked = fresh(reads, firefox);
+            const checked = fresh(v, reads, firefox);
             const start = reads.slice(0, 8).map(([time, id]) => `${ms(time)}:${id}`);
             const what = `${file} ${phase}: reads checked; first reads ${start.join(" ")}`;
             expect(checked.length, what).toBeGreaterThan(reads.length * 0.9);
@@ -325,7 +325,7 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
         expect(Math.abs((reads.at(-1)?.[0] ?? 0) - end)).toBeLessThan(realTime);
         expect(reads.at(-1)?.[1]).toBe(v.pts.length - 1);
 
-        for (const [time, id] of fresh(reads, firefox)) {
+        for (const [time, id] of fresh(v, reads, firefox)) {
           const o = offset(v, id, time);
           expect(-o, `frame ${id} at ${time} s`).toBeLessThan(earliness);
           expect(o, `frame ${id} at ${time} s`).toBeLessThan(lateness(name));
