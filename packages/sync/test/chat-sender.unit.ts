@@ -191,6 +191,43 @@ test("a batch that fails to seal keeps its messages for the next writable event"
   expect(sent).toEqual([message]);
 });
 
+test("a batch the stream refuses keeps its messages for the next writable event", async () => {
+  const { chat, options, batches } = sender();
+  const publish = options.publish.bind(options);
+
+  options.publish = () => {
+    throw new Error("stream closed");
+  };
+
+  const message = await chat.write(text("kept"), 0);
+  const error = await rejection(chat.writable());
+  expect(error).toBeInstanceOf(Error);
+
+  options.publish = publish;
+  await chat.writable();
+  const sent = await messagesOf(batches);
+  expect(sent).toEqual([message]);
+});
+
+test("a batch refused on a flush a write started is kept, with nothing left unhandled", async () => {
+  const { chat, options, batches } = sender();
+  const publish = options.publish.bind(options);
+  await chat.writable();
+  const { promise: refused, resolve } = Promise.withResolvers<void>();
+
+  options.publish = () => {
+    resolve();
+    throw new Error("stream closed");
+  };
+
+  const message = await chat.write(text("kept"), 0);
+  await refused;
+  options.publish = publish;
+  await chat.writable();
+  const sent = await messagesOf(batches);
+  expect(sent).toEqual([message]);
+});
+
 test("a message is stored before it is queued, and one that can't be stored takes no seq", async () => {
   const { chat, options, batches, kept, published } = sender();
   await chat.writable();

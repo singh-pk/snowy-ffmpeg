@@ -89,10 +89,16 @@ type Link = {
   peer: PeerId;
   send(message: Message): void;              // control messages: have, request, busy, …
   deliver(key: ObjectKey, bytes: Uint8Array): void;
-  on(event: LinkEvent, handler: Handler): void;
+  on(event: "message", handler: (value: unknown) => unknown): void;   // parsed, not yet checked
+  on(event: "object", handler: (key: ObjectKey, bytes: Uint8Array) => unknown): void;
+  on(event: "close", handler: () => unknown): void;
   close(): void;
 };
 ```
+
+- A link is to one peer, and the transport opens it: over the relay's inbox tracks, or a direct connection's data channels. The peer's chat tracks are subscribed outside it.
+- Its `close` event fires once, whichever end closed it. Nothing arrives after it, including what was on its way.
+- A peer may have two links open at once, the relay's and a direct one. A request is answered on the link it came on, and an ask goes on the newest link. When any of a peer's links closes, what was asked of that peer moves on to the next candidate; if the reply comes anyway on another link, the first answer fills the gap.
 
 ## Identity, sessions and access
 
@@ -623,7 +629,7 @@ Chat stays append-only:
   | `{ type: "chat-versions", versions }` | A reconnecting peer | One batch per run beyond it, delivered; nothing if there are none |
 
   A delivered batch goes through the asker's receiver like any other, naming the responder, so a reply that doesn't prove itself or falls short moves the ask on.
-- **On reconnect**, a peer sends its version vector `{ author: seq }` once to the first candidate, who replies with one batch per run it holds beyond that, authors the vector doesn't name included. Each `seq` is the highest held with none missing below it, so the reply also fills older gaps.
+- **On reconnect**, a peer sends its version vector `{ author: seq }` once to the linked peer ranked first by `SHA-256(peer ‖ self ‖ "chat-versions")`, so reconnecting peers spread over different ones, who replies with one batch per run it holds beyond that, authors the vector doesn't name included. If that peer's last link closes before any batch from it arrives, the vector, as it then is, goes to the next. A peer that holds nothing beyond the vector sends nothing, so the vector may go to the next one later, when that peer leaves; what comes back is then only what is still missing. Each `seq` is the highest held with none missing below it, so the reply also fills older gaps.
 - There is no gossip when nothing is missing.
 
 ### Authenticity
@@ -931,5 +937,5 @@ The sync package needs these engine capabilities through public exports:
 
 ## Testing
 
-- **Unit tests** (`test/*.unit.ts`, `bun run test`) run in Chromium, each file in a module worker of its own page (`tooling/run-unit.ts`), as every package's tests do: never in Bun, so Web Crypto, `DataView` and base64 are tested in the browser that ships them. The worker is a dedicated one, so the chat store's OPFS sync access handles are tested there too, each test in a session directory of its own. They run in CI's `sync test` job on every change to the package.
+- **Unit tests** (`test/*.unit.ts`, `bun run test`) run in Chromium, each file in a module worker of its own page (`tooling/run-unit.ts`), as every package's tests do: never in Bun, so Web Crypto, `DataView` and base64 are tested in the browser that ships them. The worker is a dedicated one, so the chat store's OPFS sync access handles are tested there too, each test in a session directory of its own. Peers in a test are joined by links in memory (`test/support/memory-link.ts`), which carry messages as JSON, as a transport does. They run in CI's `sync test` job on every change to the package.
 - **Browser tests** drive a page with Playwright, as the engine's do, for the modules that need one: IndexedDB, File System Access, WebTransport, WebRTC, and the engine itself. The first such module adds them.

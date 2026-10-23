@@ -26,7 +26,9 @@ This package runs live sessions over one transport. In a watch session, a local 
 | `src/chat-holdings.ts` | what a peer holds of each author's chat, one checkpoint per run, to answer repairs and version vectors |
 | `src/chat-repairs.ts` | asking for missing chat: one ask per author, moved to the next ranked peer on `gone` or a closed link |
 | `src/chat-requests.ts` | the chat repair messages between peers, checked, and the side that answers them |
+| `src/chat-session.ts` | a peer's chat in one session: the store, log, sending, receiving and repair, wired to its links |
 | `src/chat-store.ts` | chat in the local store: an append-only OPFS log per author, read back after a reload |
+| `src/link.ts` | the link to one peer that both transports give, so nothing else refers to either |
 | `src/opfs.d.ts` | types for OPFS sync access handles, which TypeScript's DOM library lacks |
 | `src/rank.ts` | ranking peers by hash, so every asker picks alike and different questions spread out |
 | `test/` | unit tests (`*.unit.ts`), run in Chromium by `unit.test.ts`; `test/support/` holds what they share |
