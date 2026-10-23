@@ -61,6 +61,7 @@ jobs:
       engine: ${{ steps.diff.outputs.engine }}
       ffmpeg: ${{ steps.diff.outputs.ffmpeg }}
       sync: ${{ steps.diff.outputs.sync }}
+      timeline: ${{ steps.diff.outputs.timeline }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -84,10 +85,13 @@ jobs:
           if changed engine; then engine=true; fi
           sync=false
           if changed sync; then sync=true; fi
+          timeline=false
+          if changed timeline; then timeline=true; fi
           {
             echo "ffmpeg=$ffmpeg"
             echo "engine=$engine"
             echo "sync=$sync"
+            echo "timeline=$timeline"
           } >> "$GITHUB_OUTPUT"
 
   # Also builds the modules the engine job tests against; ffmpeg's own tests run only when
@@ -185,13 +189,34 @@ jobs:
       - run: bunx playwright install --with-deps chromium
       - run: bun run test
 
+  # Unit tests in Chromium (packages/timeline/AGENTS.md).
+  timeline:
+    name: timeline test
+    needs: changes
+    if: needs.changes.outputs.timeline == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/timeline
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+          no-cache: true
+      - run: bun install --frozen-lockfile
+      - run: bunx playwright install --with-deps chromium
+      - run: bun run test
+
   # The one check the main ruleset requires, so adding, renaming or skipping a job never
   # needs a ruleset change; a new job must be added to needs below. Skipped jobs pass;
   # failed or cancelled ones do not.
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [check, repo, changes, build, engine, sync]
+    needs: [check, repo, changes, build, engine, sync, timeline]
     runs-on: ubuntu-latest
     steps:
       - name: Every job passed or was skipped

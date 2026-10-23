@@ -4,6 +4,22 @@ The [root AGENTS.md](../../AGENTS.md) applies here too; this file adds what is s
 
 This package is the edit document of the Snowy editor: a magnetic timeline of sequences, clips and anchors, the operations that change it, and the linear history every person and agent editing a project shares. It has no DOM, network, storage or media. Read [docs/architecture.md](docs/architecture.md) before changing it; code follows that design, and a change to the design changes that document in the same pull request.
 
+## Commands
+
+| Task | Command |
+| --- | --- |
+| Tests (Chromium) | `bun run test` |
+| Typecheck | `bun run typecheck` |
+
+## Map
+
+| Path | What it holds |
+| --- | --- |
+| `src/time.ts` | flicks: frame lengths, exact conversions from time bases and through speed, and snapping to frames |
+| `src/ids.ts` | key ids and item ids, `<author>.<seq>.<index>` |
+| `src/position.ts` | position keys: fractional indexes that order a storyline and fit between any two |
+| `test/` | unit tests (`*.unit.ts`), run in Chromium by `unit.test.ts` |
+
 ## Rules
 
 1. **Operations are the only way in.** Nothing changes the document except applying a batch of operations from the history or the pending batches.
