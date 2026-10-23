@@ -10,6 +10,10 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 
 - Video in the codecs WebCodecs does not decode, such as MPEG-2, MPEG-4 Part 2, ProRes, DNxHD and FFV1, plays: `@snowy-media/ffmpeg` decodes it in a worker of its own, loading its `video` module, or `video-ext` for rarer codecs, the first time a file needs it.
 
+### Changed
+
+- Video colour now matches native FFmpeg's whatever decoded it. The engine converts Y′CbCr to RGB itself, from the colour the stream states, where Chromium converted it differently for hardware and software decoders. A stream that states no matrix shows as BT.601, as FFmpeg shows it. Chromium still converts a 10-bit frame from a GPU decoder.
+
 ### Fixed
 
 - WebCodecs video decoders now get the colour the file states (primaries, transfer, matrix and range), so a VP9 HDR stream, whose bitstream does not state its transfer, is no longer decoded as BT.709 SDR.

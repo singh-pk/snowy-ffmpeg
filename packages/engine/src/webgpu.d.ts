@@ -12,6 +12,8 @@ declare const GPUBufferUsage: {
 
 declare const GPUTextureUsage: {
   readonly COPY_SRC: GPUFlagsConstant;
+  readonly COPY_DST: GPUFlagsConstant;
+  readonly TEXTURE_BINDING: GPUFlagsConstant;
   readonly RENDER_ATTACHMENT: GPUFlagsConstant;
 };
 

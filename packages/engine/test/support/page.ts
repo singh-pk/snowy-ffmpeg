@@ -368,6 +368,8 @@ export async function render(
     for (const time of times) {
       await decoded(time);
       if (failure.error) throw failure.error;
+      // Uploaded first, as the render worker's animation frames would wait for it.
+      await output.prepare(time);
       const drawn = output.present(time);
 
       // Nothing new on screen: the canvas still shows the last frame, which was read already.
