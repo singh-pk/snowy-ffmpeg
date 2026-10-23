@@ -38,6 +38,8 @@ export type ChatOptions = {
   publish: ChatSenderOptions["publish"];
   /** The wall clock, in milliseconds. */
   now?: () => number;
+  /** Called whenever the log may have changed: a message written, or a batch taken. */
+  onChange?: () => void;
 };
 
 /** The chat was closed: it takes no more messages. */
@@ -125,7 +127,10 @@ async function wire(options: ChatOptions, self: KeyId, store: Store) {
       await receiver.receive(key, bytes, from);
     } catch {
       // Refused: nothing to do.
+      return;
     }
+
+    options.onChange?.();
   }
 
   // Stored, then shown, before the sender can queue it: the batch that carries it back finds it
@@ -135,6 +140,7 @@ async function wire(options: ChatOptions, self: KeyId, store: Store) {
 
     await counted(store.append(self, { messages: [message] }), writing);
     log.add(message, NOT_LATE);
+    options.onChange?.();
   }
 
   // This peer's own batch goes through the same path as everyone's, into the holdings, so it

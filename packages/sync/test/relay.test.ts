@@ -1,0 +1,91 @@
+// SPDX-FileCopyrightText: 2026 The Snowy Authors
+// SPDX-License-Identifier: MIT
+//
+// The relay connection (src/relay.ts) against a real MoQ relay (test/support/relay.ts), in
+// Chromium: presence, links that open, carry messages and objects, and close, and chat whose
+// tracks and repairs go through the relay. Each scenario runs in a worker of its own page
+// (test/support/relay-worker.ts). Needs Docker. Usage: bun run test
+
+import { afterAll, expect, test } from "bun:test";
+import { chromium } from "playwright";
+import { serve } from "../../../tooling/test-server";
+import { startRelay } from "./support/relay";
+import type { RelayConfig, Scenario } from "./support/relay-worker";
+
+const pkg = new URL("../", import.meta.url);
+const WORKER = "/test/dist/relay/relay-worker.js";
+
+const built = await Bun.build({
+  entrypoints: [`${pkg.pathname}test/support/relay-worker.ts`],
+  outdir: `${pkg.pathname}test/dist/relay`,
+  target: "browser",
+});
+if (!built.success) throw new AggregateError(built.logs, "the relay worker didn't build");
+
+// Each is stopped after the tests, even if starting the next one fails.
+const server = serve(pkg, "<!doctype html><title>relay</title>");
+afterAll(() => server.stop(true));
+const browser = await chromium.launch();
+afterAll(() => browser.close());
+
+// Runs a scenario in a worker of a fresh page, against a relay of its own, resolving with what
+// it posted. A relay per scenario keeps one that fails from failing the next: MOQtail's stops
+// answering once a peer leaves while it handles that peer's PUBLISH.
+async function scenario(name: Scenario) {
+  const relay = await startRelay();
+  const tab = await browser.newPage();
+
+  try {
+    await tab.goto(server.url.href);
+    const config: RelayConfig = { url: relay.url, hash: relay.hash };
+    const posted = await tab.evaluate(
+      async ([worker, scenarioName, relayConfig]) => {
+        const running = new Worker(worker, { type: "module" });
+        const { promise, resolve } = Promise.withResolvers<unknown>();
+        running.addEventListener("message", ({ data }) => resolve(data));
+        running.addEventListener("error", ({ message }) => resolve({ error: message }));
+        running.postMessage({ scenario: scenarioName, config: relayConfig });
+        return promise;
+      },
+      [WORKER, name, config] as const,
+    );
+    if (typeof posted !== "object" || posted === null) throw new Error("the worker posted nothing");
+    if ("error" in posted) throw new Error(String(posted.error));
+    return "result" in posted ? posted.result : undefined;
+  } finally {
+    try {
+      await tab.close();
+    } finally {
+      await relay.stop();
+    }
+  }
+}
+
+test("each peer sees the other come online, and go", async () => {
+  const result = await scenario("presence");
+  expect(result).toEqual({ aliceSaw: ["announce", "unannounce"], bobSawAlice: true });
+}, 60_000);
+
+test("a link carries messages and objects, and closes when its peer leaves", async () => {
+  const result = await scenario("links");
+  expect(result).toMatchObject({
+    heard: expect.arrayContaining([
+      { to: "alice", value: expect.objectContaining({ firstSeq: 2 }) },
+      { to: "bob", value: expect.objectContaining({ firstSeq: 1 }) },
+    ]),
+    objects: [{ text: "batch" }],
+    fromBob: [true],
+    closed: ["alice", "bob"],
+    peers: { alice: true, bob: true },
+  });
+}, 60_000);
+
+test("the relay refuses a subscription to a track nobody publishes", async () => {
+  const result = await scenario("refused");
+  expect(result).toEqual({ refused: true });
+}, 60_000);
+
+test("chat goes through the relay, and a late joiner catches up over a link", async () => {
+  const result = await scenario("chat");
+  expect(result).toEqual({ bob: ["one", "two", "three"], carol: ["one", "two", "three"] });
+}, 90_000);

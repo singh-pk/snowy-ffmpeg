@@ -34,13 +34,18 @@ async function member() {
 // A peer's chat, opened from its session directory, with what it publishes on its track.
 async function reopen(pair: CryptoKeyPair, directory: FileSystemDirectoryHandle) {
   const published: Array<{ key: string; bytes: Bytes }> = [];
+  const listeners: Array<() => void> = [];
   const chat = await openChat({
     peer: pair,
     content,
     session: directory,
     publish: (key, bytes) => published.push({ key, bytes }),
+    onChange: () => {
+      for (const listener of listeners) listener();
+    },
   });
-  return { chat, published, pair, directory };
+  const onChange = (listener: () => void) => void listeners.push(listener);
+  return { chat, published, pair, directory, onChange };
 }
 
 type Member = Awaited<ReturnType<typeof member>>;
@@ -75,6 +80,9 @@ function join(network: ReturnType<typeof createNetwork>, a: Member, b: Member) {
 test("a message is shown at once, and reaches others through the author's track", async () => {
   const alice = await member();
   const bob = await member();
+  const changes = { alice: 0, bob: 0 };
+  alice.onChange(() => changes.alice++);
+  bob.onChange(() => changes.bob++);
   await alice.chat.write({ kind: "text", text: "hi" }, 0);
   expect(texts(alice)).toEqual(["hi"]);
   expect(alice.published).toHaveLength(0);
@@ -82,6 +90,8 @@ test("a message is shown at once, and reaches others through the author's track"
   await alice.chat.writable();
   for (const { key, bytes } of alice.published) await bob.chat.received(key, bytes);
   expect(texts(bob)).toEqual(["hi"]);
+  // Alice's change on writing, and on taking her own batch back; Bob's on taking it.
+  expect(changes).toEqual({ alice: 2, bob: 1 });
   await Promise.all([alice.chat.close(), bob.chat.close()]);
 });
 

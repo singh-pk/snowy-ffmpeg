@@ -13,5 +13,8 @@
   "scripts": {
     "test": "bun test",
     "typecheck": "bun --bun tsc"
+  },
+  "dependencies": {
+    "moqtail": "0.13.0"
   }
 }
