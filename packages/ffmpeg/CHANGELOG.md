@@ -6,6 +6,8 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-24
+
 ### Added
 
 - `sny_resample`, with `sny_resampler_alloc`, `sny_resampler_flush` and `sny_resampler_free`: resamples and mixes decoded audio for an `AudioContext`, to 32-bit float with the channels interleaved, at any rate, as mono, stereo, quad or 5.1 in the Web Audio API's channel order. Output matches native `ffmpeg -ar -ac` within 10⁻⁶, honouring the stream's downmix levels.
@@ -62,7 +64,8 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 - Decoders are sorted into modules by their codec's media type instead of their section in FFmpeg's `allcodecs.c`. `core` gains six audio decoders filed elsewhere there (S302M, Speex, RKA, DV audio and the two 8SVX variants); the HDR image decoder moves to `video-ext`. Nine decoders FFmpeg builds only under the GPL (eight ADPCM variants and AHX) are left out of every module, as the LGPL build always did.
 - `core` no longer includes the long-tail audio decoders, now in `audio-ext`, or decoders FFmpeg never selects because another decodes the same codec (`aac_fixed`, `ac3_fixed`, fixed-point MP3, float MP1/MP2): 1.3 MB brotli instead of 2.1 MB. `sny_decoder_open` returns `AVERROR_DECODER_NOT_FOUND` for those codecs, and their stream info is what the demuxer reports (the sample format is unknown until a frame is decoded).
 
-[Unreleased]: https://github.com/singh-pk/snowy-media/compare/@snowy-media/ffmpeg@0.1.2...HEAD
+[Unreleased]: https://github.com/singh-pk/snowy-media/compare/@snowy-media/ffmpeg@0.2.0...HEAD
+[0.2.0]: https://github.com/singh-pk/snowy-media/compare/@snowy-media/ffmpeg@0.1.2...@snowy-media/ffmpeg@0.2.0
 [0.1.2]: https://github.com/singh-pk/snowy-media/compare/@snowy-media/ffmpeg@0.1.1...@snowy-media/ffmpeg@0.1.2
 [0.1.1]: https://github.com/singh-pk/snowy-media/compare/@snowy-media/ffmpeg@0.1.0...@snowy-media/ffmpeg@0.1.1
 [0.1.0]: https://github.com/singh-pk/snowy-media/releases/tag/@snowy-media/ffmpeg@0.1.0
