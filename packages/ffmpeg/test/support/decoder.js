@@ -118,7 +118,8 @@ function transfer(core, m, kind, ctx, stream, threads) {
     );
     if (!data) throw new Error("packet_make: out of memory");
     const start = core._sny_packet_data(src);
-    m.HEAPU8.set(core.HEAPU8.subarray(start, start + n), data);
+    // m's decoder threads may have grown its memory past m.HEAPU8 (index.d.ts, wasmMemory).
+    new Uint8Array(m.wasmMemory.buffer).set(core.HEAPU8.subarray(start, start + n), data);
 
     for (let i = 0; i < core._sny_packet_side_data_count(src); i++) {
       const bytes = core._sny_packet_side_data_size(src, i);
@@ -126,7 +127,7 @@ function transfer(core, m, kind, ctx, stream, threads) {
       const to = m._sny_packet_side_data_add(pkt, type, bytes);
       if (!to) throw new Error("packet_side_data_add: out of memory");
       const from = core._sny_packet_side_data(src, i);
-      m.HEAPU8.set(core.HEAPU8.subarray(from, from + bytes), to);
+      new Uint8Array(m.wasmMemory.buffer).set(core.HEAPU8.subarray(from, from + bytes), to);
     }
 
     return pkt;

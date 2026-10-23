@@ -95,6 +95,12 @@ async function generate({ dir, factory, iface, files }: (typeof modules)[number]
 export type Ptr = number;
 
 export interface ${iface}Module {
+  /**
+   * The module's memory. HEAPU8, HEAP32 and HEAPF32 are views of it as this thread last
+   * grew it: memory a decoder's thread allocates may lie past them, so read and write
+   * that through views of \`wasmMemory.buffer\`, made again whenever it is a new buffer.
+   */
+  readonly wasmMemory: WebAssembly.Memory;
   readonly HEAPU8: Uint8Array;
   readonly HEAP32: Int32Array;
   readonly HEAPF32: Float32Array;
