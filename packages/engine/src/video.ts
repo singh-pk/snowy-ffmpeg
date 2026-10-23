@@ -20,7 +20,8 @@ const FRAME_BUDGET = 1 << 26;
 // Packets handed to the decoder and not yet decoded.
 const DECODE_AHEAD = 8;
 // How far ahead of the media time shown, in microseconds, frames are decoded: the packets come
-// far further ahead, and decoding all of them would hold hundreds of frames.
+// far further ahead, and decoding all of them would hold hundreds of frames, far past the
+// frame budget and a hardware decoder's pool of frames.
 const TIME_AHEAD = 1_000_000;
 
 // A frame's bytes, or as an RGBA texture when the decoder keeps it on the GPU (no format).
