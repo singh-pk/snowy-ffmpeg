@@ -70,6 +70,13 @@ FFmpeg's WebAssembly SIMD code is HEVC's inverse transforms and SAO filters. Bui
 | simd128 (release) | 113 / 228 |
 | `--disable-simd128` | 55 / 122 |
 
+`VideoFrame` takes 10-bit and 4:2:2 frames in their own formats (`I420P10`, `I422P10`, …), so `sny_to_video_format` passes them through instead of converting them to 8-bit 4:2:0 with libswscale ([before](results/video-formats/before.json) and [after](results/video-formats/after.json), one session; 8-bit media, which converts in neither, ran 1–6 % slower):
+
+| fps, 1 / 8 threads | converted to I420 | as they are |
+|---|---|---|
+| H.264 10-bit 4:2:0 | 159 / 532 | 183 / 776 |
+| ProRes 422 10-bit 4:2:2 | 39 / 125 | 52 / 285 |
+
 ## Findings
 
 - **I/O dominates.** `FileReaderSync` + the heap copy is ~255 ms of every 750 MB pass, and each call costs ~0.1 ms. At a 64 KiB AVIO buffer, MKV/TS demux took 4× longer. A 4 MiB AVIO buffer is the default; a JS read-ahead block over a small buffer was tried and was slower (more JS↔WASM crossings).

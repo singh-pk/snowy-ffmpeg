@@ -17,6 +17,7 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 ### Changed
 
 - Supported and tested in current stable desktop Chromium only (Chrome, Edge); Firefox and WebKit are no longer tested or benchmarked.
+- **Breaking:** `sny_to_video_format` passes 4:2:2 and 4:4:4, 10- and 12-bit, and odd-sized frames through untouched in their own `VideoFrame` format (`I422P10`, …), where it converted them to 8-bit I420 or RGB, so a caller gets formats it did not get before; `sny_frame_video_format` names them. Formats that still convert may get a different target: 12-bit with alpha converts to 10-bit with alpha, 16-bit YUV to 12-bit, 4:1:1 to I422 and 4:4:0 to I444; RGB, XYZ and gray of any depth still convert to 8-bit RGB.
 
 ### Fixed
 

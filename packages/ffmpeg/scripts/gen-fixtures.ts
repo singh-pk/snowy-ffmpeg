@@ -99,14 +99,32 @@ const fixtures: Record<string, string[]> = {
   "h264-10.mkv": [...V, "-c:v", "libx264", "-pix_fmt", "yuv420p10le"],
   "h264-10-full.mkv": [...V, "-c:v", "libx264", "-pix_fmt", "yuv420p10le", "-color_range", "pc"],
   "gray.nut": [...V, "-c:v", "ffv1", "-pix_fmt", "gray"],
-  // Odd size: Firefox takes it only in RGB, so a VideoFrame format is converted too.
+  // Odd size: its chroma planes round up.
   "odd.y4m": [...V, "-vf", "scale=127:95", "-pix_fmt", "yuv420p"],
-  // One per VideoFrame format not covered above.
+  // One per VideoFrame format, and the formats that convert.
   "alpha.nut": [...V, "-c:v", "ffv1", "-pix_fmt", "yuva420p"],
   "prores-4444.mov": [...V, "-c:v", "prores_ks", "-profile:v", "4444", "-pix_fmt", "yuva444p10le"],
   "nv12.nut": [...V, "-c:v", "rawvideo", "-pix_fmt", "nv12"],
   "rgba.nut": [...V, "-c:v", "rawvideo", "-pix_fmt", "rgba"],
   "bgr0.nut": [...V, "-c:v", "rawvideo", "-pix_fmt", "bgr0"],
+  "yuv420p12.nut": [...V, "-c:v", "ffv1", "-pix_fmt", "yuv420p12le"],
+  "yuva420p10.nut": [...V, "-c:v", "ffv1", "-pix_fmt", "yuva420p10le"],
+  "yuv422p.nut": [...V, "-c:v", "ffv1", "-pix_fmt", "yuv422p"],
+  "yuv422p12.nut": [...V, "-c:v", "ffv1", "-pix_fmt", "yuv422p12le"],
+  "yuva422p.nut": [...V, "-c:v", "ffv1", "-pix_fmt", "yuva422p"],
+  "yuva422p10.nut": [...V, "-c:v", "ffv1", "-pix_fmt", "yuva422p10le"],
+  "yuv444p.nut": [...V, "-c:v", "ffv1", "-pix_fmt", "yuv444p"],
+  "yuv444p10.nut": [...V, "-c:v", "ffv1", "-pix_fmt", "yuv444p10le"],
+  "yuv444p12.nut": [...V, "-c:v", "ffv1", "-pix_fmt", "yuv444p12le"],
+  "yuva444p.nut": [...V, "-c:v", "ffv1", "-pix_fmt", "yuva444p"],
+  "mjpeg-444.avi": [...V, "-c:v", "mjpeg", "-pix_fmt", "yuvj444p"],
+  "odd-422p10.nut": [...V, "-vf", "scale=127:95", "-c:v", "ffv1", "-pix_fmt", "yuv422p10le"],
+  "yuva444p10.nut": [...V, "-c:v", "ffv1", "-pix_fmt", "yuva444p10le"],
+  "odd-nv12.nut": [...V, "-vf", "scale=127:95", "-c:v", "rawvideo", "-pix_fmt", "nv12"],
+  "odd-yuva420p.nut": [...V, "-vf", "scale=127:95", "-c:v", "ffv1", "-pix_fmt", "yuva420p"],
+  "xyz12.nut": [...V, "-c:v", "rawvideo", "-pix_fmt", "xyz12le"],
+  "gbrp10.nut": [...V, "-c:v", "ffv1", "-pix_fmt", "gbrp10le"],
+  "rgb48.apng": [...V, "-c:v", "apng", "-pix_fmt", "rgb48be", "-f", "apng"],
   "opus.ogg": [...A, "-c:a", "libopus"],
   "vorbis.oga": [...A, "-c:a", "vorbis", "-strict", "-2", "-ac", "2"],
   "pcm.wav": [...A, "-c:a", "pcm_s16le"],
@@ -276,15 +294,12 @@ async function resampleAudio(file: string, index: number) {
 // The pixel format sny_to_video_format converts each fixture's video to, where VideoFrame
 // doesn't accept the decoder's (src/video.c); native libswscale decides the pixels.
 const CONVERTED: Record<string, string> = {
-  "prores-pcm.mov": "yuv420p", // 10-bit 4:2:2
-  "h264-10.mkv": "yuv420p", // 10-bit 4:2:0
-  "h264-10-full.mkv": "yuv420p", // full range stays full range
-  "hlg.mp4": "yuv420p", // 10-bit 4:2:0
   "anim.apng": "rgb0", // rgb24
   "gray.nut": "rgb0",
-  "mjpeg-422.avi": "yuv420p", // full-range 4:2:2
-  "odd.y4m": "rgb0", // 4:2:0 of odd size
-  "prores-4444.mov": "yuva420p", // 10-bit 4:4:4 with alpha
+  "gbrp10.nut": "rgb0",
+  "xyz12.nut": "rgb0",
+  "rgb48.apng": "rgb0",
+  "prores-4444.mov": "yuva444p10le", // 12-bit 4:4:4 with alpha
 };
 
 const sha256 = (data: ArrayBuffer) => new Bun.CryptoHasher("sha256").update(data).digest("hex");

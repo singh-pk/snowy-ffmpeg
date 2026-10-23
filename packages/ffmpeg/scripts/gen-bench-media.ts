@@ -100,6 +100,25 @@ const video: Record<string, string[]> = {
     "1",
   ],
   "video-av1.mkv": [...SCENE, "-c:v", "libsvtav1", "-preset", "8"],
+  // 10-bit 4:2:0 and 4:2:2, which VideoFrame takes as they are (I420P10, I422P10).
+  "video-h264-10.mkv": [
+    ...SCENE,
+    "-c:v",
+    "libx264",
+    "-preset",
+    "medium",
+    "-pix_fmt",
+    "yuv420p10le",
+  ],
+  "video-prores-422.mkv": [
+    ...SCENE,
+    "-c:v",
+    "prores_ks",
+    "-profile:v",
+    "2",
+    "-pix_fmt",
+    "yuv422p10le",
+  ],
 };
 
 for (const [name, args] of Object.entries(video)) {

@@ -93,8 +93,13 @@ function toVideoFrame(m, out, bytes) {
   };
 
   try {
-    new VideoFrame(bytes, init).close();
-    return "ok";
+    const frame = new VideoFrame(bytes, init);
+    // A wrong format name or plane layout shows as a size other than the packed one.
+    const size = frame.allocationSize();
+    frame.close();
+    return size === bytes.length
+      ? "ok"
+      : `${format}: allocationSize ${size}, packed ${bytes.length}`;
   } catch (e) {
     return `${format}: ${String(e)}`;
   }
