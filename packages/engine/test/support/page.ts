@@ -15,6 +15,7 @@ import { createPcmControl, createPcmRing } from "../../src/pcm";
 import type { FromMedia, ToMedia } from "../../src/protocol";
 import { createConsumer, createRing, END, FAILED, RING_CAPACITY } from "../../src/ring";
 import { createVideoOutput } from "../../src/video";
+import { createWasmVideo } from "../../src/wasm-video";
 import { PCM_CHANNELS, PCM_RATE, probe, SAMPLE_FRAMES } from "./audio";
 import { brightnessGrid, CELL, readFrameId } from "./frame-id";
 
@@ -40,6 +41,11 @@ function crc32(data: Uint8Array) {
   return ((c ^ 0xffffffff) >>> 0).toString(16).padStart(8, "0");
 }
 
+// The video decode worker, started once for every render, as the render worker keeps one.
+// This page is test/dist/test/support/page.js; the engine's workers are in test/dist.
+const wasm = createWasmVideo(
+  () => new Worker(new URL("../../video.worker.js", import.meta.url), { type: "module" }),
+);
 const timestamp = (t: bigint) => (t === AV_NOPTS_VALUE ? "" : String(t));
 
 /**
@@ -315,7 +321,7 @@ export async function render(
   // Wakes the wait for frames below on every change in how far decoding is.
   const decoding = { changed: () => {} };
   const compositor = createCompositor(device, context, format);
-  const output = createVideoOutput(ring, p, compositor, () => decoding.changed());
+  const output = createVideoOutput(ring, p, compositor, wasm, () => decoding.changed());
   // Rows of a texture copy are a multiple of 256 bytes apart.
   const stride = Math.ceil((width * 4) / 256) * 256;
   const buffer = device.createBuffer({

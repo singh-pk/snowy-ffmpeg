@@ -55,7 +55,9 @@ const expected = [
   "CHANGELOG.md",
   "LICENSE",
   "README.md",
-  ...["index", "media.worker", "render.worker", "audio.worklet"].map((f) => `dist/${f}.js`),
+  ...["index", "media.worker", "render.worker", "video.worker", "audio.worklet"].map(
+    (f) => `dist/${f}.js`,
+  ),
   ...declarations,
 ].toSorted();
 if (!declarations.includes("dist/index.d.ts")) throw new Error("dist/index.d.ts is missing");

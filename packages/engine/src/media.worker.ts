@@ -21,7 +21,7 @@ import {
   createCore,
   type Ptr,
 } from "@snowy-media/ffmpeg/core";
-import type { VideoParams } from "./codec";
+import { type VideoParams, WEBCODECS } from "./codec";
 import { createFileSource } from "./io";
 import { createPcmProducer, pcmFormat } from "./pcm";
 import { createProducer } from "./ring";
@@ -109,14 +109,36 @@ function createMedia(core: CoreModule) {
     return { id, kind: OTHER.get(type) ?? "data", codec };
   }
 
-  // What a WebCodecs decoder config is made from (src/codec.ts).
+  // Stream `id's codec parameters, exported for a module that decodes it.
+  function exportParams(id: number) {
+    const out = core._malloc(4);
+    const size = core._sny_params_export(state.ctx, id, out);
+    const at = core.HEAP32[out >>> 2] ?? 0;
+    core._free(out);
+    check(size, "params_export");
+    const params = core.HEAPU8.slice(at, at + size);
+    core._free(at);
+    return params;
+  }
+
+  // What decodes a video stream: a WebCodecs decoder config is made from these (src/codec.ts),
+  // or an FFmpeg module opens its decoder with `params`.
   function videoParams(id: number): VideoParams {
     const st = core._sny_stream(state.ctx, id);
     const data = core._sny_codec_extradata(st);
     const tag = core._sny_codec_tag(st);
     const start = core._sny_stream_start_time(st);
+    const codec = str(core._sny_codec_name(st));
+    const module = str(core._sny_codec_module(state.ctx, id));
+    const decoder = WEBCODECS.has(codec)
+      ? "webcodecs"
+      : module === "video" || module === "video-ext"
+        ? module
+        : "none";
     return {
-      codec: str(core._sny_codec_name(st)),
+      codec,
+      decoder,
+      params: decoder === "video" || decoder === "video-ext" ? exportParams(id) : new Uint8Array(),
       // A little-endian four-character code, or 0.
       tag: tag
         ? String.fromCodePoint(tag & 255, (tag >>> 8) & 255, (tag >>> 16) & 255, tag >>> 24)

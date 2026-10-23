@@ -1,11 +1,12 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// WebCodecs decoder configs (src/codec.ts) in Chromium: for every
-// fixture, the browser's VideoDecoder takes the config made from the media worker's
-// parameters and the first packet, and decodes that packet to frame 0; the codec string is the one native FFmpeg writes, where it writes one
-// (test/fixtures/expected.json). The same holds for the stream as it would be without a
-// configuration record (MPEG-TS, raw streams): Annex B, its parameter sets in band.
+// WebCodecs decoder configs (src/codec.ts) in Chromium: every fixture has a decoder, and for
+// every fixture WebCodecs decodes, the browser's VideoDecoder takes the config made from the
+// media worker's parameters and the first packet, and decodes that packet to frame 0; the codec
+// string is the one native FFmpeg writes, where it writes one (test/fixtures/expected.json).
+// The same holds for the stream as it would be without a configuration record (MPEG-TS, raw
+// streams): Annex B, its parameter sets in band.
 // Usage: bun run test.
 
 import { afterAll, expect, test } from "bun:test";
@@ -32,7 +33,7 @@ test("decodes the first frame of every fixture with the config the engine makes"
         const media = support.startMedia(worker);
         type Checked = Awaited<ReturnType<typeof support.checkVideoConfig>>;
         // An error names its fixture instead of ending the run.
-        const results: Record<string, Checked | { error: string }> = {};
+        const results: Record<string, Checked | { error: string } | { decoder: string }> = {};
 
         for (const { name: n, stream } of all) {
           const res = await fetch(`/test/fixtures/${n}`);
@@ -41,6 +42,13 @@ test("decodes the first frame of every fixture with the config the engine makes"
           if (opened.type !== "opened") throw new Error(`${n}: ${opened.type}`);
           const params = opened.video[stream];
           if (!params) throw new Error(`${n}: no parameters for stream ${stream}`);
+
+          // An FFmpeg module decodes it (test/render.test.ts).
+          if (params.decoder !== "webcodecs") {
+            results[n] = { decoder: params.decoder };
+            continue;
+          }
+
           const keyframe = await support.firstPacket(media, stream);
 
           try {
@@ -61,6 +69,14 @@ test("decodes the first frame of every fixture with the config the engine makes"
       if (!got) throw new Error(`${file}: not checked`);
 
       if ("error" in got) throw new Error(`${file}: ${got.error}`);
+
+      if ("decoder" in got) {
+        // QuickTime RLE is the one in video-ext.
+        const module = video.codec === "qtrle" ? "video-ext" : "video";
+        expect(got.decoder, `${file} decoder`).toBe(module);
+        continue;
+      }
+
       expect(got.supported, `${file} ${got.codec} supported`).toBe(true);
       expect(got.id, `${file} first frame`).toBe(0);
       expect(got.inBandId, `${file} first frame in band`).toBe(0);

@@ -110,3 +110,34 @@ export type FromMedia =
   | { type: "buffered"; id: number }
   | { type: "demuxed"; id: number }
   | { type: "error"; id: number; message: string };
+
+// The render worker's decoders in the video decode worker (src/video.worker.ts), each by its
+// `id`: one opens for a play's video stream that FFmpeg's `module` decodes, from the
+// stream's exported codec parameters, then takes the stream's packets in decoding order
+// (timestamps in its time base), a flush once the stream ends, and a close.
+export type ToVideo =
+  | {
+      type: "open";
+      id: number;
+      module: "video" | "video-ext";
+      params: Uint8Array;
+      timeBase: [number, number];
+    }
+  | {
+      type: "decode";
+      id: number;
+      data: Uint8Array;
+      pts: bigint;
+      dts: bigint;
+      duration: number;
+      flags: number;
+    }
+  | { type: "flush"; id: number }
+  | { type: "close"; id: number };
+
+// Each decoded frame, transferred; `decoded` once a packet or the flush is done; and a
+// decoder's first error, after which it decodes nothing.
+export type FromVideo =
+  | { type: "frame"; id: number; frame: VideoFrame }
+  | { type: "decoded"; id: number; flushed: boolean }
+  | { type: "error"; id: number; message: string };

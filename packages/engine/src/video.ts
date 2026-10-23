@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 //
 // Video output in the render worker: decodes a stream's packets from the packet ring with
-// WebCodecs into the frame queue (src/frames.ts), and shows the frame due at a given media
-// time through the compositor. Decoding waits while the queue is full, its frames are a
+// WebCodecs, or for a codec WebCodecs does not decode with FFmpeg (src/wasm-video.ts), into
+// the frame queue (src/frames.ts), and shows the frame due at a given media time through the
+// compositor. Decoding waits while the queue is full, its frames are a
 // second ahead of the media time, or the decoder has enough packets in hand, so neither memory nor the decoder's backlog grows.
 
 import { isRasl, makesFrame, type VideoParams, videoConfig } from "./codec";
@@ -11,6 +12,7 @@ import type { createCompositor } from "./compositor";
 import { createDecodeTracker } from "./decoding";
 import { createFrameQueue } from "./frames";
 import { createConsumer, END, FAILED, KEY_FLAG, NO_TIMESTAMP } from "./ring";
+import type { createWasmVideo, Decoder, DecoderEvents } from "./wasm-video";
 
 /**
  * The bytes of decoded frames the queue holds: enough for a few 4K 10-bit frames, and many
@@ -24,13 +26,33 @@ const DECODE_AHEAD = 8;
 // frame budget and a hardware decoder's pool of frames.
 const TIME_AHEAD = 1_000_000;
 
+// A WebCodecs decoder of the stream with parameters `p`, configured by its first packet.
+function webCodecsDecoder(p: VideoParams, events: DecoderEvents): Decoder {
+  const decoder = new VideoDecoder({ output: events.output, error: events.error });
+  decoder.addEventListener("dequeue", events.dequeue);
+
+  return {
+    decode(packet, _pts, timestamp, duration) {
+      if (decoder.state === "unconfigured") decoder.configure(videoConfig(p, packet.data));
+      // The chunk copies the data, so the packet can be released at once.
+      const type = packet.flags & KEY_FLAG ? "key" : "delta";
+      decoder.decode(new EncodedVideoChunk({ type, timestamp, duration, data: packet.data }));
+    },
+    flush: () => decoder.flush(),
+    queued: () => decoder.decodeQueueSize,
+    close() {
+      if (decoder.state !== "closed") decoder.close();
+    },
+  };
+}
+
 // A frame's bytes, or as an RGBA texture when the decoder keeps it on the GPU (no format).
 const frameBytes = (frame: VideoFrame) =>
   frame.format ? frame.allocationSize() : frame.codedWidth * frame.codedHeight * 4;
 
 /**
- * Decodes the packets of the stream with parameters `p` from `ring`, and shows them with
- * `compositor`. `done` resolves once the decoder has decoded the last packet or the
+ * Decodes the packets of the stream with parameters `p` from `ring`, with WebCodecs or
+ * `wasm`'s decoders, and shows them with `compositor`. `done` resolves once the decoder has decoded the last packet or the
  * output is closed, and rejects if decoding fails. `changed` runs on each event that may change
  * how far decoding is: a frame decoded, the decoder taking a packet, a wait for packets or for
  * the media time begun, the end decoded, and the media worker blocking while `watch`ed. `freed`
@@ -42,6 +64,7 @@ export function createVideoOutput(
   ring: SharedArrayBuffer,
   p: VideoParams,
   compositor: ReturnType<typeof createCompositor>,
+  wasm: ReturnType<typeof createWasmVideo>,
   changed: () => void = () => {},
   freed: () => void = () => {},
   from = 0,
@@ -61,7 +84,9 @@ export function createVideoOutput(
     first: -Infinity,
     // Waiting for the media time to reach the frames decoded.
     far: false,
-    // Just past the first packet, where pictures that lead it are left out.
+    // Whether the decoder has had a packet, and is just past the first, where pictures that
+    // lead it are left out.
+    started: false,
     leading: false,
     // Where it plays from, which a scrub moves on.
     from,
@@ -69,7 +94,7 @@ export function createVideoOutput(
   };
   const decoding = createDecodeTracker();
   const failed = Promise.withResolvers<never>();
-  const decoder = new VideoDecoder({
+  const events: DecoderEvents = {
     output(frame) {
       decoding.out(frame.timestamp);
       if (state.first === -Infinity) state.first = frame.timestamp;
@@ -79,13 +104,14 @@ export function createVideoOutput(
       if (frame.timestamp < state.from) queue.drop(state.from);
       changed();
     },
+    dequeue() {
+      wake.room();
+      changed();
+    },
     error: failed.reject,
-  });
-
-  decoder.addEventListener("dequeue", () => {
-    wake.room();
-    changed();
-  });
+  };
+  const decoder =
+    p.decoder === "webcodecs" ? webCodecsDecoder(p, events) : wasm.createDecoder(p, events);
 
   const micros = (t: number) => Math.round((t * num * 1e6) / den);
   const start = micros(p.start);
@@ -101,7 +127,7 @@ export function createVideoOutput(
     for (;;) {
       if (state.closed) return;
       state.far = far();
-      if (!state.far && !queue.full() && decoder.decodeQueueSize < DECODE_AHEAD) return;
+      if (!state.far && !queue.full() && decoder.queued() < DECODE_AHEAD) return;
       if (state.far) changed();
       const woken = Promise.withResolvers<void>();
       wake.room = woken.resolve;
@@ -129,8 +155,8 @@ export function createVideoOutput(
 
       if (packet.stream === END) break;
       if (packet.stream === FAILED) throw new Error("demuxing failed");
-      const first = decoder.state === "unconfigured";
-      if (first) decoder.configure(videoConfig(p, packet.data));
+      const first = !state.started;
+      state.started = true;
 
       // Started at a CRA, as after a seek, the RASL pictures after it refer to pictures the
       // decoder never had.
@@ -144,16 +170,10 @@ export function createVideoOutput(
       // them has neither and is not played yet.
       const pts = packet.pts === NO_TIMESTAMP ? packet.dts : packet.pts;
       if (pts === NO_TIMESTAMP) throw new Error("a video packet has no timestamp");
-      // The chunk copies the data, so the packet is released at once.
-      const chunk = new EncodedVideoChunk({
-        type: packet.flags & KEY_FLAG ? "key" : "delta",
-        timestamp: micros(Number(pts)),
-        duration: micros(packet.duration),
-        data: packet.data,
-      });
+      const timestamp = micros(Number(pts));
       const dts = micros(Number(packet.dts === NO_TIMESTAMP ? pts : packet.dts));
-      decoding.feed(chunk.timestamp, dts, makesFrame(p, packet.data));
-      decoder.decode(chunk);
+      decoding.feed(timestamp, dts, makesFrame(p, packet.data));
+      decoder.decode(packet, pts, timestamp, micros(packet.duration));
       consumer.release();
     }
 
@@ -218,7 +238,7 @@ export function createVideoOutput(
   function close() {
     state.closed = true;
     consumer.close();
-    if (decoder.state !== "closed") decoder.close();
+    decoder.close();
     queue.clear();
     state.shown?.close();
     state.shown = undefined;
@@ -238,7 +258,7 @@ export function createVideoOutput(
     /** Whether the frame queue is full or far enough ahead, so decoding waits for the media time. */
     full: () => queue.full() || far(),
     /** Whether it waits for packets with nothing left to decode. */
-    starved: () => state.waiting && decoder.decodeQueueSize === 0,
+    starved: () => state.waiting && decoder.queued() === 0,
     /** Whether the packet ring's producer waits for room. */
     blocked: () => consumer.producerWaiting(),
     /** Has `changed` run when the media worker next blocks; before reading whether it is. */
