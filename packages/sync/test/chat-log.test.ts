@@ -120,16 +120,16 @@ test("a gap is the seqs between the author's newest message and one that skips a
 
 test("the latest edit by its author wins, and a delete hides the message and its edits", async () => {
   const { alice, bob } = await authors();
-  const original = await alice.write({ kind: "text", text: "helo" });
+  const original = await alice.write({ kind: "text", text: "see you at 9" });
   const target = { author: alice.id, seq: original.seq };
-  const first = await alice.write({ kind: "edit", target, text: "hello" });
-  const second = await alice.write({ kind: "edit", target, text: "hello!" });
+  const first = await alice.write({ kind: "edit", target, text: "see you at 10" });
+  const second = await alice.write({ kind: "edit", target, text: "see you at 10!" });
   const notTheirs = await bob.write({ kind: "edit", target, text: "hacked" });
   const bobsDelete = await bob.write({ kind: "delete", target });
 
   const log = createChatLog();
   for (const m of [second, original, notTheirs, first, bobsDelete]) log.add(m, ZERO);
-  expect(log.entries().map((e) => [e.text, e.edited])).toEqual([["hello!", true]]);
+  expect(log.entries().map((e) => [e.text, e.edited])).toEqual([["see you at 10!", true]]);
 
   const alicesDelete = await alice.write({ kind: "delete", target });
   log.add(alicesDelete, ZERO);
