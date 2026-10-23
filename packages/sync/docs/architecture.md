@@ -28,6 +28,7 @@ How @snowy-media/sync is built: one person plays a local media file to a group o
 22. [Requirements on @snowy-media/engine](#requirements-on-snowy-mediaengine)
 23. [Constants](#constants)
 24. [Limits](#limits)
+25. [Testing](#testing)
 
 ## Principles
 
@@ -726,3 +727,8 @@ The sync package needs these engine capabilities through public exports:
 - **Peer upload is opt-in.** Sessions where nobody forwards are served entirely through the relay.
 - **Join grants don't expire and can't be revoked.** Anyone holding the invite link can join for as long as the session runs.
 - **Chunk length follows the file.** A file with long keyframe intervals makes long, large video chunks.
+
+## Testing
+
+- **Bun tests** (`bun run test`) cover the modules that use only what Bun and desktop Chromium both implement the same way: Web Crypto (Ed25519, AES-GCM, HKDF, SHA-256), `DataView`, and `Uint8Array` base64. They run in CI's `sync test` job on every change to the package.
+- **Browser tests** run in Chromium with Playwright, as the engine's do, for every module that touches an API Bun lacks: OPFS, IndexedDB, File System Access, WebTransport, WebRTC, and the engine itself. The first such module adds them, and CI's `sync test` job then installs Chromium.

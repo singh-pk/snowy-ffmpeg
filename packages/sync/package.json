@@ -9,5 +9,9 @@
     "url": "git+https://github.com/singh-pk/snowy-media.git",
     "directory": "packages/sync"
   },
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "bun --bun tsc"
+  }
 }
