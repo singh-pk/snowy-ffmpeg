@@ -116,6 +116,13 @@ function stop() {
   state.playing = undefined;
 }
 
+// Stops what plays, and leaves the canvas black, with nothing of the file before.
+function clear() {
+  stop();
+  if (!state.compositor) throw new Error("clear before init");
+  state.compositor.clear();
+}
+
 function play({ id, ring, wake, params, pcm, from }: Extract<ToRender, { type: "play" }>) {
   stop();
   if (!state.compositor) throw new Error("play before init");
@@ -237,5 +244,6 @@ self.addEventListener("message", ({ data }: MessageEvent<ToRender>) => {
   if (data.type === "init") void init(data.canvas);
   else if (data.type === "play") play(data);
   else if (data.type === "scrub") scrub(data);
+  else if (data.type === "clear") clear();
   else stop();
 });

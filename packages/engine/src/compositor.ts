@@ -97,6 +97,16 @@ export function createCompositor(
   });
   const layout = pipeline.getBindGroupLayout(0);
 
+  // The canvas's next texture, cleared to black: around a frame, or with no frame at all.
+  function target(): GPURenderPassColorAttachment {
+    return {
+      view: context.getCurrentTexture().createView(),
+      loadOp: "clear",
+      clearValue: [0, 0, 0, 1],
+      storeOp: "store",
+    };
+  }
+
   /** Draws `frame`, transformed by display matrix `matrix`. The caller still owns `frame`. */
   function draw(frame: VideoFrame, matrix: readonly number[]) {
     const { width, height } = context.canvas;
@@ -112,16 +122,7 @@ export function createCompositor(
       ],
     });
     const encoder = device.createCommandEncoder();
-    const pass = encoder.beginRenderPass({
-      colorAttachments: [
-        {
-          view: context.getCurrentTexture().createView(),
-          loadOp: "clear",
-          clearValue: [0, 0, 0, 1],
-          storeOp: "store",
-        },
-      ],
-    });
+    const pass = encoder.beginRenderPass({ colorAttachments: [target()] });
     pass.setPipeline(pipeline);
     pass.setBindGroup(0, bindGroup);
     pass.draw(3);
@@ -129,5 +130,12 @@ export function createCompositor(
     device.queue.submit([encoder.finish()]);
   }
 
-  return { draw };
+  /** Clears the canvas to black. */
+  function clear() {
+    const encoder = device.createCommandEncoder();
+    encoder.beginRenderPass({ colorAttachments: [target()] }).end();
+    device.queue.submit([encoder.finish()]);
+  }
+
+  return { draw, clear };
 }
