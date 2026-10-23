@@ -22,8 +22,11 @@ This package is the edit document of the Snowy editor: a magnetic timeline of se
 | `src/layout.ts` | connected items: the time a clip or origin anchor gives, and each role's lanes |
 | `src/schema.ts` | schemas that check untrusted JSON and return it in canonical shape |
 | `src/document.ts` | the document's records and every operation, as schemas |
-| `src/batch.ts` | batches: canonical bytes, signing, checking and hashing |
-| `src/project.ts` | a project's document, changed by applying batches, which checks each operation and skips any that doesn't fit: items, splits and joins, effects and keyframes |
+| `src/signed.ts` | signed objects: canonical bytes, signing under a domain, checking and hashing |
+| `src/batch.ts` | batches, as signed objects |
+| `src/entry.ts` | entries and refusals, as signed objects |
+| `src/project.ts` | a project's document, changed by applying batches, which checks each operation and skips any that doesn't fit: items, splits and joins, effects and keyframes; and its snapshot, which another project starts from |
+| `src/history.ts` | one branch's history: entries applied in order, then the pending batches, and the sequencer appending them |
 | `test/` | unit tests (`*.unit.ts`), run in Chromium by `unit.test.ts` |
 
 ## Rules

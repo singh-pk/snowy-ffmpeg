@@ -76,6 +76,17 @@ type AssetState = { record: Asset; removed: boolean };
 type EffectState = { record: EffectRecord; removed: boolean };
 type Clip = Extract<ItemRecord, { kind: "clip" }>;
 
+/** A project's whole state as plain data, which a new project can start from. */
+export type Snapshot = {
+  name: string;
+  assets: AssetState[];
+  sequences: Array<{ id: ItemId; record: SequenceRecord; removed: boolean }>;
+  roles: Array<RoleState & { id: ItemId }>;
+  items: Array<ItemState & { id: ItemId }>;
+  effects: Array<EffectState & { id: ItemId }>;
+  keyframes: KeyframeRecord[];
+};
+
 // What a clip's absent video or audio fields are, so setting one leaf of them fills the rest.
 const DEFAULTS: Record<string, Value | Record<string, unknown>> = {
   video: {
@@ -221,8 +232,8 @@ function add(index: Map<string, Set<ItemId>>, key: string, id: ItemId) {
 
 const EVERYTHING = { from: Number.NEGATIVE_INFINITY, to: Number.POSITIVE_INFINITY };
 
-/** An empty project. */
-export function createProject() {
+/** A project's document, empty or as a snapshot left it. */
+export function createProject(initial?: Snapshot) {
   let name = "";
   const assets = new Map<string, AssetState>();
   const sequences = new Map<ItemId, SequenceState>();
@@ -978,8 +989,69 @@ export function createProject() {
     );
   }
 
+  /** The whole state, to start another project from. Records are shared, never changed. */
+  function snapshot(): Snapshot {
+    const state: Snapshot = {
+      name,
+      assets: [],
+      sequences: [],
+      roles: [],
+      items: [],
+      effects: [],
+      keyframes: [],
+    };
+    for (const { record, removed } of assets.values()) state.assets.push({ record, removed });
+    for (const [id, { record, removed }] of sequences)
+      state.sequences.push({ id, record, removed });
+    for (const [id, { record, removed }] of roles) state.roles.push({ id, record, removed });
+
+    for (const [id, { record, sequence, removed }] of items) {
+      state.items.push({ id, record, sequence, removed });
+    }
+
+    for (const [id, { record, removed }] of effects) state.effects.push({ id, record, removed });
+    for (const own of keyframes.values()) state.keyframes.push(...own.values());
+    return state;
+  }
+
+  // Takes a snapshot's state, building the indexes and storylines again; a removed storyline
+  // item has no length, as removing it left it.
+  function load(state: Snapshot) {
+    name = state.name;
+    for (const asset of state.assets) assets.set(asset.record.id, { ...asset });
+
+    for (const { id, record, removed } of state.sequences) {
+      sequences.set(id, { record, removed, storyline: createStoryline() });
+    }
+
+    for (const { id, ...role } of state.roles) roles.set(id, role);
+
+    for (const { id, ...rest } of state.items) {
+      const { record, sequence, removed } = rest;
+      items.set(id, { record, sequence, removed });
+      add(members, sequence, id);
+      link(id, record);
+      if (record.kind === "transition" || !("storyline" in record.anchor)) continue;
+      storylineOf(sequence).insert(id, record.anchor.position, removed ? 0 : record.duration);
+    }
+
+    for (const { id, ...effect } of state.effects) {
+      effects.set(id, effect);
+      add(chains, effect.record.clip, id);
+    }
+
+    for (const keyframe of state.keyframes) {
+      const own = keyframes.get(keyframe.target) ?? new Map<string, KeyframeRecord>();
+      own.set(keyframeKey(keyframe.param, keyframe.at), keyframe);
+      keyframes.set(keyframe.target, own);
+    }
+  }
+
+  if (initial !== undefined) load(initial);
+
   return {
     apply,
+    snapshot,
     item,
     start,
     storyline,
