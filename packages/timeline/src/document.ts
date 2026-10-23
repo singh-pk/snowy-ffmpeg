@@ -94,7 +94,7 @@ const asset = record({
   path: optional(string(undefined, TEXT)),
 });
 
-const sequence = record({
+export const sequence = record({
   name,
   rate: ratio,
   width: integer(1),
@@ -102,7 +102,7 @@ const sequence = record({
   sampleRate: integer(1),
 });
 
-const role = record({
+export const role = record({
   sequence: itemId,
   name,
   kind: oneOf("video", "audio"),
@@ -147,7 +147,7 @@ const transform = record({
   rotation: finite,
 });
 
-const item = union("kind", {
+export const item = union("kind", {
   clip: record({
     kind: literal("clip"),
     source,
@@ -246,3 +246,14 @@ export const operation = union("op", {
   ),
   "branch.close": record({ op: literal("branch.close"), branch: branchId }),
 });
+
+/** An asset record. */
+export type Asset = ReturnType<typeof asset>;
+/** A sequence's settings, without its id. */
+export type SequenceRecord = ReturnType<typeof sequence>;
+/** A role, without its id. */
+export type RoleRecord = ReturnType<typeof role>;
+/** A clip, gap, transition or marker, without its id. */
+export type ItemRecord = ReturnType<typeof item>;
+/** Where an item is. */
+export type Anchor = ReturnType<typeof anchor>;
