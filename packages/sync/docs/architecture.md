@@ -301,9 +301,9 @@ OPFS  snowy/<SessionId>/
         control            newest control record
         init/<track>
         media/<track>/<index>
-        chat/<author>      append-only log, one record per message
+        chat/<author>      append-only log: one record per message, and the checkpoints that prove them
         peers/<PeerId>     newest caps record of each known peer
-        counters           this peer's caps version and chat seq
+        counters           this peer's caps version
         meta               this session's onEnd
         index/<track>      the source only: every signed chunk header it has cut, in index order
         fingerprint        the source only: size, lastModified, SHA-256 of its file's first and last MiB
@@ -317,6 +317,10 @@ IDB   snowy-keys / <SessionId>
 
 - Every peer except the source keeps its chunks here, in OPFS, encrypted. The source keeps no chunks, only their signed headers.
 - `navigator.storage.persist()` is requested when a peer joins.
+- **Chat** is kept as one JSON record per line, in a log per author, written through OPFS sync access handles, so the store runs in a dedicated worker. An append counts only once all of it is written and flushed; one that fails is cut back off and leaves its seqs free. A seq already written isn't written again, so the first copy stays, as in the holdings. A received batch is stored before the holdings take it, so one the store fails to take changes nothing. A crash can tear only the end of a log, which is cut off when the store opens: everything from the first line that isn't a record, when no record follows it. A record after a bad line means the log is corrupt, and the store refuses to open rather than drop that record, which could give a seq already published to another message.
+- Chat is kept in plaintext: the content key sits in the same origin's IndexedDB, so encrypting it would protect nothing from whoever can read OPFS.
+- The checkpoints a peer's holdings drop when runs join stay in the log, which is append-only; on reload, the holdings drop them again.
+- **On reload,** the chat logs restore the holdings, the log and the clock: the clock moves past every stored message, nothing restored is marked late, and this peer's own unsent messages stay out of the holdings until their batch comes back. A restore asks for no gaps; the version vector sent on reconnect fills them. This peer's own last message gives the next seq, so there is no chat seq counter: a message is written to the store before it is queued.
 - What is kept, and for how long, is decided by [interests](#interests-and-retention).
 - The store emits `stored(key)` and `evicted(key)`, which drive the scheduler, what the peer advertises and the consumer.
 
@@ -601,6 +605,7 @@ Chat stays append-only:
 - A batch proves itself: a peer accepts one only if its checkpoint verifies and proves every message in it, so a batch checks out whoever forwards it. It proves its messages, not who sealed it: every member holds the content key, so any member can seal a valid batch from an author's messages, such as a sub-range or two batches merged. A batch key's range is never treated as something the author published.
 - A batch sealed while the stream closed, even if it has since reopened, goes back to the queue and is sealed again with whatever queued meanwhile.
 - Offline, messages queue in the log and are sent when the reconnect event fires.
+- After a reload, this peer's own messages after its newest stored checkpoint may never have been published. They are queued again and go with the first batch; a copy a peer already holds is ignored, as the first copy stays.
 
 ### Gaps and repair
 
@@ -917,5 +922,5 @@ The sync package needs these engine capabilities through public exports:
 
 ## Testing
 
-- **Unit tests** (`test/*.unit.ts`, `bun run test`) run in Chromium, each file in a module worker of its own page (`tooling/run-unit.ts`), as every package's tests do: never in Bun, so Web Crypto, `DataView` and base64 are tested in the browser that ships them. They run in CI's `sync test` job on every change to the package.
-- **Browser tests** drive a page with Playwright, as the engine's do, for the modules that need one: OPFS, IndexedDB, File System Access, WebTransport, WebRTC, and the engine itself. The first such module adds them.
+- **Unit tests** (`test/*.unit.ts`, `bun run test`) run in Chromium, each file in a module worker of its own page (`tooling/run-unit.ts`), as every package's tests do: never in Bun, so Web Crypto, `DataView` and base64 are tested in the browser that ships them. The worker is a dedicated one, so the chat store's OPFS sync access handles are tested there too, each test in a session directory of its own. They run in CI's `sync test` job on every change to the package.
+- **Browser tests** drive a page with Playwright, as the engine's do, for the modules that need one: IndexedDB, File System Access, WebTransport, WebRTC, and the engine itself. The first such module adds them.

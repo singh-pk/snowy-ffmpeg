@@ -118,6 +118,19 @@ test("the first message held for a seq stays when two batches are added at once"
   expect(proven.messages).toEqual(seqs(1, 4));
 });
 
+test("a restore keeps one checkpoint per run, and leaves out messages past the newest", async () => {
+  const holdings = createChatHoldings();
+  const checkpoints = await Promise.all(
+    alice.sent.slice(0, 7).map((m) => signCheckpoint(alice.pair, m)),
+  );
+  await holdings.restore(alice.id, seqs(1, 9), checkpoints);
+  expect(holdings.checkpoints(alice.id).map((cp) => cp.seq)).toEqual([7]);
+  expect(holdings.newest(alice.id)).toBe(7);
+  expect(holdings.repair(alice.id, 8)).toBeUndefined();
+  const proven = await delivered(holdings.repair(alice.id, 1)!);
+  expect(proven.messages).toEqual(seqs(1, 7));
+});
+
 test("a run doesn't join a message that doesn't chain to it, so both stay proven", async () => {
   const holdings = createChatHoldings();
   const fork = await forked();

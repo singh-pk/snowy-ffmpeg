@@ -18,8 +18,15 @@ export type ChatSenderOptions = {
   peer: CryptoKeyPair;
   content: CryptoKey;
   clock: { send(): Hlc };
+  /** Writes a message to the local store; the message is queued only once it resolves. */
+  keep(message: ChatMessage): unknown;
   /** The author's newest message from before a reload, to chain the next one to. */
   last?: ChatMessage | undefined;
+  /**
+   * The author's messages from before a reload that may not have been published, ending at
+   * `last` (`unsent` in src/chat-store.ts): queued again, to go with the first batch.
+   */
+  pending?: ChatMessage[] | undefined;
   /** Hands a batch to the stream; `writable()` is called once the stream takes more. */
   publish(key: string, bytes: Bytes): void;
 };
@@ -31,7 +38,7 @@ const previousHash = async (last?: ChatMessage) => (last === undefined ? "" : me
 
 export function createChatSender(options: ChatSenderOptions) {
   const author = keyId(options.peer.publicKey);
-  const queue: ChatMessage[] = [];
+  const queue: ChatMessage[] = [...(options.pending ?? [])];
   const state: {
     last?: ChatMessage | undefined;
     writable: boolean;
@@ -43,9 +50,10 @@ export function createChatSender(options: ChatSenderOptions) {
   let written: Promise<unknown> = Promise.resolve();
 
   /**
-   * Writes the next message and queues it. Resolves with the message, to add to the local log
-   * and store; it is sent with the next batch. Rejects with an `InvalidMessageError`, taking no
-   * seq, for content that doesn't make a well-formed message.
+   * Writes the next message, stores it (`keep`) and queues it. Resolves with the message, to add
+   * to the local log; it is sent with the next batch. Rejects, taking no seq, with an
+   * `InvalidMessageError` for content that doesn't make a well-formed message, or with what
+   * `keep` rejected with.
    */
   function write(content: Content, mediaUs: number) {
     const next = chain(written, content, mediaUs);
@@ -66,6 +74,9 @@ export function createChatSender(options: ChatSenderOptions) {
     checkMessage({ ...fields, hlc: NO_CLOCK });
 
     const message: ChatMessage = { ...fields, hlc: options.clock.send() };
+    // Stored before it can be sent: a message sent but lost from the store would let a reload
+    // give its seq to another.
+    await options.keep(message);
     state.last = message;
     queue.push(message);
     void flush();
