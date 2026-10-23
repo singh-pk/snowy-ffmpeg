@@ -250,11 +250,11 @@ const benchmarks: Record<string, (tab: Page) => Promise<Timings>> = {
         canvas.remove();
         const heard = reads.at(-1)?.[0] ?? 0;
         if (heard < seconds - 1) throw new Error(`played to ${heard} s in ${seconds} s`);
-        const lates = reads.slice(1).map(([time, id]) => {
+        const lateness = reads.slice(1).map(([time, id]) => {
           if (times[id] === undefined) throw new Error(`frame ${id} read on screen`);
           return Math.max(0, time - (times[id + 1] ?? Infinity)) * 1000;
         });
-        const sorted = lates.toSorted((a, b) => a - b);
+        const sorted = lateness.toSorted((a, b) => a - b);
         const at = (p: number) => sorted[Math.floor(p * sorted.length)] ?? 0;
         return {
           "late p50": at(0.5),
