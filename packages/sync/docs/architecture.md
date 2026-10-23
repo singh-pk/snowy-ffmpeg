@@ -745,15 +745,19 @@ An agent connected in a tab has its own peer key and grant, but no relay connect
 
 One content key would last the project's whole life, across every presence update, batch and repair, so in an edit session each peer seals with its own: `HKDF-SHA256(sessionSecret, salt = SessionId, info = "snowy content v1 " + PeerId)`.
 
-- **An object is sealed with the key of the peer that seals it,** never with its author's key or the key of the peer whose track it belongs to. The AES-GCM limit of 2³² encryptions with random nonces is a limit on whoever draws the nonces, so each peer spends only its own key's budget. It stays below the limit unless one peer seals more than 4 billion objects in a project.
+- **An object is sealed with the key of the peer that seals it,** never with its author's key or the key of the peer whose track it belongs to, except on `source/*` (below). The AES-GCM limit of 2³² encryptions with random nonces is a limit on whoever draws the nonces, so each peer spends only its own key's budget. It stays below the limit unless one peer seals more than 4 billion objects in a project.
 - **In an edit session, a peer seals everything it sends,** and never forwards bytes another peer sealed. The peer that sent an object is therefore the one whose key opens it, and the receiver always knows which peer that is:
 
   | Object | Sealed by |
   | --- | --- |
-  | On a peer's own track, including the batches of agents it carries | That peer |
-  | A repair reply, on `inbox/<requester>/deliver/<responder>` | The responder, which the track names |
-  | A chunk delivered on request | The source |
+  | On a track under `peer/<P>` or `asset/<P>`, including everything P publishes for the agents it carries | P |
+  | On `source/*` | The owner, under the key derived with `SessionId` in place of a `PeerId` |
+  | On `inbox/<recipient>/<sender>` | The sender |
+  | On `inbox/<requester>/deliver/<responder>`: repair replies, state on join and chunks sent on request | The responder |
   | A chunk read back from the store | The source its path names |
+
+- **The receiver picks the key from the track an object arrived on,** never from a field inside it. The author, signer and checkpoint are inside the ciphertext, so they can't be read before the key is chosen; a carried agent's batch names the agent but arrives sealed by its carrier.
+- **`source/*` names no peer, so it has a key of its own.** Only the owner publishes there, with a token the project key signs ([Authorization](#authorization)), and it seals one record per change of the project, far below the limit.
 
 - **A key proves nothing about who sealed an object.** Everyone with the secret derives every peer's key, so any member can seal under any key. Authenticity comes only from signatures and checkpoints, as for chat ([Sending](#sending)).
 
