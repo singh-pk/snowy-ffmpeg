@@ -124,8 +124,11 @@ function checkKindFields(kind: ChatKind, m: Record<string, unknown>) {
   return has("text") ? { target, text: "", emoji: m.emoji } : { target, emoji: m.emoji };
 }
 
-/** Checks an untrusted value, returning it in canonical shape, or throws. */
-function checkMessage(value: unknown): ChatMessage {
+/**
+ * Checks an untrusted value, returning it in canonical shape. Throws an `InvalidMessageError`
+ * for anything else.
+ */
+export function checkMessage(value: unknown): ChatMessage {
   if (!isRecord(value)) throw new InvalidMessageError("not an object");
 
   const unknown = Object.keys(value).find((k) => !FIELDS.has(k));
@@ -214,16 +217,26 @@ function sigBytes(sig: unknown) {
  * author it names.
  */
 export async function verifyCheckpoint(checkpoint: unknown) {
-  if (!isRecord(checkpoint) || Object.keys(checkpoint).length !== 4) return false;
+  const fields = checkCheckpoint(checkpoint);
+  if (fields === undefined) return false;
 
-  const { author, seq, head, sig } = checkpoint;
-  if (!isKeyId(author) || !isSeq(seq) || typeof head !== "string" || !HASH.test(head)) return false;
-
-  const bytes = sigBytes(sig);
-  if (bytes === undefined) return false;
-
+  const { author, seq, head, sig } = fields;
   const key = await publicKey(author);
-  return verify(key, bytes, checkpointBytes({ author, seq, head }));
+  return verify(key, sigBytes(sig)!, checkpointBytes({ author, seq, head }));
+}
+
+/** An untrusted value as a well-formed checkpoint, or undefined. Doesn't check the signature. */
+export function checkCheckpoint(value: unknown): Checkpoint | undefined {
+  if (!isRecord(value) || Object.keys(value).length !== 4) return undefined;
+
+  const { author, seq, head, sig } = value;
+
+  if (!isKeyId(author) || !isSeq(seq) || typeof head !== "string" || !HASH.test(head)) {
+    return undefined;
+  }
+
+  if (typeof sig !== "string" || sigBytes(sig) === undefined) return undefined;
+  return { author, seq, head, sig };
 }
 
 /**
