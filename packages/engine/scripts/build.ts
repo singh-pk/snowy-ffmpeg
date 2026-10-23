@@ -42,9 +42,13 @@ export async function build({ outdir, ffmpeg, entrypoints }: Options) {
   await Bun.build({
     entrypoints: entrypoints
       ? entrypoints.map((f) => pkg + f)
-      : ["index.ts", "media.worker.ts", "render.worker.ts", "audio.worklet.ts"].map(
-          (f) => `${pkg}src/${f}`,
-        ),
+      : [
+          "index.ts",
+          "media.worker.ts",
+          "render.worker.ts",
+          "video.worker.ts",
+          "audio.worklet.ts",
+        ].map((f) => `${pkg}src/${f}`),
     root: entrypoints ? pkg : `${pkg}src/`,
     outdir,
     target: "browser",

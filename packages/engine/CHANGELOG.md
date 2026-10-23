@@ -6,6 +6,10 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 
 ## [Unreleased]
 
+### Added
+
+- Video in the codecs WebCodecs does not decode, such as MPEG-2, MPEG-4 Part 2, ProRes, DNxHD and FFV1, plays: `@snowy-media/ffmpeg` decodes it in a worker of its own, loading its `video` module, or `video-ext` for rarer codecs, the first time a file needs it.
+
 ## [0.1.0] - 2026-10-24
 
 ### Added

@@ -12,10 +12,20 @@
 // - VP9: the VP9 codec string spec, vp09.PP.LL.DD, from the keyframe's uncompressed header.
 // - AV1: the AV1 ISO-BMFF binding §5, av01.P.LLT.DD.
 
+/** The codecs WebCodecs decodes, by FFmpeg's name; FFmpeg decodes the rest (src/video.worker.ts). */
+export const WEBCODECS = new Set(["h264", "hevc", "vp8", "vp9", "av1"]);
+
 /** What the media worker knows of a video stream before decoding it. */
 export interface VideoParams {
   /** FFmpeg's codec name. */
   codec: string;
+  /**
+   * What decodes it: WebCodecs for the codecs in WEBCODECS, otherwise the FFmpeg module that
+   * holds its decoder, or nothing.
+   */
+  decoder: "webcodecs" | "video" | "video-ext" | "none";
+  /** For an FFmpeg module, the stream's codec parameters as core exports them; else empty. */
+  params: Uint8Array;
   /** The container's four-character code, such as "hev1", or "". */
   tag: string;
   /** The codec's configuration record, or parameter sets in band, or nothing. */

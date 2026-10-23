@@ -25,7 +25,9 @@ The tests and benchmarks build what they run, and need `@snowy-media/ffmpeg` bui
 | `src/io.ts` | the media worker's synchronous reads from a `File` |
 | `src/ring.ts` | the packet ring between two threads |
 | `src/codec.ts` | WebCodecs decoder configs, with the codec string from a stream's configuration record or parameter sets |
-| `src/video.ts` | the render worker's video output: WebCodecs decoding from the packet ring, and presentation |
+| `src/video.ts` | the render worker's video output: decoding from the packet ring, with WebCodecs or FFmpeg, and presentation |
+| `src/wasm-video.ts` | the render worker's decoders for the codecs WebCodecs does not decode, in the video decode worker |
+| `src/video.worker.ts` | the video decode worker: decodes those codecs with the FFmpeg `video` and `video-ext` modules |
 | `src/frames.ts` | the frame queue, in presentation order and bounded by bytes |
 | `src/decoding.ts` | how far a video decoder has decoded, whatever order it emits frames in |
 | `src/compositor.ts` | the WebGPU compositor: a frame, turned by its display matrix, fitted into the canvas |

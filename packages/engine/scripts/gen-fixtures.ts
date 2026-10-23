@@ -164,6 +164,17 @@ const fixtures: Record<
       ...AAC,
     ],
   },
+  // Codecs WebCodecs does not decode, which the FFmpeg modules do (src/video.worker.ts):
+  // MPEG-2 and MPEG-4 Part 2 with B-frames, 10-bit 4:2:2 ProRes and 4:4:4 FFV1, and QuickTime
+  // RLE, which is RGB and in video-ext.
+  "mpeg2-aac.mov": { seconds: 3, args: ["-c:v", "mpeg2video", "-bf", "2", ...GOP, ...AAC] },
+  "mpeg4-aac.mkv": { seconds: 3, args: ["-c:v", "mpeg4", "-bf", "2", ...GOP, ...AAC] },
+  "prores-aac.mov": {
+    seconds: 1,
+    args: ["-c:v", "prores_ks", "-profile:v", "3", "-pix_fmt", "yuv422p10le", ...AAC],
+  },
+  "ffv1-aac.mkv": { seconds: 1, args: ["-c:v", "ffv1", "-pix_fmt", "yuv444p10le", ...AAC] },
+  "qtrle-aac.mov": { seconds: 1, args: ["-c:v", "qtrle", "-pix_fmt", "rgb24", ...AAC] },
   // Ten minutes, for drift.
   "sync-10min.mp4": { seconds: 600, args: [...H264, ...AAC], source: "color=c=gray:" },
 };

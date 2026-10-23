@@ -21,6 +21,8 @@ import {
 // A stream without a configuration record, a level or a display matrix.
 const STREAM: VideoParams = {
   codec: "av1",
+  decoder: "webcodecs",
+  params: new Uint8Array(),
   tag: "",
   extradata: new Uint8Array(),
   width: 1920,

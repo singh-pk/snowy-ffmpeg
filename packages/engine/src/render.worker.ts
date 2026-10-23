@@ -11,6 +11,7 @@ import { createCompositor } from "./compositor";
 import { createPcmControl } from "./pcm";
 import type { FromRender, Missing, ToRender } from "./protocol";
 import { createVideoOutput } from "./video";
+import { createWasmVideo } from "./wasm-video";
 
 interface Gpu {
   device: GPUDevice;
@@ -27,6 +28,10 @@ const GAPS = 8;
 // The video decoded before the main thread starts audio, in microseconds, as much as the audio
 // it buffers: a decoder that has just started delivers its next frames slowly.
 const PREROLL = 250_000;
+
+// Decoders for the codecs WebCodecs does not decode, in a worker of their own, started once
+// a stream needs one.
+const wasm = createWasmVideo();
 
 const state = {
   compositor: undefined as ReturnType<typeof createCompositor> | undefined,
@@ -133,6 +138,7 @@ function play({ id, ring, params, pcm, from }: Extract<ToRender, { type: "play" 
     ring,
     params,
     state.compositor,
+    wasm,
     () => update(),
     clock.wakeProducer,
     from,
