@@ -288,13 +288,10 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     }
 
     const ring = createRing(params ? RING_CAPACITY : NO_VIDEO_RING);
-    const wake = new MessageChannel();
 
     if (params) {
-      const message = { type: "play", id, ring, wake: wake.port2, params, pcm, from } as const;
-      render.postMessage(message satisfies ToRender, [wake.port2]);
-    } else {
-      wake.port2.close();
+      const message = { type: "play", id, ring, params, pcm, from } as const;
+      render.postMessage(message satisfies ToRender);
     }
 
     const streams = video && params ? [video.id] : [];
@@ -305,12 +302,11 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
       {
         type: "demux",
         ring,
-        wake: wake.port1,
         streams,
         from,
         audio: { stream: audio.id, pcm, preroll },
       },
-      [wake.port1],
+      [],
       () => {
         demux.buffered = true;
         changed();

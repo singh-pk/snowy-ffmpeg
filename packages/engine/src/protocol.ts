@@ -20,9 +20,9 @@ export type PlatformFeature =
 /** A missing feature, and what exactly was missing. */
 export type Missing = [feature: PlatformFeature, reason: string];
 
-// After init, the render worker plays video stream packets from `ring` (src/ring.ts), woken by
-// `wake`, with parameters `params`, timed by the clock in PCM ring `pcm` (src/pcm.ts), until it
-// stops. It plays from `from`, in microseconds: of the frames before, only the last is shown.
+// After init, the render worker plays video stream packets from `ring` (src/ring.ts), with
+// parameters `params`, timed by the clock in PCM ring `pcm` (src/pcm.ts), until it stops. It
+// plays from `from`, in microseconds: of the frames before, only the last is shown.
 // An error while it plays is reported once, with the play's `id`, and it stops. Until it has
 // drawn a frame by the running clock (`shown`, the last report), it reports each change in
 // how far decoding is, as it happens: a quarter second or all of it decoded (`ahead`), or no
@@ -34,7 +34,6 @@ export type ToRender =
       type: "play";
       id: number;
       ring: SharedArrayBuffer;
-      wake: MessagePort;
       params: VideoParams;
       pcm: SharedArrayBuffer;
       from: number;
@@ -87,9 +86,9 @@ export interface MediaInfo {
 }
 
 // `id` pairs each reply with its request. A demux request writes the packets of `streams` into
-// `ring` (src/ring.ts) from the keyframe due at or before `from` (microseconds) on, waking its
-// consumer through `wake`, and with `audio` decodes that audio stream into the PCM ring `pcm`
-// (src/pcm.ts), resampled to its rate and channels. Unless it fails or the PCM ring closes
+// `ring` (src/ring.ts) from the keyframe due at or before `from` (microseconds) on, and with
+// `audio` decodes that audio stream into the PCM ring `pcm` (src/pcm.ts), resampled to its
+// rate and channels. Unless it fails or the PCM ring closes
 // first, it says once, before it replies, that the audio is buffered (`buffered`): `preroll`
 // frames of it, a full ring, or all of it. It replies once it has written all the audio and the
 // END record, or once a consumer has closed its ring. On an error it writes the FAILED record
@@ -100,7 +99,6 @@ export type ToMedia =
       type: "demux";
       id: number;
       ring: SharedArrayBuffer;
-      wake: MessagePort;
       streams: number[];
       from: number;
       // Its audio before `from` is dropped.

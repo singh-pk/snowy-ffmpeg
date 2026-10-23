@@ -578,13 +578,12 @@ function createMedia(core: CoreModule) {
   // error itself goes to whoever asked. `buffered` runs once the audio is buffered ahead.
   function demux(
     ring: SharedArrayBuffer,
-    wake: MessagePort,
     streams: number[],
     from: number,
     audio: AudioRequest | undefined,
     buffered: () => void,
   ) {
-    const producer = createProducer(ring, wake);
+    const producer = createProducer(ring);
     let decoder: Audio | undefined;
 
     try {
@@ -604,7 +603,6 @@ function createMedia(core: CoreModule) {
       throw e;
     } finally {
       decoder?.close();
-      wake.close();
     }
   }
 
@@ -626,8 +624,8 @@ async function handle(message: ToMedia) {
       post({ type: "opened", id, ...media.open(message.file) });
     } else {
       const buffered = () => post({ type: "buffered", id });
-      const { ring, wake, streams, from, audio } = message;
-      media.demux(ring, wake, streams, from, audio, buffered);
+      const { ring, streams, from, audio } = message;
+      media.demux(ring, streams, from, audio, buffered);
       post({ type: "demuxed", id });
     }
   } catch (e) {

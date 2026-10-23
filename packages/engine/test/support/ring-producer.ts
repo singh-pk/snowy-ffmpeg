@@ -13,8 +13,8 @@ export const size = (i: number) => (i * 7919) % 3001;
 
 self.addEventListener(
   "message",
-  ({ data }: MessageEvent<{ ring: SharedArrayBuffer; wake: MessagePort; count: number }>) => {
-    const producer = createProducer(data.ring, data.wake);
+  ({ data }: MessageEvent<{ ring: SharedArrayBuffer; count: number }>) => {
+    const producer = createProducer(data.ring);
     const src = new Uint8Array(3001 + 256);
     for (const [j] of src.entries()) src[j] = j & 255;
     let written = 0;

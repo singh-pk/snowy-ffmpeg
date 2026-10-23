@@ -17,23 +17,22 @@ import {
 } from "../src/ring";
 import { size } from "./support/ring-producer";
 
-function startProducer(ring: SharedArrayBuffer, wake: MessagePort, count: number) {
+function startProducer(ring: SharedArrayBuffer, count: number) {
   const worker = new Worker(new URL("support/ring-producer.ts", import.meta.url));
   const written = new Promise<number>((resolve) => {
     worker.addEventListener("message", (e: MessageEvent<number>) => resolve(e.data), {
       once: true,
     });
   });
-  worker.postMessage({ ring, wake, count }, [wake]);
+  worker.postMessage({ ring, count });
   return { worker, written };
 }
 
 test("every packet arrives intact and in order", async () => {
   const count = 5000;
   const ring = createRing(4096);
-  const { port1, port2 } = new MessageChannel();
-  const consumer = createConsumer(ring, port2);
-  const { worker, written } = startProducer(ring, port1, count);
+  const consumer = createConsumer(ring);
+  const { worker, written } = startProducer(ring, count);
   const wrong: string[] = [];
   let i = 0;
 
@@ -64,11 +63,10 @@ test("every packet arrives intact and in order", async () => {
 
 test("closing the ring stops a producer that waits for room, and ends the consumer", async () => {
   const ring = createRing(4096);
-  const { port1, port2 } = new MessageChannel();
   const blocked = Promise.withResolvers<void>();
-  const consumer = createConsumer(ring, port2, blocked.resolve);
+  const consumer = createConsumer(ring, blocked.resolve);
   consumer.watch();
-  const { worker, written } = startProducer(ring, port1, 1000);
+  const { worker, written } = startProducer(ring, 1000);
   // Read nothing, so the producer fills the ring and waits for room, which the watch tells.
   await blocked.promise;
   expect(consumer.producerWaiting()).toBe(true);
@@ -89,7 +87,7 @@ async function timedOut(ms: number) {
 }
 
 test("closing an empty ring ends the consumer's own wait for a packet", async () => {
-  const consumer = createConsumer(createRing(4096), new MessageChannel().port2);
+  const consumer = createConsumer(createRing(4096));
   const waiting = consumer.wait();
   consumer.close();
 
@@ -102,20 +100,12 @@ test("closing an empty ring ends the consumer's own wait for a packet", async ()
   expect(ended).toBe(true);
 });
 
-test("a write to an empty ring wakes the waiting consumer, with one message", async () => {
+test("a write to an empty ring wakes the waiting consumer", async () => {
   const ring = createRing(4096);
-  const { port1, port2 } = new MessageChannel();
-  const consumer = createConsumer(ring, port2);
-  const producer = createProducer(ring, port1);
-  const messages = { count: 0 };
-  const marked = Promise.withResolvers<void>();
-
-  port2.addEventListener("message", ({ data }: MessageEvent<string | null>) => {
-    if (data === "mark") marked.resolve();
-    else messages.count++;
-  });
+  const consumer = createConsumer(ring);
+  const producer = createProducer(ring);
   const waiting = consumer.wait();
-  // Two writes while it waits: the first takes the flag, so the second posts nothing.
+  // Two writes while it waits: the first takes the flag and notifies, the second does not.
   producer.write(0, 0, 0n, 0n, 0, new Uint8Array(1), 0, 1);
   producer.write(0, 0, 1n, 0n, 0, new Uint8Array(1), 0, 1);
 
@@ -127,47 +117,43 @@ test("a write to an empty ring wakes the waiting consumer, with one message", as
   const ended = await Promise.race([waited(), timedOut(1000)]);
   expect(ended).toBe(true);
   expect(consumer.peek()?.pts).toBe(0n);
-  // A wait with packets in the ring returns at once, and leaves no message behind.
+  // A wait with packets in the ring returns at once.
   await consumer.wait();
-  // Messages arrive in order, so once the mark has, any message posted before it has too.
-  port1.postMessage("mark");
-  await marked.promise;
-  expect(messages.count).toBe(1);
   consumer.close();
 });
 
-test("a watching consumer hears once that the producer's thread blocks", async () => {
+test("a watching consumer hears once for each watch that the producer's thread blocks", async () => {
   const ring = createRing(4096);
-  const { port1, port2 } = new MessageChannel();
-  const blocks = { count: 0 };
-  const consumer = createConsumer(ring, port2, () => blocks.count++);
-  const producer = createProducer(ring, port1);
-  const marked = Promise.withResolvers<void>();
+  const heard = { count: 0, next: Promise.withResolvers<void>() };
 
-  // The consumer's own listener hears the mark too, which ends no wait: none is in progress.
-  port2.addEventListener("message", ({ data }: MessageEvent<string | null>) => {
-    if (data === "mark") marked.resolve();
+  const consumer = createConsumer(ring, () => {
+    heard.count++;
+    heard.next.resolve();
   });
-  // Unwatched, a block posts nothing; watched, the first takes the watch, so the second posts
-  // nothing either.
+
+  const producer = createProducer(ring);
+  // Unwatched, a block is not told; watched, the first takes the watch, so the second is not
+  // told either.
   producer.blocking();
   consumer.watch();
   producer.blocking();
   producer.blocking();
-  port1.postMessage("mark");
-  await marked.promise;
-  expect(blocks.count).toBe(1);
+  await heard.next.promise;
+  expect(heard.count).toBe(1);
+  heard.next = Promise.withResolvers<void>();
+  consumer.watch();
+  producer.blocking();
+  await heard.next.promise;
+  expect(heard.count).toBe(2);
   consumer.close();
 });
 
 test("offer writes only what fits, and a waiting producer hears each release and the close", () => {
   const ring = createRing(256);
-  const { port1, port2 } = new MessageChannel();
-  const producer = createProducer(ring, port1);
+  const producer = createProducer(ring);
   const freed = { count: 0 };
   const consumer = createConsumer(
     ring,
-    port2,
     () => {},
     () => freed.count++,
   );
@@ -195,7 +181,6 @@ test("offer writes only what fits, and a waiting producer hears each release and
   expect(producer.closed()).toBe(true);
   expect(producer.offer(0, 0, 0n, 0n, 1, data, 0, 1)).toBe(false);
   expect(producer.offerEnd()).toBe(false);
-  port1.close();
 });
 
 test("the key flag and the unknown timestamp are FFmpeg's", () => {
@@ -204,7 +189,7 @@ test("the key flag and the unknown timestamp are FFmpeg's", () => {
 
 test("a capacity, packet or duration the ring cannot hold is an error", () => {
   expect(() => createRing(3000)).toThrow(RangeError);
-  const producer = createProducer(createRing(64), new MessageChannel().port1);
+  const producer = createProducer(createRing(64));
   const src = new Uint8Array(64);
   expect(() => producer.write(0, 0, 0n, 0n, 0, src, 0, 64)).toThrow(RangeError);
   expect(() => producer.write(0, 0, 0n, 0n, 2 ** 32 + 5, src, 0, 0)).toThrow(RangeError);

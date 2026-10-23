@@ -4,7 +4,7 @@
 // One side of the ring benchmark (run.ts), in a worker as in the engine. The producer writes
 // `count` packets of `size` bytes, as fast as it can or one every `interval` ms, stamped with
 // the time it wrote them; the consumer reads them as the render worker will, woken by the
-// producer's message, and reports how long they took and how late each wake-up was.
+// producer's notify, and reports how long they took and how late each wake-up was.
 
 import { createConsumer, createProducer, END } from "../src/ring";
 
@@ -12,12 +12,11 @@ export type RingJob =
   | {
       role: "produce";
       ring: SharedArrayBuffer;
-      wake: MessagePort;
       size: number;
       count: number;
       interval: number;
     }
-  | { role: "consume"; ring: SharedArrayBuffer; wake: MessagePort };
+  | { role: "consume"; ring: SharedArrayBuffer };
 
 export interface RingResult {
   /** From the first packet to the END record. */
@@ -29,8 +28,8 @@ export interface RingResult {
 // Microseconds on a clock every worker of the page shares.
 const now = () => Math.round((performance.timeOrigin + performance.now()) * 1000);
 
-function produce({ ring, wake, size, count, interval }: Extract<RingJob, { role: "produce" }>) {
-  const producer = createProducer(ring, wake);
+function produce({ ring, size, count, interval }: Extract<RingJob, { role: "produce" }>) {
+  const producer = createProducer(ring);
   const src = new Uint8Array(size);
   const sleeper = new Int32Array(new SharedArrayBuffer(4));
 
@@ -42,8 +41,8 @@ function produce({ ring, wake, size, count, interval }: Extract<RingJob, { role:
   producer.end();
 }
 
-async function consume(ring: SharedArrayBuffer, wake: MessagePort): Promise<RingResult> {
-  const consumer = createConsumer(ring, wake);
+async function consume(ring: SharedArrayBuffer): Promise<RingResult> {
+  const consumer = createConsumer(ring);
   const latencies: number[] = [];
   let start = 0;
   let woken = false;
@@ -71,7 +70,7 @@ async function run(job: RingJob) {
   if (job.role === "produce") {
     produce(job);
   } else {
-    const result = await consume(job.ring, job.wake);
+    const result = await consume(job.ring);
     self.postMessage(result);
   }
 }
