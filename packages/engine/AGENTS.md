@@ -9,11 +9,11 @@ This package is the playback pipeline of Snowy, without any user interface: it r
 | Task | Command |
 | --- | --- |
 | Bundle `src/` into `dist/` | `bun run build` |
-| Browser tests (Chromium, Firefox, WebKit) | `bun run test` |
+| Browser tests (Chromium) | `bun run test` |
 | Benchmarks | `bun run bench --runs 5` |
 | Regenerate the fixtures (needs native FFmpeg 9.0.2) | `bun run fixtures` |
 
-The tests and benchmarks build what they run, and need `@snowy-media/ffmpeg` built first (`bun run build` in `packages/ffmpeg`; CI takes it from the ffmpeg build job). They need WebGPU with a GPU, so they run on macOS (as CI does) or Windows. On Linux only Chromium has it. Firefox runs with a window, because it has no WebGPU when headless.
+The tests and benchmarks build what they run, and need `@snowy-media/ffmpeg` built first (`bun run build` in `packages/ffmpeg`; CI takes it from the ffmpeg build job). They need WebGPU on a GPU: macOS (as CI does), Windows, or Linux with a GPU.
 
 ## Map
 

@@ -1,16 +1,16 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// Audio and the clock in Chromium, Firefox and WebKit: the media worker decodes and resamples
+// Audio and the clock in Chromium: the media worker decodes and resamples
 // each fixture into the PCM ring, and the engine's AudioWorklet plays it into an
 // OfflineAudioContext (test/support/page.ts). What plays equals native `ffmpeg -ar -ac`
 // (test/fixtures/expected.json), the clock keeps to it without a gap and stops after its last
 // frame, and over ten minutes every click still starts on its second. test/pcm.test.ts
 // covers underruns. Usage: bun run test.
 
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { PCM_RATE } from "./support/audio";
-import { browsers } from "./support/browsers";
+import { launch } from "./support/browsers";
 import { AUDIO_WORKLET, MEDIA_WORKER, PAGE, serveEngine } from "./support/serve";
 
 interface Audio {
@@ -76,45 +76,39 @@ function checkClock(name: string, played: Played, { clicks, resampled: { frames 
   expect(Math.max(...late), `${name} click timing`).toBeLessThanOrEqual(CLICK_TOLERANCE);
 }
 
-for (const [name, [type, options]] of Object.entries(browsers)) {
-  describe(name, () => {
-    test("plays every fixture as ffmpeg -ar -ac resamples it", async () => {
-      const browser = await type.launch(options);
+test("plays every fixture as ffmpeg -ar -ac resamples it", async () => {
+  const browser = await launch();
 
-      try {
-        const tab = await browser.newPage();
-        await tab.goto(server.url.href);
+  try {
+    const tab = await browser.newPage();
+    await tab.goto(server.url.href);
 
-        for (const [file, { audio }] of Object.entries(expected)) {
-          if (file === LONG) continue;
-          const played = await play(tab, file, audio, 2);
-          checkClock(file, played, audio);
-          const want = audio.resampled.probe;
-          const diff = Math.max(
-            ...want.map((v, i) => Math.abs(v - (played.probe[i] ?? Number.NaN))),
-          );
-          expect(diff, `${file} samples`).toBeLessThanOrEqual(FLOAT_TOLERANCE);
-        }
-      } finally {
-        await browser.close();
-      }
-    }, 120_000);
+    for (const [file, { audio }] of Object.entries(expected)) {
+      if (file === LONG) continue;
+      const played = await play(tab, file, audio, 2);
+      checkClock(file, played, audio);
+      const want = audio.resampled.probe;
+      const diff = Math.max(...want.map((v, i) => Math.abs(v - (played.probe[i] ?? Number.NaN))));
+      expect(diff, `${file} samples`).toBeLessThanOrEqual(FLOAT_TOLERANCE);
+    }
+  } finally {
+    await browser.close();
+  }
+}, 120_000);
 
-    test("the clock keeps time over ten minutes", async () => {
-      const browser = await type.launch(options);
+test("the clock keeps time over ten minutes", async () => {
+  const browser = await launch();
 
-      try {
-        const tab = await browser.newPage();
-        await tab.goto(server.url.href);
-        const { audio } = expected[LONG] ?? {};
-        if (!audio) throw new Error(`no ${LONG} in expected.json`);
-        // Mono, to halve the memory ten minutes take.
-        const played = await play(tab, LONG, audio, 1);
-        checkClock(LONG, played, audio);
-        expect(played.offsets.length, "clock readings while it ran").toBeGreaterThan(0);
-      } finally {
-        await browser.close();
-      }
-    }, 300_000);
-  });
-}
+  try {
+    const tab = await browser.newPage();
+    await tab.goto(server.url.href);
+    const { audio } = expected[LONG] ?? {};
+    if (!audio) throw new Error(`no ${LONG} in expected.json`);
+    // Mono, to halve the memory ten minutes take.
+    const played = await play(tab, LONG, audio, 1);
+    checkClock(LONG, played, audio);
+    expect(played.offsets.length, "clock readings while it ran").toBeGreaterThan(0);
+  } finally {
+    await browser.close();
+  }
+}, 300_000);

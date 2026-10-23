@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// engine.seek in Chromium, Firefox and WebKit, through the public API alone: paused, each seek
+// engine.seek in Chromium, through the public API alone: paused, each seek
 // puts up exactly the frame due at its target, the one FFmpeg's timestamps say, and the clock
 // reads the target; a seek while playing plays on from there, with the frame due on screen;
 // and a scrub, fastSeek on every animation frame, shows frames on the way, never past it, and
@@ -10,8 +10,8 @@
 // between frames and at random; the gate is `SNOWY_SEEKS=50 bun test test/seek.test.ts`.
 // Usage: bun run test.
 
-import { afterAll, describe, expect, test } from "bun:test";
-import { browsers } from "./support/browsers";
+import { afterAll, expect, test } from "bun:test";
+import { launch } from "./support/browsers";
 import { ENTRY, PAGE, serveEngine } from "./support/serve";
 
 interface Video {
@@ -29,9 +29,6 @@ const expected: Record<string, { video?: Video; audio?: unknown; duration: numbe
 const SEEKS = Number(process.env.SNOWY_SEEKS ?? 10);
 // The time a seek may take, in milliseconds, with the reads after it.
 const SEEK_TIME = 1000;
-// What a browser cannot decode at all, and what it fails on (test/render.test.ts).
-const UNSUPPORTED: Record<string, string[]> = { firefox: ["hevc"], webkit: ["av1"] };
-const FAILS: Record<string, string[]> = { webkit: ["altref-vp8-opus.webm"] };
 // The long file, sought into while it plays.
 const LONG = "sync-10min.mp4";
 const PLAYING_AT = 300;
@@ -105,275 +102,263 @@ const fixtures = Object.entries(expected).filter(
     video && audio && file !== LONG && video.shown[0] === width && video.shown[1] === height,
 );
 
-for (const [name, [type, options]] of Object.entries(browsers)) {
-  describe(name, () => {
-    const playable = fixtures.filter(
-      ([file, { video }]) =>
-        !UNSUPPORTED[name]?.includes(video?.codec ?? "") && !FAILS[name]?.includes(file),
-    );
+test(
+  `lands exactly on ${SEEKS} seeks in each of ${fixtures.length} files, paused`,
+  async () => {
+    const browser = await launch();
+    const plan = fixtures.map(([file, { video, duration }], i) => ({
+      file,
+      targets: video ? targets(video, duration, i + 1) : [],
+    }));
 
-    test(
-      `lands exactly on ${SEEKS} seeks in each of ${playable.length} files, paused`,
-      async () => {
-        const browser = await type.launch(options);
-        const plan = playable.map(([file, { video, duration }], i) => ({
-          file,
-          targets: video ? targets(video, duration, i + 1) : [],
-        }));
+    try {
+      const tab = await browser.newPage();
+      await tab.goto(server.url.href);
+      const got = await tab.evaluate(
+        async ({ entry, page, plan: files, settle }) => {
+          const engine: typeof import("../src/index") = await import(entry);
+          const support: typeof import("./support/page") = await import(page);
+          const canvas = document.querySelector("canvas");
+          if (!canvas) throw new Error("no canvas");
+          const player = await engine.createEngine({ canvas });
+          const all: { file: string; seen: [clock: number, id: number][] }[] = [];
 
-        try {
-          const tab = await browser.newPage();
-          await tab.goto(server.url.href);
-          const got = await tab.evaluate(
-            async ({ entry, page, plan: files, settle }) => {
-              const engine: typeof import("../src/index") = await import(entry);
-              const support: typeof import("./support/page") = await import(page);
-              const canvas = document.querySelector("canvas");
-              if (!canvas) throw new Error("no canvas");
-              const player = await engine.createEngine({ canvas });
-              const all: { file: string; seen: [clock: number, id: number][] }[] = [];
+          for (const { file, targets: times } of files) {
+            const res = await fetch(`/test/fixtures/${file}`);
+            const blob = await res.blob();
+            await player.open(new File([blob], file));
+            const seen: [number, number][] = [];
 
-              for (const { file, targets: times } of files) {
-                const res = await fetch(`/test/fixtures/${file}`);
-                const blob = await res.blob();
-                await player.open(new File([blob], file));
-                const seen: [number, number][] = [];
-
-                for (const target of times) {
-                  await player.seek(target / 1e6);
-                  const reads = await support.watchScreen(player, canvas, settle);
-                  seen.push([player.currentTime, reads.at(-1)?.[1] ?? -1]);
-                }
-
-                all.push({ file, seen });
-              }
-
-              player.close();
-              return all;
-            },
-            { entry: ENTRY, page: PAGE, plan, settle: SETTLE },
-          );
-
-          for (const [i, { file, targets: times }] of plan.entries()) {
-            const v = expected[file]?.video;
-            if (!v) throw new Error(`no video in ${file}`);
-            const seen = got[i]?.seen ?? [];
-            const frames = times.map((t) => frameAt(v, t));
-            expect(
-              seen.map(([, id]) => id),
-              `${file} at ${times.join(", ")} µs`,
-            ).toEqual(frames);
-
-            for (const [k, t] of times.entries()) {
-              const clock = seen[k]?.[0] ?? Number.NaN;
-              expect(Math.abs(clock - t / 1e6), `${file}: clock at ${t} µs`).toBeLessThan(SAMPLE);
+            for (const target of times) {
+              await player.seek(target / 1e6);
+              const reads = await support.watchScreen(player, canvas, settle);
+              seen.push([player.currentTime, reads.at(-1)?.[1] ?? -1]);
             }
+
+            all.push({ file, seen });
           }
-        } finally {
-          await browser.close();
+
+          player.close();
+          return all;
+        },
+        { entry: ENTRY, page: PAGE, plan, settle: SETTLE },
+      );
+
+      for (const [i, { file, targets: times }] of plan.entries()) {
+        const v = expected[file]?.video;
+        if (!v) throw new Error(`no video in ${file}`);
+        const seen = got[i]?.seen ?? [];
+        const frames = times.map((t) => frameAt(v, t));
+        expect(
+          seen.map(([, id]) => id),
+          `${file} at ${times.join(", ")} µs`,
+        ).toEqual(frames);
+
+        for (const [k, t] of times.entries()) {
+          const clock = seen[k]?.[0] ?? Number.NaN;
+          expect(Math.abs(clock - t / 1e6), `${file}: clock at ${t} µs`).toBeLessThan(SAMPLE);
         }
+      }
+    } finally {
+      await browser.close();
+    }
+  },
+  60_000 + SEEKS * fixtures.length * SEEK_TIME,
+);
+
+test(`plays on from a seek while ${LONG} plays`, async () => {
+  const browser = await launch();
+  const v = expected[LONG]?.video;
+  if (!v) throw new Error(`no video in ${LONG}`);
+
+  try {
+    const tab = await browser.newPage();
+    await tab.goto(server.url.href);
+    // A user gesture, so audio may start.
+    await tab.mouse.click(1, 1);
+    const reads = await tab.evaluate(
+      async ({ entry, page, file, at }) => {
+        const engine: typeof import("../src/index") = await import(entry);
+        const support: typeof import("./support/page") = await import(page);
+        const canvas = document.querySelector("canvas");
+        if (!canvas) throw new Error("no canvas");
+        const player = await engine.createEngine({ canvas });
+        const res = await fetch(`/test/fixtures/${file}`);
+        const blob = await res.blob();
+        await player.open(new File([blob], file));
+        await player.play();
+        await support.watchScreen(player, canvas, 500);
+        await player.seek(at);
+        const seen = await support.watchScreen(player, canvas, 2000);
+        player.close();
+        return seen;
       },
-      60_000 + SEEKS * playable.length * SEEK_TIME,
+      { entry: ENTRY, page: PAGE, file: LONG, at: PLAYING_AT },
     );
 
-    test(`plays on from a seek while ${LONG} plays`, async () => {
-      const browser = await type.launch(options);
-      const v = expected[LONG]?.video;
-      if (!v) throw new Error(`no video in ${LONG}`);
+    const [num = 1, den = 1] = v.timeBase.split("/").map(Number);
+    const due = (id: number) => ((v.pts[id] ?? 0) * num) / den;
+    // It plays on from the target, in real time.
+    expect(reads[0]?.[0] ?? 0).toBeGreaterThanOrEqual(PLAYING_AT);
+    expect(reads.at(-1)?.[0] ?? 0).toBeGreaterThan(PLAYING_AT + 1.5);
+    // On a frame sought to, no further than a frame from the one due at the clock. The
+    // play test bounds sync itself; this checks the seek lands in it.
+    const newest = reads.at(-1);
+    const id = newest?.[1] ?? 0;
+    expect(Math.abs(due(id) - (newest?.[0] ?? 0))).toBeLessThan(SYNC);
+  } finally {
+    await browser.close();
+  }
+}, 60_000);
 
-      try {
-        const tab = await browser.newPage();
-        await tab.goto(server.url.href);
-        // A user gesture, so audio may start.
-        await tab.mouse.click(1, 1);
-        const reads = await tab.evaluate(
-          async ({ entry, page, file, at }) => {
-            const engine: typeof import("../src/index") = await import(entry);
-            const support: typeof import("./support/page") = await import(page);
-            const canvas = document.querySelector("canvas");
-            if (!canvas) throw new Error("no canvas");
-            const player = await engine.createEngine({ canvas });
-            const res = await fetch(`/test/fixtures/${file}`);
-            const blob = await res.blob();
-            await player.open(new File([blob], file));
-            await player.play();
-            await support.watchScreen(player, canvas, 500);
-            await player.seek(at);
-            const seen = await support.watchScreen(player, canvas, 2000);
-            player.close();
-            return seen;
-          },
-          { entry: ENTRY, page: PAGE, file: LONG, at: PLAYING_AT },
-        );
+test(`scrubs through ${SCRUBBED} and back, then plays on from where it is let go`, async () => {
+  const browser = await launch();
+  const v = expected[SCRUBBED]?.video;
+  if (!v) throw new Error(`no video in ${SCRUBBED}`);
 
-        const [num = 1, den = 1] = v.timeBase.split("/").map(Number);
-        const due = (id: number) => ((v.pts[id] ?? 0) * num) / den;
-        // It plays on from the target, in real time.
-        expect(reads[0]?.[0] ?? 0).toBeGreaterThanOrEqual(PLAYING_AT);
-        expect(reads.at(-1)?.[0] ?? 0).toBeGreaterThan(PLAYING_AT + 1.5);
-        // On a frame sought to, no further than a frame from the one due at the clock. The
-        // play test bounds sync itself; this checks the seek lands in it.
-        const newest = reads.at(-1);
-        const id = newest?.[1] ?? 0;
-        expect(Math.abs(due(id) - (newest?.[0] ?? 0))).toBeLessThan(SYNC);
-      } finally {
-        await browser.close();
-      }
-    }, 60_000);
+  try {
+    const tab = await browser.newPage();
+    await tab.goto(server.url.href);
+    // A user gesture, so audio may start.
+    await tab.mouse.click(1, 1);
+    const got = await tab.evaluate(
+      async ({ entry, page, file, frames, to, back, again, settle }) => {
+        const engine: typeof import("../src/index") = await import(entry);
+        const support: typeof import("./support/page") = await import(page);
+        const canvas = document.querySelector("canvas");
+        if (!canvas) throw new Error("no canvas");
+        const screen: HTMLCanvasElement = canvas;
+        const player = await engine.createEngine({ canvas });
+        const res = await fetch(`/test/fixtures/${file}`);
+        const blob = await res.blob();
+        await player.open(new File([blob], file));
+        await player.seek(0);
 
-    test(`scrubs through ${SCRUBBED} and back, then plays on from where it is let go`, async () => {
-      const browser = await type.launch(options);
-      const v = expected[SCRUBBED]?.video;
-      if (!v) throw new Error(`no video in ${SCRUBBED}`);
+        // A drag from `from` to `until` seconds, a fastSeek on every animation frame, with
+        // the screen read on each, along with the scrub's target, which currentTime reads.
+        async function drag(from: number, until: number) {
+          const watching = support.watchScreen(player, screen, (frames * 1000) / 60 + 200);
+          const scrubs: Promise<void>[] = [];
 
-      try {
-        const tab = await browser.newPage();
-        await tab.goto(server.url.href);
-        // A user gesture, so audio may start.
-        await tab.mouse.click(1, 1);
-        const got = await tab.evaluate(
-          async ({ entry, page, file, frames, to, back, again, settle }) => {
-            const engine: typeof import("../src/index") = await import(entry);
-            const support: typeof import("./support/page") = await import(page);
-            const canvas = document.querySelector("canvas");
-            if (!canvas) throw new Error("no canvas");
-            const screen: HTMLCanvasElement = canvas;
-            const player = await engine.createEngine({ canvas });
-            const res = await fetch(`/test/fixtures/${file}`);
-            const blob = await res.blob();
-            await player.open(new File([blob], file));
-            await player.seek(0);
+          for (let i = 1; i <= frames; i++) {
+            await new Promise((resolve) => requestAnimationFrame(resolve));
+            scrubs.push(player.fastSeek(from + ((until - from) * i) / frames));
+          }
 
-            // A drag from `from` to `until` seconds, a fastSeek on every animation frame, with
-            // the screen read on each, along with the scrub's target, which currentTime reads.
-            async function drag(from: number, until: number) {
-              const watching = support.watchScreen(player, screen, (frames * 1000) / 60 + 200);
-              const scrubs: Promise<void>[] = [];
-
-              for (let i = 1; i <= frames; i++) {
-                await new Promise((resolve) => requestAnimationFrame(resolve));
-                scrubs.push(player.fastSeek(from + ((until - from) * i) / frames));
-              }
-
-              const seen = await watching;
-              await Promise.all(scrubs);
-              return seen;
-            }
-
-            const forward = await drag(0, to);
-            const backward = await drag(to, back);
-            const landed = await support.watchScreen(player, canvas, settle);
-            await player.play();
-            const playing = await support.watchScreen(player, canvas, 600);
-            await player.pause();
-            await player.fastSeek(again);
-            const after = await support.watchScreen(player, canvas, settle);
-            // And, played and paused again, a scrub just past the clock, short of the frame up.
-            await player.play();
-            await support.watchScreen(player, canvas, 300);
-            await player.pause();
-            const near = player.currentTime + 0.01;
-            await player.fastSeek(near);
-            const nearly = await support.watchScreen(player, canvas, settle);
-            player.close();
-            const [landedAt, againAt] = [landed.at(-1)?.[1] ?? -1, after.at(-1)?.[1] ?? -1];
-            const nearAt = nearly.at(-1)?.[1] ?? -1;
-            return { forward, backward, landed: landedAt, playing, again: againAt, near, nearAt };
-          },
-          {
-            entry: ENTRY,
-            page: PAGE,
-            file: SCRUBBED,
-            frames: SCRUB_FRAMES,
-            to: SCRUB_TO,
-            back: SCRUB_BACK,
-            again: SCRUB_AGAIN,
-            settle: SETTLE,
-          },
-        );
-
-        const [num = 1, den = 1] = v.timeBase.split("/").map(Number);
-        const due = (id: number) => ((v.pts[id] ?? 0) * num) / den;
-        // Frames on the way, more than the keyframes passed, and none past the scrub either way:
-        // forward, its clock starts up to a sample before its target; back, a frame lasts up to
-        // the longest gap between two.
-        const keys = v.keyframes.filter((k) => (k * num) / den <= SCRUB_TO).length;
-        const longest = Math.max(...v.pts.slice(1).map((pts, i) => pts - (v.pts[i] ?? 0)));
-        expect(new Set(got.forward.map(([, id]) => id)).size).toBeGreaterThan(2 * keys);
-        expect(new Set(got.backward.map(([, id]) => id)).size).toBeGreaterThan(2 * keys);
-
-        for (const [time, id] of got.forward) {
-          expect(due(id), `forward: frame ${id} at ${time} s`).toBeLessThanOrEqual(time + SAMPLE);
+          const seen = await watching;
+          await Promise.all(scrubs);
+          return seen;
         }
 
-        for (const [time, id] of got.backward) {
-          expect(due(id), `back: frame ${id} at ${time} s`).toBeGreaterThanOrEqual(
-            time - (longest * num) / den,
-          );
+        const forward = await drag(0, to);
+        const backward = await drag(to, back);
+        const landed = await support.watchScreen(player, canvas, settle);
+        await player.play();
+        const playing = await support.watchScreen(player, canvas, 600);
+        await player.pause();
+        await player.fastSeek(again);
+        const after = await support.watchScreen(player, canvas, settle);
+        // And, played and paused again, a scrub just past the clock, short of the frame up.
+        await player.play();
+        await support.watchScreen(player, canvas, 300);
+        await player.pause();
+        const near = player.currentTime + 0.01;
+        await player.fastSeek(near);
+        const nearly = await support.watchScreen(player, canvas, settle);
+        player.close();
+        const [landedAt, againAt] = [landed.at(-1)?.[1] ?? -1, after.at(-1)?.[1] ?? -1];
+        const nearAt = nearly.at(-1)?.[1] ?? -1;
+        return { forward, backward, landed: landedAt, playing, again: againAt, near, nearAt };
+      },
+      {
+        entry: ENTRY,
+        page: PAGE,
+        file: SCRUBBED,
+        frames: SCRUB_FRAMES,
+        to: SCRUB_TO,
+        back: SCRUB_BACK,
+        again: SCRUB_AGAIN,
+        settle: SETTLE,
+      },
+    );
+
+    const [num = 1, den = 1] = v.timeBase.split("/").map(Number);
+    const due = (id: number) => ((v.pts[id] ?? 0) * num) / den;
+    // Frames on the way, more than the keyframes passed, and none past the scrub either way:
+    // forward, its clock starts up to a sample before its target; back, a frame lasts up to
+    // the longest gap between two.
+    const keys = v.keyframes.filter((k) => (k * num) / den <= SCRUB_TO).length;
+    const longest = Math.max(...v.pts.slice(1).map((pts, i) => pts - (v.pts[i] ?? 0)));
+    expect(new Set(got.forward.map(([, id]) => id)).size).toBeGreaterThan(2 * keys);
+    expect(new Set(got.backward.map(([, id]) => id)).size).toBeGreaterThan(2 * keys);
+
+    for (const [time, id] of got.forward) {
+      expect(due(id), `forward: frame ${id} at ${time} s`).toBeLessThanOrEqual(time + SAMPLE);
+    }
+
+    for (const [time, id] of got.backward) {
+      expect(due(id), `back: frame ${id} at ${time} s`).toBeGreaterThanOrEqual(
+        time - (longest * num) / den,
+      );
+    }
+
+    // Exactly where it is let go, and it plays on from there, in sync.
+    expect(got.landed).toBe(frameAt(v, Math.round(SCRUB_BACK * 1e6)));
+    expect(got.playing[0]?.[0] ?? 0).toBeGreaterThanOrEqual(SCRUB_BACK - SAMPLE);
+    expect(got.playing.at(-1)?.[0] ?? 0).toBeGreaterThan(SCRUB_BACK + 0.3);
+    const last = got.playing.at(-1);
+    expect(Math.abs(due(last?.[1] ?? 0) - (last?.[0] ?? 0))).toBeLessThan(SYNC);
+    // Back behind where it paused, exactly.
+    expect(got.again).toBe(frameAt(v, Math.round(SCRUB_AGAIN * 1e6)));
+    expect(got.nearAt, `at ${got.near} s`).toBe(frameAt(v, Math.round(got.near * 1e6)));
+  } finally {
+    await browser.close();
+  }
+}, 60_000);
+
+// Nothing of a file stays on screen once another opens.
+test("clears the canvas when another file opens", async () => {
+  const browser = await launch();
+  const v = expected[SCRUBBED]?.video;
+  if (!v) throw new Error(`no video in ${SCRUBBED}`);
+
+  try {
+    const tab = await browser.newPage();
+    await tab.goto(server.url.href);
+    const got = await tab.evaluate(
+      async ({ entry, page, file, settle }) => {
+        const engine: typeof import("../src/index") = await import(entry);
+        const support: typeof import("./support/page") = await import(page);
+        const canvas = document.querySelector("canvas");
+        if (!canvas) throw new Error("no canvas");
+        const player = await engine.createEngine({ canvas });
+        const res = await fetch(`/test/fixtures/${file}`);
+        const blob = await res.blob();
+        await player.open(new File([blob], file));
+        await player.seek(1);
+        const shown = await support.watchScreen(player, canvas, settle);
+        await player.open(new File([blob], file));
+        // On each animation frame until the canvas reads black: the render worker says
+        // nothing when it has cleared. Without the clear, the test times out.
+        const reader = new OffscreenCanvas(canvas.width, canvas.height).getContext("2d");
+        if (!reader) throw new Error("no 2D context");
+        const brightest = { value: -1 };
+
+        while (brightest.value !== 0) {
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          reader.drawImage(canvas, 0, 0);
+          const { data } = reader.getImageData(0, 0, canvas.width, canvas.height);
+          brightest.value = data.reduce((max, c, i) => (i % 4 === 3 ? max : Math.max(max, c)), 0);
         }
 
-        // Exactly where it is let go, and it plays on from there, in sync.
-        expect(got.landed).toBe(frameAt(v, Math.round(SCRUB_BACK * 1e6)));
-        expect(got.playing[0]?.[0] ?? 0).toBeGreaterThanOrEqual(SCRUB_BACK - SAMPLE);
-        expect(got.playing.at(-1)?.[0] ?? 0).toBeGreaterThan(SCRUB_BACK + 0.3);
-        const last = got.playing.at(-1);
-        expect(Math.abs(due(last?.[1] ?? 0) - (last?.[0] ?? 0))).toBeLessThan(SYNC);
-        // Back behind where it paused, exactly.
-        expect(got.again).toBe(frameAt(v, Math.round(SCRUB_AGAIN * 1e6)));
-        expect(got.nearAt, `at ${got.near} s`).toBe(frameAt(v, Math.round(got.near * 1e6)));
-      } finally {
-        await browser.close();
-      }
-    }, 60_000);
+        player.close();
+        return { shown: shown.at(-1)?.[1] };
+      },
+      { entry: ENTRY, page: PAGE, file: SCRUBBED, settle: SETTLE },
+    );
 
-    // Nothing of a file stays on screen once another opens.
-    test("clears the canvas when another file opens", async () => {
-      const browser = await type.launch(options);
-      const v = expected[SCRUBBED]?.video;
-      if (!v) throw new Error(`no video in ${SCRUBBED}`);
-
-      try {
-        const tab = await browser.newPage();
-        await tab.goto(server.url.href);
-        const got = await tab.evaluate(
-          async ({ entry, page, file, settle }) => {
-            const engine: typeof import("../src/index") = await import(entry);
-            const support: typeof import("./support/page") = await import(page);
-            const canvas = document.querySelector("canvas");
-            if (!canvas) throw new Error("no canvas");
-            const player = await engine.createEngine({ canvas });
-            const res = await fetch(`/test/fixtures/${file}`);
-            const blob = await res.blob();
-            await player.open(new File([blob], file));
-            await player.seek(1);
-            const shown = await support.watchScreen(player, canvas, settle);
-            await player.open(new File([blob], file));
-            // On each animation frame until the canvas reads black: the render worker says
-            // nothing when it has cleared. Without the clear, the test times out.
-            const reader = new OffscreenCanvas(canvas.width, canvas.height).getContext("2d");
-            if (!reader) throw new Error("no 2D context");
-            const brightest = { value: -1 };
-
-            while (brightest.value !== 0) {
-              await new Promise((resolve) => requestAnimationFrame(resolve));
-              reader.drawImage(canvas, 0, 0);
-              const { data } = reader.getImageData(0, 0, canvas.width, canvas.height);
-              brightest.value = data.reduce(
-                (max, c, i) => (i % 4 === 3 ? max : Math.max(max, c)),
-                0,
-              );
-            }
-
-            player.close();
-            return { shown: shown.at(-1)?.[1] };
-          },
-          { entry: ENTRY, page: PAGE, file: SCRUBBED, settle: SETTLE },
-        );
-
-        expect(got.shown).toBe(frameAt(v, 1e6));
-      } finally {
-        await browser.close();
-      }
-    }, 60_000);
-  });
-}
+    expect(got.shown).toBe(frameAt(v, 1e6));
+  } finally {
+    await browser.close();
+  }
+}, 60_000);

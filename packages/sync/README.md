@@ -15,7 +15,7 @@ Watch-together sessions for [Snowy](https://github.com/singh-pk/snowy-media): on
 
 ## Requirements
 
-A page served with cross-origin isolation (`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`) in a browser that runs `@snowy-media/engine` and also has WebTransport, WebRTC data channels, the Origin Private File System, and Ed25519 in Web Crypto. A session needs a MoQ relay and two STUN endpoints; nothing else runs on a server.
+A page served with cross-origin isolation (`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`) in desktop Chromium, as `@snowy-media/engine` needs, which also has WebTransport, WebRTC data channels, the Origin Private File System, and Ed25519 in Web Crypto. A session needs a MoQ relay and two STUN endpoints; nothing else runs on a server.
 
 ## Licence
 

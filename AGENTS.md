@@ -20,7 +20,7 @@ Run from the root for every package, or inside `packages/<name>` for one.
 | --- | --- |
 | Install tools, every package's dependencies and the pre-commit hook | `bun install` |
 | Build | `bun run build` |
-| Browser tests (Chromium, Firefox, WebKit) | `bun test` |
+| Browser tests (Chromium) | `bun test` |
 | Format everything (root only) | `bun run format` |
 | All static checks, CI's `check` job (root only) | `bun run check` |
 
@@ -31,7 +31,7 @@ Run `bun run check` before every commit; the hook runs it anyway.
 | Path | What it holds |
 | --- | --- |
 | `packages/<name>/` | one npm package: its code, tests, README, `docs/`, CHANGELOG and package-specific AGENTS.md |
-| `tooling/oxlint-rules/` | repository lint rules (see rule 5) |
+| `tooling/oxlint-rules/` | repository lint rules (see rule 7) |
 | `scripts/` | repository scripts, such as `settings.ts`, which applies `.github/settings.yml` |
 | `.agents/skills/` | task playbooks, also linked into `.claude/skills` |
 | `brand/` | the logo, avatar and social preview, and the rules for using them |
@@ -42,11 +42,13 @@ Shared configuration lives once, at the root: `tsconfig.base.json`, `.oxlintrc.j
 ## Rules
 
 1. **Packages are isolated.** A package uses another only through its published name and public exports (`@snowy-media/<name>`), never by relative path into another package. Each package builds, tests and documents itself.
-2. **No fallbacks.** One platform baseline (cross-origin isolation, WebAssembly SIMD and threads, WebCodecs, WebGPU, AudioWorklet) and one code path. Do not add feature detection, browser-specific branches or main-thread variants.
-3. **Performance is measured.** Never claim a speed-up you have not measured; include before and after numbers from the same machine.
-4. **Bun and TypeScript only.** Tooling is TypeScript run by Bun. No Node.js or Python scripts; shell only inside Docker builds.
-5. **Small, focused diffs.** Change only what the task needs, normally in one package. Match the surrounding style: short functions, comments that explain *why*, SPDX headers on new files with the licence of the package (MIT outside `packages/ffmpeg`). `bun run lint` also enforces the house rules: no classes, no module-level `let` (keep state in a `createX()` factory), `await` into a `const` instead of nesting it or chaining `.then`, no `setInterval`, and a blank line around every multi-line block.
-6. **No internal notes in the repository.** No plans, roadmaps, TODO lists, meeting notes or agent scratch files. Rationale for the current design goes in the package's `docs/`; user-visible changes go in its `CHANGELOG.md` under *Unreleased*.
+2. **Desktop Chromium only.** Snowy runs in current stable Chromium on desktop (Chrome, Edge), because it opens files only through the File System Access API (rule 3), which Firefox, Safari and Chromium on Android lack. Packages are built, tested, benchmarked and documented for Chromium alone: no code, test, benchmark, CI job or document carries a branch, allowance, workaround or note for another browser engine.
+3. **Files are persisted handles.** A file the user opens is a `FileSystemFileHandle`, from `showOpenFilePicker` or a dropped item's `getAsFileSystemHandle`, which an app keeps in IndexedDB to open again on a later visit. A public API that opens a user's file takes that handle, never a `File`, `Blob`, URL or `<input type="file">`.
+4. **No fallbacks.** One platform baseline (cross-origin isolation, WebAssembly SIMD and threads, WebCodecs, WebGPU, AudioWorklet, File System Access) and one code path. Do not add feature detection, browser-specific branches or main-thread variants.
+5. **Performance is measured.** Never claim a speed-up you have not measured; include before and after numbers from the same machine.
+6. **Bun and TypeScript only.** Tooling is TypeScript run by Bun. No Node.js or Python scripts; shell only inside Docker builds.
+7. **Small, focused diffs.** Change only what the task needs, normally in one package. Match the surrounding style: short functions, comments that explain *why*, SPDX headers on new files with the licence of the package (MIT outside `packages/ffmpeg`). `bun run lint` also enforces the house rules: no classes, no module-level `let` (keep state in a `createX()` factory), `await` into a `const` instead of nesting it or chaining `.then`, no `setInterval`, and a blank line around every multi-line block.
+8. **No internal notes in the repository.** No plans, roadmaps, TODO lists, meeting notes or agent scratch files. Rationale for the current design goes in the package's `docs/`; user-visible changes go in its `CHANGELOG.md` under *Unreleased*.
 
 ## Before you open a pull request
 

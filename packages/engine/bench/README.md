@@ -1,6 +1,6 @@
 # Benchmarks
 
-`bun run bench` runs each benchmark in Chromium, Firefox and WebKit on a GPU, in a fresh browser per run, and prints the median of `--runs` runs in milliseconds. `--out bench/results/<name>.json` also writes the numbers, for a pull request that claims a change in speed.
+`bun run bench` runs each benchmark in Chromium on a GPU, in a fresh browser per run, and prints the median of `--runs` runs in milliseconds. `--out bench/results/<name>.json` also writes the numbers, for a pull request that claims a change in speed.
 
 | Benchmark | Measures |
 | --- | --- |

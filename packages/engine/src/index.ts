@@ -203,8 +203,8 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     // on to (`moved`, so its audio starts before); and how many seeks there have been.
     from: 0,
     moved: false,
-    // Whether what plays has played: paused, its frame is then where the clock stopped, or up
-    // to two frames on, not at `from`.
+    // Whether what plays has played: paused, its frame is then where the clock stopped, or a
+    // frame on, not at `from`.
     played: false,
     seeks: 0,
     // The first video stream's keyframe times, in microseconds, as far as its index goes.

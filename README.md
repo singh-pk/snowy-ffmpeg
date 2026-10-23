@@ -5,7 +5,7 @@
 
 [![ci](https://github.com/singh-pk/snowy-media/actions/workflows/ci.yml/badge.svg)](https://github.com/singh-pk/snowy-media/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@snowy-media/ffmpeg?label=%40snowy-media%2Fffmpeg)](https://www.npmjs.com/package/@snowy-media/ffmpeg)
-[![Tested in Chromium, Firefox and WebKit](https://img.shields.io/badge/tested%20in-Chromium%20%7C%20Firefox%20%7C%20WebKit-blue)](https://github.com/singh-pk/snowy-media/actions/workflows/ci.yml)
+[![Desktop Chromium](https://img.shields.io/badge/runs%20in-desktop%20Chromium-blue)](https://github.com/singh-pk/snowy-media/actions/workflows/ci.yml)
 [![Types: TypeScript](https://img.shields.io/badge/types-TypeScript-3178C6)](packages/ffmpeg)
 [![License: MIT and LGPL-2.1-or-later](https://img.shields.io/badge/license-MIT%20%2B%20LGPL--2.1--or--later-blue)](#license)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/singh-pk/snowy-media/badge)](https://scorecard.dev/viewer/?uri=github.com/singh-pk/snowy-media)

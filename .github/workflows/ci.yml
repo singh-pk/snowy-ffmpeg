@@ -121,7 +121,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
       - if: needs.changes.outputs.ffmpeg == 'true'
-        run: bunx playwright install --with-deps chromium firefox webkit
+        run: bunx playwright install --with-deps chromium
       - if: needs.changes.outputs.ffmpeg == 'true'
         run: bun test
 
@@ -129,7 +129,7 @@ jobs:
     name: engine test
     needs: [changes, build]
     if: needs.changes.outputs.engine == 'true'
-    # Only macOS 26 runners have WebGPU with a GPU in Chromium, Firefox and WebKit
+    # Only macOS runners have WebGPU with a GPU in Chromium
     # (packages/engine/docs/architecture.md#testing).
     runs-on: macos-26
     # It takes about 5 minutes; a browser that hangs would otherwise hold the runner for 6 hours.
@@ -153,7 +153,7 @@ jobs:
           path: packages/ffmpeg/dist
       # The published bundle; the tests build their own (test/support/serve.ts).
       - run: bun run build
-      - run: bunx playwright install chromium firefox webkit
+      - run: bunx playwright install chromium
       - run: bun run test
       # For reading only: shared runners are too noisy to fail on (packages/engine/bench).
       - run: bun run bench --runs 5 >> "$GITHUB_STEP_SUMMARY"

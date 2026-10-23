@@ -1,16 +1,15 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// The video output (src/video.ts) in Chromium, Firefox and WebKit: for every fixture its
-// browser decodes, frames decoded from the packet ring go up on the canvas at their own
+// The video output (src/video.ts) in Chromium: for every fixture, frames decoded from the packet ring go up on the canvas at their own
 // timestamps, stay up until the next one is due, and are skipped when the time jumps past
 // them; and the first frame, drawn through the compositor at the size it is shown at (over its
 // scale, for a fixture whose frame numbers are scaled up), has the layout of native FFmpeg's,
 // display matrix included (test/fixtures/expected.json).
 // Usage: bun run test.
 
-import { afterAll, describe, expect, test } from "bun:test";
-import { browsers } from "./support/browsers";
+import { afterAll, expect, test } from "bun:test";
+import { launch } from "./support/browsers";
 import { MEDIA_WORKER, PAGE, serveEngine } from "./support/serve";
 
 interface Video {
@@ -28,34 +27,16 @@ interface Video {
 const expected: Record<string, { video: Video }> = await Bun.file(
   new URL("fixtures/expected.json", import.meta.url),
 ).json();
-// What each browser cannot decode on every machine (test/video.test.ts): WebKit's AV1 needs
-// hardware CI's runners lack.
-const UNSUPPORTED: Record<string, string[]> = { firefox: ["hevc"], webkit: ["av1"] };
-// What a browser fails to decode, by file, and how: WebKit's VP8 decoder fails on a frame that
-// is not shown, such as an alt-ref frame (docs/architecture.md#video-decoder-configs).
-const FAILS: Record<string, Record<string, string>> = {
-  webkit: { "altref-vp8-opus.webm": "VPx decoding failed" },
-};
 // Frames shown one by one, then a jump to a later one.
 const STEPS = 20;
 const JUMP = 59;
 // How closely a frame's brightness grid follows FFmpeg's (a correlation). The levels differ:
-// for an untagged stream each browser and FFmpeg assume their own YUV matrix, and some
-// browsers convert the transfer too. A frame turned or mirrored the wrong way falls far below.
+// for an untagged stream Chromium and FFmpeg assume their own YUV matrix, and Chromium
+// converts the transfer too. A frame turned or mirrored the wrong way falls far below.
 const MIN_CORRELATION = 0.9;
 const server = await serveEngine("<!doctype html><title>test</title>");
 
 afterAll(() => server.stop(true));
-
-// The message `promise` rejects with, or "" if it resolves.
-async function rejection(promise: Promise<unknown>) {
-  try {
-    await promise;
-    return "";
-  } catch (e) {
-    return e instanceof Error ? e.message : String(e);
-  }
-}
 
 const mean = (v: number[]) => v.reduce((s, x) => s + x, 0) / v.length;
 
@@ -99,64 +80,48 @@ function plan(video: Video) {
   return { frames, times, drawn };
 }
 
-for (const [name, [type, options]] of Object.entries(browsers)) {
-  describe(name, () => {
-    for (const [file, { video }] of Object.entries(expected)) {
-      if (UNSUPPORTED[name]?.includes(video.codec)) continue;
+for (const [file, { video }] of Object.entries(expected)) {
+  test(`shows ${file} at its timestamps, as FFmpeg shows it`, async () => {
+    const browser = await launch();
+    const { frames, times, drawn } = plan(video);
+    // At the size it is shown at, as the grid is, over the size of its frame numbers.
+    const scale = video.scale ?? 1;
+    const [width, height] = [video.shown[0] / scale, video.shown[1] / scale];
+    const turned = video.shown[0] !== video.width;
 
-      test(`shows ${file} at its timestamps, as FFmpeg shows it`, async () => {
-        const browser = await type.launch(options);
-        const { frames, times, drawn } = plan(video);
-        // At the size it is shown at, as the grid is, over the size of its frame numbers.
-        const scale = video.scale ?? 1;
-        const [width, height] = [video.shown[0] / scale, video.shown[1] / scale];
-        const turned = video.shown[0] !== video.width;
-
-        try {
-          const tab = await browser.newPage();
-          await tab.goto(server.url.href);
-          const rendering = tab.evaluate(
-            async ({ page, worker, n, stream, size }) => {
-              const support: typeof import("./support/page") = await import(page);
-              const media = support.startMedia(worker);
-              const res = await fetch(`/test/fixtures/${n}`);
-              const blob = await res.blob();
-              const opened = await media.request({ type: "open", file: new File([blob], n) });
-              if (opened.type !== "opened") throw new Error(`${n}: ${opened.type}`);
-              const params = opened.video[stream];
-              if (!params) throw new Error(`${n}: no parameters for stream ${stream}`);
-              const result = await support.render(media, stream, params, size);
-              media.stop();
-              return result;
-            },
-            {
-              page: PAGE,
-              worker: MEDIA_WORKER,
-              n: file,
-              stream: video.id,
-              size: { times, width, height },
-            },
-          );
-          const fails = FAILS[name]?.[file];
-
-          if (fails) {
-            const failed = await rejection(rendering);
-            expect(failed).toContain(fails);
-            return;
-          }
-
-          const got = await rendering;
-
-          expect(got.shown.map((s) => s.drawn)).toEqual(drawn);
-          const ids = got.shown.filter((s) => s.drawn).map((s) => s.id);
-          // A turned frame's number is not where the reader looks; its grid shows the turn.
-          if (!turned) expect(ids).toEqual(frames);
-          const r = correlation(got.grid, video.grid);
-          expect(r, `${file} grid ${JSON.stringify(got.grid)}`).toBeGreaterThan(MIN_CORRELATION);
-        } finally {
-          await browser.close();
-        }
-      }, 60_000);
+    try {
+      const tab = await browser.newPage();
+      await tab.goto(server.url.href);
+      const got = await tab.evaluate(
+        async ({ page, worker, n, stream, size }) => {
+          const support: typeof import("./support/page") = await import(page);
+          const media = support.startMedia(worker);
+          const res = await fetch(`/test/fixtures/${n}`);
+          const blob = await res.blob();
+          const opened = await media.request({ type: "open", file: new File([blob], n) });
+          if (opened.type !== "opened") throw new Error(`${n}: ${opened.type}`);
+          const params = opened.video[stream];
+          if (!params) throw new Error(`${n}: no parameters for stream ${stream}`);
+          const result = await support.render(media, stream, params, size);
+          media.stop();
+          return result;
+        },
+        {
+          page: PAGE,
+          worker: MEDIA_WORKER,
+          n: file,
+          stream: video.id,
+          size: { times, width, height },
+        },
+      );
+      expect(got.shown.map((s) => s.drawn)).toEqual(drawn);
+      const ids = got.shown.filter((s) => s.drawn).map((s) => s.id);
+      // A turned frame's number is not where the reader looks; its grid shows the turn.
+      if (!turned) expect(ids).toEqual(frames);
+      const r = correlation(got.grid, video.grid);
+      expect(r, `${file} grid ${JSON.stringify(got.grid)}`).toBeGreaterThan(MIN_CORRELATION);
+    } finally {
+      await browser.close();
     }
-  });
+  }, 60_000);
 }

@@ -2,20 +2,19 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 //
 // Demux benchmark: snowy core vs libav.js vs mediabunny on bench/media (see
-// scripts/gen-bench-media.ts), in real browsers with disk-backed Files from <input type=file>.
+// scripts/gen-bench-media.ts), in Chromium with disk-backed Files from <input type=file>.
 // Reports the median of --runs fresh workers and the shipped size (gzip/brotli) of each.
 //
-// Usage: bun bench/run.ts [--browsers chromium,firefox,webkit] [--libs snowy,libav,mediabunny]
+// Usage: bun bench/run.ts [--libs snowy,libav,mediabunny]
 //          [--core dist/core] [--avio 4194304] [--runs 3] [--out bench/results/name.json]
 
 import { parseArgs } from "node:util";
 import { brotliCompressSync, constants } from "node:zlib";
-import { type BrowserType, chromium, firefox, webkit } from "playwright";
+import { chromium } from "playwright";
 import { serve } from "../../../tooling/test-server";
 
 const { values: args } = parseArgs({
   options: {
-    browsers: { type: "string", default: "chromium,firefox,webkit" },
     libs: { type: "string", default: "snowy,libav,mediabunny" },
     core: { type: "string", default: "dist/core" },
     avio: { type: "string", default: String(1 << 22) },
@@ -30,7 +29,6 @@ const media = ["1080p.mp4", "1080p-faststart.mp4", "1080p.mkv", "1080p.ts"].map(
 );
 
 const SEEKS = [137.3, 12.1, 251.7, 64.4, 199.9, 3.2, 288.5, 171, 95.6, 230.2];
-const engines: Record<string, BrowserType> = { chromium, firefox, webkit };
 
 // What each library ships to the browser for demuxing.
 const shipped: Record<string, string[]> = {
@@ -102,47 +100,43 @@ for (const lib of libs) {
   result.size[lib] = await size(files);
 }
 
-for (const name of args.browsers.split(",")) {
-  const engine = engines[name];
-  if (!engine) throw new Error(`unknown browser ${name}`);
-  const browser = await engine.launch();
-  const tab = await browser.newPage();
-  tab.on("console", (m) => m.type() === "error" && console.error(`[${name}]`, m.text()));
-  await tab.goto(server.url.href);
-  await tab.locator("input").setInputFiles(media);
-  const perBrowser: Record<string, Json> = { version: browser.version() };
-  result.browsers[name] = perBrowser;
+const browser = await chromium.launch();
+const tab = await browser.newPage();
+tab.on("console", (m) => m.type() === "error" && console.error(m.text()));
+await tab.goto(server.url.href);
+await tab.locator("input").setInputFiles(media);
+const measured: Record<string, Json> = { version: browser.version() };
+result.browsers.chromium = measured;
 
-  for (const lib of libs) {
-    const runs: Json[] = [];
+for (const lib of libs) {
+  const runs: Json[] = [];
 
-    for (let i = 0; i < Number(args.runs); i++) {
-      const run = await tab.evaluate(
-        (msg) =>
-          new Promise<Json>((resolve) => {
-            const worker = new Worker("/bench/worker.js", { type: "module" });
+  for (let i = 0; i < Number(args.runs); i++) {
+    const run = await tab.evaluate(
+      (msg) =>
+        new Promise<Json>((resolve) => {
+          const worker = new Worker("/bench/worker.js", { type: "module" });
 
-            const done = (data: Json) => {
-              worker.terminate();
-              resolve(data);
-            };
+          const done = (data: Json) => {
+            worker.terminate();
+            resolve(data);
+          };
 
-            worker.addEventListener("message", (e) => done(e.data));
-            worker.addEventListener("error", (e) => done({ error: e.message }));
-            const files = [...(document.querySelector("input")?.files ?? [])];
-            worker.postMessage({ ...msg, files });
-          }),
-        { lib, opts: { core: `/${args.core}`, avioBuffer: Number(args.avio) }, seeks: SEEKS },
-      );
-      runs.push(run);
-    }
-
-    perBrowser[lib] = merge(runs);
-    console.error(name, lib, JSON.stringify(perBrowser[lib]));
+          worker.addEventListener("message", (e) => done(e.data));
+          worker.addEventListener("error", (e) => done({ error: e.message }));
+          const files = [...(document.querySelector("input")?.files ?? [])];
+          worker.postMessage({ ...msg, files });
+        }),
+      { lib, opts: { core: `/${args.core}`, avioBuffer: Number(args.avio) }, seeks: SEEKS },
+    );
+    runs.push(run);
   }
 
-  await browser.close();
+  measured[lib] = merge(runs);
+  console.error(lib, JSON.stringify(measured[lib]));
 }
+
+await browser.close();
 
 await server.stop(true);
 

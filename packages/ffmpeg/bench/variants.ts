@@ -4,7 +4,7 @@
 // Builds each build-flag variant into bench/variants/<name> (gitignored) and runs its
 // benchmark on it (bench/run.ts on core, or bench/video.ts on video), writing
 // bench/results/variants/<name>.json.
-// Usage: bun bench/variants.ts [--browsers chromium] [--runs 3] [name ...]
+// Usage: bun bench/variants.ts [--runs 3] [name ...]
 
 import { $ } from "bun";
 import { parseArgs } from "node:util";
@@ -39,7 +39,6 @@ const VARIANTS: Record<string, Variant> = {
 
 const { values: args, positionals } = parseArgs({
   options: {
-    browsers: { type: "string", default: "chromium" },
     runs: { type: "string", default: "3" },
   },
   allowPositionals: true,
@@ -60,5 +59,5 @@ for (const name of positionals.length > 0 ? positionals : Object.keys(VARIANTS))
   const bench = variant.video
     ? ["bench/video.ts", "--dist", out]
     : ["bench/run.ts", "--libs", "snowy", "--core", `${out}/core`];
-  await $`bun ${bench} --browsers ${args.browsers} --runs ${args.runs} --out bench/results/variants/${name}.json`;
+  await $`bun ${bench} --runs ${args.runs} --out bench/results/variants/${name}.json`;
 }

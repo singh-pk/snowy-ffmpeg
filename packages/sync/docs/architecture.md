@@ -131,7 +131,7 @@ Every peer, the source included, sends and receives chat and has a `PeerId`.
 
 ### How each peer assesses itself
 
-Each peer works out its own role from values it can measure on every browser:
+Each peer works out its own role from values it can measure:
 
 | Input | How it's obtained |
 | --- | --- |
