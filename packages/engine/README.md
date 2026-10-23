@@ -22,7 +22,8 @@ import { createEngine, UnsupportedPlatformError } from "@snowy-media/engine";
 
 try {
   const engine = await createEngine({ canvas: document.querySelector("canvas")! });
-  const { format, duration, tracks } = await engine.open(file);
+  const [handle] = await showOpenFilePicker();
+  const { format, duration, tracks } = await engine.open(handle);
 } catch (e) {
   if (e instanceof UnsupportedPlatformError) console.log(`This browser lacks ${e.feature}`);
 }

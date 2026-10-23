@@ -126,7 +126,8 @@ test(
           for (const { file, targets: times } of files) {
             const res = await fetch(`/test/fixtures/${file}`);
             const blob = await res.blob();
-            await player.open(new File([blob], file));
+            const handle = await support.fileHandle(file, blob);
+            await player.open(handle);
             const seen: [number, number][] = [];
 
             for (const target of times) {
@@ -185,7 +186,8 @@ test(`plays on from a seek while ${LONG} plays`, async () => {
         const player = await engine.createEngine({ canvas });
         const res = await fetch(`/test/fixtures/${file}`);
         const blob = await res.blob();
-        await player.open(new File([blob], file));
+        const handle = await support.fileHandle(file, blob);
+        await player.open(handle);
         await player.play();
         await support.watchScreen(player, canvas, 500);
         await player.seek(at);
@@ -231,7 +233,8 @@ test(`scrubs through ${SCRUBBED} and back, then plays on from where it is let go
         const player = await engine.createEngine({ canvas });
         const res = await fetch(`/test/fixtures/${file}`);
         const blob = await res.blob();
-        await player.open(new File([blob], file));
+        const handle = await support.fileHandle(file, blob);
+        await player.open(handle);
         await player.seek(0);
 
         // A drag from `from` to `until` seconds, a fastSeek on every animation frame, with
@@ -334,10 +337,11 @@ test("clears the canvas when another file opens", async () => {
         const player = await engine.createEngine({ canvas });
         const res = await fetch(`/test/fixtures/${file}`);
         const blob = await res.blob();
-        await player.open(new File([blob], file));
+        const handle = await support.fileHandle(file, blob);
+        await player.open(handle);
         await player.seek(1);
         const shown = await support.watchScreen(player, canvas, settle);
-        await player.open(new File([blob], file));
+        await player.open(handle);
         // On each animation frame until the canvas reads black: the render worker says
         // nothing when it has cleared. Without the clear, the test times out.
         const reader = new OffscreenCanvas(canvas.width, canvas.height).getContext("2d");

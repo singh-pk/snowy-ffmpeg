@@ -20,10 +20,14 @@ export interface EngineOptions {
 
 export interface Engine {
   /**
-   * Opens `file` in place of the open one, stopping it and clearing the canvas to black, and
-   * resolves with what it holds.
+   * Opens the file behind `handle` in place of the open one, stopping it and clearing the
+   * canvas to black, and resolves with what it holds. The handle comes from
+   * `showOpenFilePicker` or a drop, and may be one the app kept in IndexedDB, once
+   * `handle.requestPermission` has granted reading it again; without that, it rejects with
+   * the NotAllowedError of `handle.getFile`. Rejects with an AbortError if a later open is
+   * called before it resolves.
    */
-  open(file: File): Promise<MediaInfo>;
+  open(handle: FileSystemFileHandle): Promise<MediaInfo>;
   /**
    * Plays the open file's first video and first audio track from where it is, once the
    * browser allows audio to start (after a user gesture), unless a pause comes first: once
@@ -207,6 +211,8 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     // frame on, not at `from`.
     played: false,
     seeks: 0,
+    // How many opens there have been, so one that a later open replaces stops there.
+    opens: 0,
     // The first video stream's keyframe times, in microseconds, as far as its index goes.
     index: { keyframes: [] as number[], end: -Infinity },
     // The target of the scrub under way, which it goes on to next, and the scrub.
@@ -416,7 +422,11 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     changed();
   }
 
-  async function open(file: File) {
+  async function open(handle: FileSystemFileHandle) {
+    const id = ++state.opens;
+    const replaced = () => id !== state.opens;
+    const file = await handle.getFile();
+    if (replaced()) throw new DOMException("open: replaced", "AbortError");
     stop();
     render.postMessage({ type: "clear" } satisfies ToRender);
     state.failure = undefined;
@@ -426,6 +436,8 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     state.played = false;
     const reply = await media.send({ type: "open", file });
     if (reply.type !== "opened") throw new Error(`open: unexpected ${reply.type}`);
+    // The later open has stopped this one, and its file is the one the media worker has open.
+    if (replaced()) throw new DOMException("open: replaced", "AbortError");
     state.opened = { info: reply.info, video: reply.video };
     const video = reply.info.tracks.find((t) => t.kind === "video");
     state.index = (video && reply.index[video.id]) ?? { keyframes: [], end: -Infinity };

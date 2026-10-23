@@ -51,34 +51,38 @@ const benchmarks: Record<string, (tab: Page) => Promise<Timings>> = {
       const warm = await time();
       return { cold, warm };
     }, ENTRY),
-  // engine.open until it resolves, for files already in memory. First is the first file in a
-  // new engine, including whatever is left of loading the FFmpeg core; long is a ten-minute MP4
+  // engine.open until it resolves, for files in the origin's private file system. First is the
+  // first file in a new engine, including whatever is left of loading the FFmpeg core; long is a ten-minute MP4
   // after it.
   open: (tab) =>
-    tab.evaluate(async (entry) => {
-      const engine: typeof import("../src/index") = await import(entry);
-      const started = await engine.createEngine({ canvas: document.createElement("canvas") });
+    tab.evaluate(
+      async ({ entry, page }) => {
+        const engine: typeof import("../src/index") = await import(entry);
+        const support: typeof import("../test/support/page") = await import(page);
+        const started = await engine.createEngine({ canvas: document.createElement("canvas") });
 
-      const dir = "/test/fixtures/";
+        const dir = "/test/fixtures/";
 
-      async function load(name: string) {
-        const res = await fetch(dir + name);
-        const blob = await res.blob();
-        return new File([blob], name);
-      }
+        async function load(name: string) {
+          const res = await fetch(dir + name);
+          const blob = await res.blob();
+          return support.fileHandle(name, blob);
+        }
 
-      async function time(file: File) {
-        const start = performance.now();
-        await started.open(file);
-        return performance.now() - start;
-      }
+        async function time(handle: FileSystemFileHandle) {
+          const start = performance.now();
+          await started.open(handle);
+          return performance.now() - start;
+        }
 
-      const [short, long] = await Promise.all([load("h264-aac.mp4"), load("sync-10min.mp4")]);
-      const first = await time(short);
-      const tenMinutes = await time(long);
-      started.close();
-      return { first, long: tenMinutes };
-    }, ENTRY),
+        const [short, long] = await Promise.all([load("h264-aac.mp4"), load("sync-10min.mp4")]);
+        const first = await time(short);
+        const tenMinutes = await time(long);
+        started.close();
+        return { first, long: tenMinutes };
+      },
+      { entry: ENTRY, page: PAGE },
+    ),
   // The packet ring between two workers (ring.worker.ts), at the engine's capacity: moving
   // 256 MiB in packets of 1 KiB, 64 KiB and 1 MiB, and how late the consumer wakes up for a
   // packet written every 2 ms (median and 99th percentile).
@@ -196,7 +200,8 @@ const benchmarks: Record<string, (tab: Page) => Promise<Timings>> = {
         const player = await engine.createEngine({ canvas });
         const res = await fetch(`/test/fixtures/${file}`);
         const blob = await res.blob();
-        await player.open(new File([blob], file));
+        const handle = await support.fileHandle(file, blob);
+        await player.open(handle);
         await player.seek(0);
         const reader = new OffscreenCanvas(canvas.width, canvas.height).getContext("2d");
         if (!reader) throw new Error("no 2D context");
