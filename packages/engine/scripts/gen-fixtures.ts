@@ -128,6 +128,13 @@ const fixtures: Record<
   "sparse-h264-aac.mp4": { seconds: 12, fps: 0.5, args: [...H264, ...AAC] },
   // Audio for a tenth of a second, less than play buffers before it starts, under 3 s of video.
   "short-audio-h264-aac.mp4": { seconds: 3, audioSeconds: 0.1, args: [...H264, ...AAC] },
+  // Video from half a second in, after the audio: the first frame stands for the time before it.
+  "late-video-h264-aac.mp4": {
+    seconds: 3,
+    audioSeconds: 3.5,
+    args: [...H264, ...AAC],
+    input: ["-itsoffset", "0.5"],
+  },
   "altref-vp8-opus.webm": { seconds: 3, args: [...VP8_ALTREF, ...OPUS], twoPass: true },
   // Ten minutes, for drift.
   "sync-10min.mp4": { seconds: 600, args: [...H264, ...AAC], source: "color=c=gray:" },

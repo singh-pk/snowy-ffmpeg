@@ -28,10 +28,11 @@ const FILE = "sync-10min.mp4";
 const expected: Record<string, { video: Video; audio: { resampled: { frames: number } } }> =
   await Bun.file(new URL("fixtures/expected.json", import.meta.url)).json();
 const video = expected[FILE]?.video ?? { timeBase: "1/1", width: 0, height: 0, pts: [] };
-// Where play starts as video waits for packets, where it starts at the end of the audio, and
-// the long one; each is played, paused and played on, for WATCH seconds a play.
+// Where play starts as video waits for packets, where it starts at the end of the audio, where
+// it starts before the first frame, and the long one; each is played, paused and played on,
+// for WATCH seconds a play.
 const SPARSE = "sparse-h264-aac.mp4";
-const STARTS = [SPARSE, "short-audio-h264-aac.mp4", FILE];
+const STARTS = [SPARSE, "short-audio-h264-aac.mp4", "late-video-h264-aac.mp4", FILE];
 const WATCH = 2;
 // How far a play's clock at its last read may be from WATCH seconds on from where it started,
 // in seconds: play resolves, and the watch begins, under 0.15 s after the clock starts.
@@ -67,10 +68,11 @@ const server = await serveEngine(
 afterAll(() => server.stop(true));
 
 // How far `time` is from the time frame `id` of `v` is due, in seconds: 0 while it is due,
-// negative while it is early, positive once it is late.
+// negative while it is early, positive once it is late. The first frame is due from the start,
+// before its own time (docs/architecture.md#video-output).
 function offset(v: Video, id: number, time: number) {
   const [num = 1, den = 1] = v.timeBase.split("/").map(Number);
-  const due = ((v.pts[id] ?? 0) * num) / den;
+  const due = id === 0 ? -Infinity : ((v.pts[id] ?? 0) * num) / den;
   const next = ((v.pts[id + 1] ?? Infinity) * num) / den;
   if (time < due) return time - due;
   return time >= next ? time - next : 0;
@@ -95,10 +97,14 @@ function frameAt(v: Video, time: number) {
 // first read, in Firefox and now and then in Chromium, may show a frame from five or more
 // frames before, with the frame due on the next read under a millisecond later in Chromium.
 // That is no late frame: play prerolls a quarter second of video before the clock starts. So
-// the first read is left out in every browser.
-function fresh(reads: [time: number, id: number][], firefox: boolean) {
-  const newest = { id: -1 };
-  return reads.filter(([, id], i) => {
+// the first read is left out in every browser. Firefox's reads also trail while nothing is
+// drawn, so a play's first reads there can show the frame left up by the file played before,
+// far ahead: until one is no more than two frames ahead of the frame due, they are left out.
+function fresh(v: Video, reads: [time: number, id: number][], firefox: boolean) {
+  const newest = { id: -1, started: !firefox };
+  return reads.filter(([time, id], i) => {
+    if (!newest.started && id - frameAt(v, time) > 2) return false;
+    newest.started = true;
     const stale = i === 0 || (firefox && id < newest.id);
     newest.id = Math.max(newest.id, id);
     return !stale;
@@ -143,7 +149,7 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
 
           // Stale reads come more under load (4 % locally, 6 % on CI); most reads must still be
           // checked.
-          const checked = fresh(got.playing, firefox);
+          const checked = fresh(video, got.playing, firefox);
           expect(got.playing.length - checked.length).toBeLessThan(got.playing.length / 10);
           const early = { offset: 0, time: 0, id: 0 };
           const late = { offset: 0, time: 0, id: 0 };
@@ -266,10 +272,10 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
 
           // Each frame due on screen as it plays.
           for (const [phase, reads] of Object.entries({ first: play.first, second: play.second })) {
-            const checked = fresh(reads, firefox);
-            expect(checked.length, `${file} ${phase}: reads checked`).toBeGreaterThan(
-              reads.length * 0.9,
-            );
+            const checked = fresh(v, reads, firefox);
+            const start = reads.slice(0, 8).map(([time, id]) => `${ms(time)}:${id}`);
+            const what = `${file} ${phase}: reads checked; first reads ${start.join(" ")}`;
+            expect(checked.length, what).toBeGreaterThan(reads.length * 0.9);
 
             for (const [time, id] of checked) {
               const o = offset(v, id, time);
@@ -319,7 +325,7 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
         expect(Math.abs((reads.at(-1)?.[0] ?? 0) - end)).toBeLessThan(realTime);
         expect(reads.at(-1)?.[1]).toBe(v.pts.length - 1);
 
-        for (const [time, id] of fresh(reads, firefox)) {
+        for (const [time, id] of fresh(v, reads, firefox)) {
           const o = offset(v, id, time);
           expect(-o, `frame ${id} at ${time} s`).toBeLessThan(earliness);
           expect(o, `frame ${id} at ${time} s`).toBeLessThan(lateness(name));
