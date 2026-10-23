@@ -8,7 +8,7 @@
 [![ci](https://github.com/singh-pk/snowy-media/actions/workflows/ci.yml/badge.svg)](https://github.com/singh-pk/snowy-media/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/singh-pk/snowy-media/blob/main/LICENSE)
 
-Watch-together sessions for [Snowy](https://github.com/singh-pk/snowy-media): one person plays a local file to a group of viewers, everyone shares a chat, and each viewer picks their own audio and subtitle tracks. Media goes once from the source to a stateless [MoQ](https://datatracker.ietf.org/wg/moq/about/) relay over WebTransport, and is shared onwards through WebRTC peer groups. Every peer keeps its own copy, so playback and chat carry on through a dropped connection. It plays through [`@snowy-media/engine`](../engine).
+Watch-together sessions for [Snowy](https://github.com/singh-pk/snowy-media): one person plays a local file to a group of viewers, everyone shares a chat, and each viewer picks their own audio and subtitle tracks. Media goes once from the source to a stateless [MoQ](https://datatracker.ietf.org/wg/moq/about/) relay over WebTransport, and is shared onwards through WebRTC peer groups. Every peer keeps its own copy, so playback and chat carry on through a dropped connection. It plays through [`@snowy-media/engine`](../engine). The same transport runs edit sessions, where people and agents edit one [`@snowy-media/timeline`](../timeline) project together, each streaming their own media from their own disk.
 
 > [!NOTE]
 > In design and not yet published. There is no code yet; [docs/architecture.md](docs/architecture.md) is the design.
