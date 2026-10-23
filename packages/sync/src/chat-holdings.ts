@@ -1,0 +1,143 @@
+// SPDX-FileCopyrightText: 2026 The Snowy Authors
+// SPDX-License-Identifier: MIT
+//
+// What a peer holds of each author's chat, to answer repairs (docs/architecture.md#gaps-and-repair):
+// the messages, and for each run of chained seqs, the checkpoint with the highest seq. Every
+// batch ends with a checkpoint, so an honest author's runs each end at one; keeping just that one
+// per run lets the peer prove any message it holds, and drops the rest. When a gap fills, two
+// runs join, and the lower run's checkpoint goes. Runs join only where a message's `prev` names
+// the one held below it: an author that forks its chain leaves separate runs, each still proven
+// by its own checkpoint.
+
+import type { ChatBatch } from "./chat-batch";
+import { messageHash, type ChatMessage, type Checkpoint } from "./chat";
+import type { KeyId } from "./crypto";
+
+type Author = {
+  messages: Map<number, ChatMessage>;
+  hashes: Map<number, string>;
+  checkpoints: Map<number, Checkpoint>;
+  newest: number;
+};
+
+/** One run of chained seqs held, inclusive. */
+type Run = { first: number; last: number };
+
+export function createChatHoldings() {
+  const authors = new Map<KeyId, Author>();
+
+  function holding(author: KeyId) {
+    const held = authors.get(author) ?? {
+      messages: new Map(),
+      hashes: new Map(),
+      checkpoints: new Map(),
+      newest: 0,
+    };
+    authors.set(author, held);
+    return held;
+  }
+
+  // Whether the message held at `seq` chains to the one held below it.
+  const linked = ({ messages, hashes }: Author, seq: number) =>
+    hashes.has(seq - 1) && messages.get(seq)?.prev === hashes.get(seq - 1);
+
+  // The run of chained held seqs that contains `seq`.
+  function runOf(held: Author, seq: number): Run {
+    let first = seq;
+    let last = seq;
+    while (linked(held, first)) first--;
+    while (linked(held, last + 1)) last++;
+    return { first, last };
+  }
+
+  /**
+   * Adds a batch the peer has decoded. The first message held for each seq stays, and a
+   * checkpoint is kept only if it names the message held at its seq. Then only the checkpoint
+   * with the highest seq in each run is kept.
+   */
+  async function add({ messages, checkpoint }: ChatBatch) {
+    const held = holding(checkpoint.author);
+    const fresh = messages.filter((m) => !held.messages.has(m.seq));
+    const hashes = await Promise.all(fresh.map(messageHash));
+
+    for (const [i, m] of fresh.entries()) {
+      // Another batch added while this one was hashed may hold the seq already.
+      if (held.messages.has(m.seq)) continue;
+      held.messages.set(m.seq, m);
+      held.hashes.set(m.seq, hashes[i]!);
+    }
+
+    held.newest = Math.max(held.newest, checkpoint.seq);
+
+    if (held.hashes.get(checkpoint.seq) === checkpoint.head) {
+      held.checkpoints.set(checkpoint.seq, checkpoint);
+    }
+
+    const best = new Map<number, Checkpoint>();
+
+    for (const cp of held.checkpoints.values()) {
+      const { first } = runOf(held, cp.seq);
+      if ((best.get(first)?.seq ?? 0) < cp.seq) best.set(first, cp);
+    }
+
+    held.checkpoints = new Map([...best.values()].map((cp) => [cp.seq, cp]));
+  }
+
+  // The batch proving `from` and every later message in its run up to the run's checkpoint, or
+  // undefined. Only a forked chain leaves messages past a run's checkpoint; they can't be proven.
+  function batchFrom(held: Author, from: number): ChatBatch | undefined {
+    if (!held.messages.has(from)) return undefined;
+
+    const { first } = runOf(held, from);
+    const checkpoint = [...held.checkpoints.values()].find(
+      (cp) => cp.seq >= from && runOf(held, cp.seq).first === first,
+    );
+    if (checkpoint === undefined) return undefined;
+
+    const messages = Array.from({ length: checkpoint.seq - from + 1 }, (_, i) =>
+      held.messages.get(from + i)!,
+    );
+    return { messages, checkpoint };
+  }
+
+  /**
+   * The reply to a repair asking for an author's messages from `firstSeq`: everything held from
+   * there to its run's checkpoint. Undefined, for the asker to try the next peer, when
+   * `firstSeq` isn't held or can't be proven.
+   */
+  const repair = (author: KeyId, firstSeq: number) => {
+    const held = authors.get(author);
+    return held === undefined ? undefined : batchFrom(held, firstSeq);
+  };
+
+  /**
+   * The reply to a version vector: for each author, one batch per run held beyond the asker's
+   * seq, authors it didn't name included.
+   */
+  function after(versions: Record<KeyId, number>) {
+    const batches: ChatBatch[] = [];
+
+    for (const [author, held] of authors) {
+      const known = versions[author] ?? 0;
+      const seqs = [...held.messages.keys()].filter((s) => s > known).toSorted((a, b) => a - b);
+
+      for (const seq of seqs) {
+        if (seq !== known + 1 && linked(held, seq)) continue;
+
+        const batch = batchFrom(held, seq);
+        if (batch !== undefined) batches.push(batch);
+      }
+    }
+
+    return batches;
+  }
+
+  /** The checkpoints kept for an author, in seq order: one per run. */
+  const checkpoints = (author: KeyId) =>
+    [...(authors.get(author)?.checkpoints.values() ?? [])].toSorted((a, b) => a.seq - b.seq);
+
+  /** The highest seq held from an author, or 0. */
+  const newest = (author: KeyId) => authors.get(author)?.newest ?? 0;
+
+  return { add, repair, after, checkpoints, newest };
+}

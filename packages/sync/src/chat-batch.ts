@@ -14,7 +14,7 @@ import {
   type ChatMessage,
   type Checkpoint,
 } from "./chat";
-import { keyId, seal, unseal, type Bytes, type KeyId } from "./crypto";
+import { seal, unseal, type Bytes, type KeyId } from "./crypto";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -35,24 +35,37 @@ export const batchKey = (author: KeyId, firstSeq: number, lastSeq: number) =>
   `chat/${author}/${firstSeq}-${lastSeq}`;
 
 /**
- * Seals the author's queued messages, in seq order, as one batch with a checkpoint at the last.
- * Returns the object key and its bytes.
+ * Seals the author's queued messages, in seq order, as one batch with a checkpoint at the last,
+ * signed with the author's key. Returns the object key and its bytes.
  */
 export async function encodeBatch(
   peer: CryptoKeyPair,
   content: CryptoKey,
   messages: ChatMessage[],
 ) {
-  const author = await keyId(peer.publicKey);
-  const first = messages[0];
   const last = messages.at(-1);
-  if (first === undefined || last === undefined) throw new RangeError("a batch has a message");
-
-  const consecutive = messages.every((m, i) => m.author === author && m.seq === first.seq + i);
-  if (!consecutive) throw new RangeError("a batch is the author's consecutive messages");
+  if (last === undefined) throw new RangeError("a batch has a message");
 
   const checkpoint = await signCheckpoint(peer, last);
-  const key = batchKey(author, first.seq, last.seq);
+  return sealBatch(content, { messages, checkpoint });
+}
+
+/**
+ * Seals a batch from messages and a checkpoint already signed: how any peer that holds them
+ * answers a repair. The messages are one author's, consecutive, ending at the checkpoint.
+ */
+export async function sealBatch(content: CryptoKey, { messages, checkpoint }: ChatBatch) {
+  const first = messages[0];
+  if (first === undefined) throw new RangeError("a batch has a message");
+
+  const { author } = checkpoint;
+  const consecutive = messages.every((m, i) => m.author === author && m.seq === first.seq + i);
+
+  if (!consecutive || messages.at(-1)!.seq !== checkpoint.seq) {
+    throw new RangeError("a batch is the author's consecutive messages, ending at its checkpoint");
+  }
+
+  const key = batchKey(author, first.seq, checkpoint.seq);
   const plaintext = encoder.encode(
     JSON.stringify({ messages: messages.map(checkMessage), checkpoint }),
   );

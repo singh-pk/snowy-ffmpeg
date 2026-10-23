@@ -591,10 +591,12 @@ Chat stays append-only:
 
 ### Gaps and repair
 
-- A gap is noticed locally: receiving `A:n` while the newest stored `A` message is below `n − 1`.
-- **The peer that has the gap chooses who to ask:** the candidates are the author (if online) and its connected group peers, ranked by `SHA-256(candidate ‖ author ‖ firstMissingSeq)`. It asks the lowest one, then the next if the answer is `gone` or the link closes.
+- A gap is noticed locally: after a batch, the newest held `A` message is above the highest `A` seq held with none missing below it.
+- **The peer that has the gap chooses who to ask:** the candidates are the author (if online) and its connected group peers, ranked by `SHA-256(candidate ‖ author ‖ firstMissingSeq)`. It asks the lowest one, then the next if the answer is `gone`, the reply doesn't prove itself or doesn't reach the asked seq, or the link closes. A peer keeps one ask per author; an earlier gap replaces a later one, and a gap the current ask already covers, or that a batch received meanwhile has filled, asks nothing. A gap every candidate failed to fill (`gone`, a bad reply, or one that falls short) is asked again on the next batch from that author only once the candidates change or one of them has closed its link; a candidate whose link closed didn't fail it.
+- **What each peer holds to answer:** every author message it has, and for each run of chained seqs, only the checkpoint with the highest seq. Every batch ends at a checkpoint, so an honest author's runs each end at one, and that one checkpoint proves the whole run. When a gap fills and two runs join, the lower run's checkpoint is dropped. Two runs join only where the upper one's first `prev` names the message held below it, and a checkpoint is kept only if its `head` names the message held at its seq, so an author that forks its chain can't make a peer drop the checkpoint that proves what it holds.
+- **The answer is a batch**, sealed by the responder from what it holds: from the asked seq to its run's checkpoint. It proves itself like any batch, so the asker takes it through the same path as one from the author's track. A responder that holds the asked seq but not the whole gap answers with what it has; the asker sees the gap now starts later and asks again from there. A responder that doesn't hold the asked seq answers `gone`.
 - The answer goes only to the peer that asked, on `inbox/<requester>/deliver/<responder>` or over the direct `ctl` channel.
-- **On reconnect**, a peer sends its version vector `{ author: seq }` once to the first candidate, who replies with every message it holds beyond that. Each `seq` is the highest held with none missing below it, so the reply also fills older gaps.
+- **On reconnect**, a peer sends its version vector `{ author: seq }` once to the first candidate, who replies with one batch per run it holds beyond that, authors the vector doesn't name included. Each `seq` is the highest held with none missing below it, so the reply also fills older gaps.
 - There is no gossip when nothing is missing.
 
 ### Authenticity

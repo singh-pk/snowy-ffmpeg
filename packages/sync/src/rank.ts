@@ -1,0 +1,26 @@
+// SPDX-FileCopyrightText: 2026 The Snowy Authors
+// SPDX-License-Identifier: MIT
+//
+// Ranking peers by hash (docs/architecture.md#gaps-and-repair): who to ask for missing chat,
+// or for the session's state on join. Each asker ranks the same candidates the same way for the
+// same question, while different questions spread over different peers, with nothing agreed in
+// advance.
+
+import type { KeyId } from "./crypto";
+
+const encoder = new TextEncoder();
+
+/**
+ * The candidates, lowest `SHA-256(candidate ‖ part ‖ …)` first. `‖` joins with a newline, which
+ * no key id holds, so no two inputs hash the same bytes.
+ */
+export async function rank(candidates: KeyId[], ...parts: Array<string | number>) {
+  const scored = await Promise.all(
+    candidates.map(async (candidate) => {
+      const bytes = encoder.encode([candidate, ...parts].join("\n"));
+      const hash = await crypto.subtle.digest("SHA-256", bytes);
+      return { candidate, score: new Uint8Array(hash).toHex() };
+    }),
+  );
+  return scored.toSorted((a, b) => (a.score < b.score ? -1 : 1)).map((s) => s.candidate);
+}
