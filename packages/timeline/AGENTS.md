@@ -20,6 +20,9 @@ This package is the edit document of the Snowy editor: a magnetic timeline of se
 | `src/position.ts` | position keys: fractional indexes that order a storyline and fit between any two |
 | `src/storyline.ts` | a storyline's layout: items in position order in a balanced tree, with each item's start and the item at a time in O(log n) |
 | `src/layout.ts` | connected items: the time a clip or origin anchor gives, and each role's lanes |
+| `src/schema.ts` | schemas that check untrusted JSON and return it in canonical shape |
+| `src/document.ts` | the document's records and every operation, as schemas |
+| `src/batch.ts` | batches: canonical bytes, signing, checking and hashing |
 | `test/` | unit tests (`*.unit.ts`), run in Chromium by `unit.test.ts` |
 
 ## Rules

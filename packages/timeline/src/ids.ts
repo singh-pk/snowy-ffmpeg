@@ -14,9 +14,9 @@ export type ItemId = string;
 
 // 32 bytes are 43 characters, the last carrying 4 bits and two zero bits: only these spell a
 // key, so one key has one id.
-const KEY_ID = /^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/;
+export const KEY_ID = /^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/;
 // seq from 1, index from 0, in decimal without leading zeros, so each id has one spelling.
-const ITEM_ID = /^([A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])\.([1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
+export const ITEM_ID = /^([A-Za-z0-9_-]{42}[AEIMQUYcgkosw048])\.([1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
 
 /** Whether `value` is a key id. */
 export function isKeyId(value: string) {

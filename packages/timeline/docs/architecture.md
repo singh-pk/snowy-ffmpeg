@@ -117,13 +117,14 @@ type Sequence = {
   width: number;
   height: number;
   sampleRate: number;
-  roles: Role[];
 };
 ```
 
+Its roles are records of their own, each naming the sequence it belongs to ([Roles](#roles)), so adding a role never rewrites the sequence.
+
 ### Ids
 
-An item made by an operation has the id `<author>.<seq>.<index>`: its batch's author, the batch's seq, and the operation's place in the batch. Author keys are unpadded base64url, which has no `.`, so an id is safe in a file name or a track name. Ids are unique without a counter or a coordinator.
+An item made by an operation has the id `<author>.<seq>.<index>`: its batch's author, the batch's seq, and the operation's place in the batch. Author keys are unpadded base64url, which has no `.`, so an id is safe in a file name or a track name. Ids are unique without a counter or a coordinator. Sequences, roles, effects and branches get their ids the same way, so `RoleId` and `BranchId` (other than `main`) are item ids too.
 
 ### Items
 
@@ -153,8 +154,25 @@ type Clip = {
   enabled: boolean;
   name?: string;
   video?: { opacity: number; blend: Blend; transform: Transform };
-  audio?: { gainDb: number; pan: number; fadeIn: number; fadeOut: number };
+  audio?: { gainDb: number; pan: number; fadeIn: number; fadeOut: number };  // fades in flicks
 };
+
+type Gap = { id: ItemId; kind: "gap"; anchor: Anchor; duration: number };
+
+type Marker = {
+  id: ItemId;
+  kind: "marker";
+  anchor: Anchor;
+  duration: number;           // 0 for a point
+  type: "marker" | "chapter" | "todo";
+  name: string;
+  note?: string;
+  done?: boolean;             // a to-do's
+};
+
+type Value = boolean | number | string | Value[];   // numbers finite; -0 is 0
+type Blend = "normal" | "add" | "multiply" | "screen" | "overlay" | "darken" | "lighten" | "difference";
+type Transform = { x: number; y: number; scaleX: number; scaleY: number; rotation: number };
 ```
 
 Fields are addressed by path, down to a leaf: `in`, `video.opacity`, `video.transform.x`, `audio.gainDb`. Two people changing two leaves of one object both keep their change.
@@ -187,9 +205,10 @@ type Anchor =
 ```ts
 type Role = {
   id: RoleId;
+  sequence: ItemId;
   name: string;               // Dialogue, Music, Effects, Titles, B-roll…
   kind: "video" | "audio";
-  color: string;
+  color: string;              // "#rrggbb", lowercase
   order: string;              // fractional index: the role's place among its kind
 };
 ```
@@ -209,7 +228,6 @@ type Effect = {
 };
 
 type Keyframe = {
-  id: ItemId;
   target: ItemId;             // an effect, or a clip for its own video and audio fields
   param: string;              // a parameter, or a field path
   at: number;                 // a source point of the clip, like a clip anchor
@@ -218,6 +236,7 @@ type Keyframe = {
 };
 ```
 
+- A keyframe is known by its `(target, param, at)`: setting one there replaces it, so two people setting the same keyframe keep the later value, as for any leaf.
 - Keyframes are at source points for the same reason connected items are: a head trim or a speed change keeps them on the same moment of the media.
 - The timeline stores effect kinds and their parameters as data and checks a parameter's value only against its declared type. What an effect does is the engine's, where its shader lives.
 
@@ -256,12 +275,13 @@ type Batch = {
   sig: string;                // Ed25519 by the author's peer key
 };
 
-type EntryRef = { n: number; hash: string };
+type EntryRef = { n: number; hash: string };   // { n: 0, hash: "" }: before a branch's first entry
 type BatchRef = { author: KeyId; seq: number };
 ```
 
 - **Canonical bytes:** a batch's JSON with every object's fields in the order its type declares, the keys of open records (`params`) in code-point order, absent fields left out, no whitespace, as UTF-8. A peer re-encodes every batch it parses and refuses one whose bytes differ, or that has an unknown field, as `@snowy-media/sync` does for chat. The signature covers `snowy batch v1\n` followed by the canonical bytes without `sig`.
-- **Hashes** are SHA-256 of canonical bytes, as unpadded base64url.
+- **Hashes** are SHA-256 of canonical bytes, as unpadded base64url. A batch's hash covers its signature too.
+- **Limits:** names and labels are at most 256 UTF-16 code units, texts and values' strings at most 65,536, lists and open records at most 4096 entries, lists in a value nested at most 8 deep, and the whole batch 1 MiB, which alone bounds how many operations it holds.
 - **Pointer gestures commit on release.** While a drag goes on, its preview goes to other peers as presence, which is never stored ([Requirements on @snowy-media/sync](#requirements-on-snowy-mediasync)); the batch is made on `pointerup`. The history holds edits, not mouse moves.
 
 ### Operation kinds
@@ -282,6 +302,33 @@ type BatchRef = { author: KeyId; seq: number };
 | `keyframe.set` / `keyframe.remove` | One keyframe |
 | `revert` | Sets the whole document back to an earlier entry ([Undo, revert and going back](#undo-revert-and-going-back)) |
 | `branch.create` / `branch.merge` / `branch.close` | [Branches](#branches) |
+
+An operation that adds a record carries it without its `id`, which is the operation's own ([Ids](#ids)); an asset, whose id is its content's, is the one exception. Each is a record with `op` first:
+
+```ts
+type Op =
+  | { op: "project.set"; name: string }
+  | { op: "asset.add"; asset: Asset }
+  | { op: "asset.remove"; id: AssetId }
+  | { op: "sequence.add"; sequence: Omit<Sequence, "id"> }
+  | { op: "role.add"; role: Omit<Role, "id"> }
+  | { op: "item.add"; item: Omit<Clip | Gap | Transition | Marker, "id"> }
+  | { op: "item.move"; id: ItemId; anchor: Anchor }
+  | { op: "clip.split"; id: ItemId; at: number }              // a timeline time, in flicks
+  | { op: "clip.join"; id: ItemId; next: ItemId }
+  | { op: "effect.add"; effect: Omit<Effect, "id"> }
+  | { op: "keyframe.set"; keyframe: Keyframe }
+  | { op: "keyframe.remove"; target: ItemId; param: string; at: number }
+  | { op: "sequence.set" | "role.set" | "item.set" | "effect.set"; id: ItemId; path: string; value: Value }
+  | { op: "sequence.remove" | "role.remove" | "item.remove" | "item.restore" | "effect.remove"; id: ItemId }
+  | { op: "revert"; to: EntryRef }
+  | { op: "branch.create"; name: string }                    // the branch's id is this operation's
+  | { op: "branch.merge"; branch: BranchId; through: EntryRef }
+  | { op: "branch.merge"; branch: BranchId; entries: EntryRef[] }
+  | { op: "branch.close"; branch: BranchId };
+```
+
+`BranchId` is `"main"` or the id of a `branch.create` operation. A path names a leaf in lower camel case, such as `video.transform.x`; which paths a record has, and the type of each, is checked when the operation is applied.
 
 Every editing tool is a batch of these:
 
@@ -395,6 +442,7 @@ An undo's operations are worked out when it is committed, from the document its 
 - **A leaf the batch set** is set back, if it still has the value the batch gave it. If someone has changed it since, it is left alone, and the undo reports it.
 - **An item the batch added** is removed, unless someone else has changed it since: then it is left, and reported.
 - **An item the batch removed** is restored, with its state.
+- **A keyframe the batch set** is removed if it was new, or set back to its earlier value and ease, if it still has the ones the batch gave it.
 - **A split** is undone with `clip.join`, which also takes back the connected items and keyframes the split moved, since both are anchored to source points.
 
 Undo is per author: undo takes back your edits, never someone else's that came after them.
