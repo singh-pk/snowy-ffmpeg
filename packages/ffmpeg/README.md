@@ -127,7 +127,7 @@ core._sny_decoder_close(dec);
 
 Video decoders live in `video` and `video-ext`; `core._sny_codec_module(ctx, stream)` names the one a stream needs, so a page loads only that. Copy the stream's codec parameters across with `_sny_params_export` and open the decoder with `_sny_decoder_open_params(buf, size, threads, out)` on up to one thread per core, at most 8: the module's thread pool, shared by every decoder open in it; then copy each packet across with `_sny_packet_make`, and run the same send/receive loop as for audio. [`test/support/decoder.js`](test/support/decoder.js) does all of it.
 
-Each decoded frame becomes a WebCodecs `VideoFrame` with one copy out of the WASM heap:
+Each decoded frame becomes a WebCodecs `VideoFrame` with one copy out of the WASM heap. The decoder's threads grow the heap as they allocate frames, and `HEAPU8` and the other views follow growth only when the module's own JavaScript next runs on their thread, so code that touches memory a decoder may have allocated, such as a packet's data or a packed frame, views `wasmMemory.buffer` instead:
 
 ```js
 import { createVideo } from "@snowy-media/ffmpeg/video";
@@ -141,7 +141,8 @@ if (video._sny_to_video_format(sws, frame, out) < 0) throw new Error("convert");
 const size = video._sny_frame_pack_size(out);
 const dst = video._malloc(size);
 video._sny_frame_pack(out, dst, size);
-const picture = new VideoFrame(video.HEAPU8.slice(dst, dst + size), {
+// Memory a decoder's thread allocated may lie past video.HEAPU8: view wasmMemory instead.
+const picture = new VideoFrame(new Uint8Array(video.wasmMemory.buffer, dst, size), {
   format: video.UTF8ToString(video._sny_frame_video_format(out)), // "I420", "NV12", "RGBA", …
   codedWidth: video._sny_frame_width(out),
   codedHeight: video._sny_frame_height(out),

@@ -6,6 +6,10 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 
 ## [Unreleased]
 
+### Added
+
+- `wasmMemory` on every module, the module's `WebAssembly.Memory`. `HEAPU8`, `HEAP32` and `HEAPF32` do not follow memory that a decoder's thread grows, so a page that reads a packed frame or writes a packet of a threaded video decoder views `wasmMemory.buffer` instead; the README's video example now does.
+
 ## [0.2.0] - 2026-10-24
 
 ### Added

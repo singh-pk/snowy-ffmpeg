@@ -10,7 +10,7 @@ ARG MODULE_LDFLAGS="-sENVIRONMENT=worker -sMODULARIZE -sEXPORT_ES6 \
   -sFILESYSTEM=0 -sASSERTIONS=0 -sDYNAMIC_EXECUTION=0 -sTEXTDECODER=2 \
   -sPTHREAD_POOL_SIZE=0 -sALLOW_MEMORY_GROWTH -sINITIAL_MEMORY=64MB -sMAXIMUM_MEMORY=4GB -sSTACK_SIZE=1MB \
   -sEXPORTED_FUNCTIONS=_malloc,_free \
-  -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAP32,HEAPF32,UTF8ToString,stringToNewUTF8"
+  -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAP32,HEAPF32,wasmMemory,UTF8ToString,stringToNewUTF8"
 # Video decoders create their threads while opening, which a WebAssembly worker can't wait
 # for: the pool starts with the module, one thread per core up to 8, and asking a decoder
 # for more fails instead of hanging.
