@@ -402,6 +402,19 @@ export async function render(
 }
 
 /**
+ * A handle to `blob` stored as `name` in the origin's private file system: the engine opens
+ * files only through handles, and a test cannot answer a file picker.
+ */
+export async function fileHandle(name: string, blob: Blob) {
+  const root = await navigator.storage.getDirectory();
+  const handle = await root.getFileHandle(name, { create: true });
+  const writable = await handle.createWritable();
+  await writable.write(blob);
+  await writable.close();
+  return handle;
+}
+
+/**
  * The number of the frame on `canvas`, whose control an engine has, read by drawing it into
  * `reader`, a 2D context of its size.
  */

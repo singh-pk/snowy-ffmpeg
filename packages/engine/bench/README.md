@@ -5,7 +5,7 @@
 | Benchmark | Measures |
 | --- | --- |
 | `startup` | `createEngine` until it resolves: the platform check, starting the render worker and opening a GPU device. `cold` is the first engine in a page, `warm` a second one with the worker script cached |
-| `open` | `engine.open` until it resolves, for a file already in memory. `first` is the first file in a new engine, including whatever is left of loading the FFmpeg core; `long` is a ten-minute MP4 after it |
+| `open` | `engine.open` until it resolves, for a file in the origin's private file system. `first` is the first file in a new engine, including whatever is left of loading the FFmpeg core; `long` is a ten-minute MP4 after it |
 | `ring` | the packet ring between two workers at the engine's capacity: moving 256 MiB in packets of 1 KiB, 64 KiB and 1 MiB, and how late the consumer wakes up for a packet written every 2 ms (`wake p50` and `wake p99`). The consumer does not read the payloads, so the throughput is the producer's copy and the bookkeeping |
 | `audio` | the media worker decoding the ten-minute AAC track into the PCM ring, as the page drains it: in stereo at 48 kHz, the track's own rate, and resampled to 44.1 kHz |
 | `scrub` | a drag through a 4K H.264 file from its start to 9 s with no keyframe on the way, at 2 s of it a second, `engine.fastSeek` on every animation frame: how far the frame on screen is behind the drag, in media time and with the canvas's read-back included (`lag p50`, `lag p90`), and from the last call until it resolves (`settle`) |

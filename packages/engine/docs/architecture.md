@@ -31,6 +31,8 @@ The WebGPU check asks for an adapter, a device and a canvas context and then imp
 
 Each worker is an entry point of its own in `dist/`, loaded by URL, so a thread downloads only its own code. The engine starts both at once, so the FFmpeg core loads while the render worker checks the GPU.
 
+A file comes as a `FileSystemFileHandle`, never a `File`, so an app can keep it in IndexedDB and open it again on a later visit (the root AGENTS.md, rule 3). `open` gets its `File` on the main thread and posts that to the media worker: `getFile` reads nothing, and the worker's protocol stays a `File`. An open that a later one replaces before it resolves rejects with an `AbortError`, before it changes anything if it is still getting its file, so the state is always that of the last file opened.
+
 The media worker is the one thread allowed to block. FFmpeg reads its input through synchronous callbacks, and the worker answers them with `FileReaderSync` (`src/io.ts`), straight from the `File`: FFmpeg reads only what the demuxer asks for, in reads of up to 4 MiB, never the whole file. Copying the file into WebAssembly memory first would cap it at that memory, and asynchronous reads would need Asyncify or JSPI around every FFmpeg call.
 
 ## Packet ring

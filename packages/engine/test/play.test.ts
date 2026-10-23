@@ -108,7 +108,8 @@ test(
           const player = await engine.createEngine({ canvas });
           const res = await fetch(`/test/fixtures/${file}`);
           const blob = await res.blob();
-          await player.open(new File([blob], file));
+          const handle = await support.fileHandle(file, blob);
+          await player.open(handle);
           await player.play();
           const playing = await support.watchScreen(player, canvas, seconds * 1000);
           await player.pause();
@@ -193,7 +194,8 @@ test(`starts, pauses and plays on ${STARTS.join(", ")}`, async () => {
         for (const file of files) {
           const res = await fetch(`/test/fixtures/${file}`);
           const blob = await res.blob();
-          await player.open(new File([blob], file));
+          const handle = await support.fileHandle(file, blob);
+          await player.open(handle);
           await player.play();
           const first = await support.watchScreen(player, canvas, seconds * 1000);
           await player.pause();
@@ -272,7 +274,8 @@ test(`plays ${SPARSE} to the end with each frame on time`, async () => {
         const player = await engine.createEngine({ canvas });
         const res = await fetch(`/test/fixtures/${file}`);
         const blob = await res.blob();
-        await player.open(new File([blob], file));
+        const handle = await support.fileHandle(file, blob);
+        await player.open(handle);
         await player.play();
         const watched = await support.watchScreen(player, canvas, watch);
         player.close();

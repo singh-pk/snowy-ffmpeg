@@ -9,7 +9,7 @@ import { afterAll, expect, test } from "bun:test";
 import { serve } from "../../../tooling/test-server";
 import { launch } from "./support/browsers";
 import type { Track } from "../src/index";
-import { ENTRY, serveEngine } from "./support/serve";
+import { ENTRY, PAGE, serveEngine } from "./support/serve";
 
 interface Expected {
   format: string;
@@ -21,10 +21,10 @@ interface Expected {
 const expected: Record<string, Expected> = await Bun.file(
   new URL("fixtures/expected.json", import.meta.url),
 ).json();
-const page = "<!doctype html><title>test</title>";
-const server = await serveEngine(page);
+const html = "<!doctype html><title>test</title>";
+const server = await serveEngine(html);
 // The engine without the ffmpeg package, so the media worker fails to load.
-const broken = serve(new URL("../", import.meta.url), page);
+const broken = serve(new URL("../", import.meta.url), html);
 
 afterAll(async () => {
   await server.stop(true);
@@ -40,16 +40,18 @@ test("opens every fixture", async () => {
 
     // Each fixture's MediaInfo, or the error; and the error for a file that is not media.
     const { opened, notMedia } = await tab.evaluate(
-      async ({ entry, names }) => {
+      async ({ entry, page, names }) => {
         const engine: typeof import("../src/index") = await import(entry);
+        const support: typeof import("./support/page") = await import(page);
         const started = await engine.createEngine({ canvas: document.createElement("canvas") });
 
         async function open(path: string) {
           const res = await fetch(path);
           const blob = await res.blob();
+          const handle = await support.fileHandle(path.split("/").pop() ?? "", blob);
 
           try {
-            const info = await started.open(new File([blob], path.split("/").pop() ?? ""));
+            const info = await started.open(handle);
             return info;
           } catch (e) {
             return String(e);
@@ -67,7 +69,7 @@ test("opens every fixture", async () => {
         started.close();
         return { opened: infos, notMedia: rejected };
       },
-      { entry: ENTRY, names: Object.keys(expected) },
+      { entry: ENTRY, page: PAGE, names: Object.keys(expected) },
     );
 
     for (const [i, [file, e]] of Object.entries(expected).entries()) {
@@ -97,8 +99,8 @@ test("opens every fixture", async () => {
   }
 }, 60_000);
 
-// Three opens of a file that is not media, the last one after close, and an open that is
-// pending when its engine closes.
+// Three opens of a file that is not media, the last one after close; two at once, the first
+// replaced by the second; and an open that is still getting its file when its engine closes.
 async function failures(url: URL) {
   const browser = await launch();
 
@@ -108,7 +110,12 @@ async function failures(url: URL) {
 
     return await tab.evaluate(async (entry) => {
       const engine: typeof import("../src/index") = await import(entry);
-      const file = new File([new Uint8Array(16)], "empty");
+      // Made here, not with test/support/page.ts, which the broken server does not serve.
+      const root = await navigator.storage.getDirectory();
+      const file = await root.getFileHandle("empty", { create: true });
+      const writable = await file.createWritable();
+      await writable.write(new Uint8Array(16));
+      await writable.close();
       type Engine = Awaited<ReturnType<typeof engine.createEngine>>;
 
       // The info as JSON, or the error. It calls open before it first waits.
@@ -124,13 +131,14 @@ async function failures(url: URL) {
       const started = await engine.createEngine({ canvas: document.createElement("canvas") });
       const first = await attempt(started);
       const second = await attempt(started);
+      const replaced = await Promise.all([attempt(started), attempt(started)]);
       started.close();
       const afterClose = await attempt(started);
       const other = await engine.createEngine({ canvas: document.createElement("canvas") });
       const pending = attempt(other);
       other.close();
       const closedPending = await pending;
-      return { first, second, afterClose, closedPending };
+      return { first, second, replaced, afterClose, closedPending };
     }, ENTRY);
   } finally {
     await browser.close();
@@ -140,6 +148,8 @@ async function failures(url: URL) {
 test("a closed engine rejects open", async () => {
   const results = await failures(server.url);
   expect(results.first).toStartWith("Error: open: ");
+  expect(results.replaced[0]).toBe("AbortError: open: replaced");
+  expect(results.replaced[1]).toStartWith("Error: open: ");
   expect(results.afterClose).toBe("Error: the engine is closed");
   expect(results.closedPending).toBe("Error: the engine is closed");
 }, 60_000);
