@@ -47,9 +47,8 @@ test("demuxes every fixture as ffprobe does", async () => {
           await media.request({ type: "open", file: new File([blob], n) });
           // 64 KiB: far smaller than any fixture, so records wrap and the pump waits.
           const ring = support.createRing(1 << 16);
-          const { port1, port2 } = new MessageChannel();
-          const hashed = support.hashRing(ring, port2, dts);
-          await media.request({ type: "demux", ring, wake: port1, streams, from: 0 }, [port1]);
+          const hashed = support.hashRing(ring, dts);
+          await media.request({ type: "demux", ring, streams, from: 0 });
           all[n] = await hashed;
         }
 
@@ -89,11 +88,10 @@ test("a pump that fails ends the ring with FAILED", async () => {
 
         async function demux(capacity: number, streams: number[]) {
           const ring = support.createRing(capacity);
-          const { port1, port2 } = new MessageChannel();
-          const hashed = support.hashRing(ring, port2, false);
+          const hashed = support.hashRing(ring, false);
 
           try {
-            await media.request({ type: "demux", ring, wake: port1, streams, from: 0 }, [port1]);
+            await media.request({ type: "demux", ring, streams, from: 0 });
             const ended = await hashed;
             return ["replied", ended];
           } catch (e) {

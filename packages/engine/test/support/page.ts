@@ -43,12 +43,12 @@ function crc32(data: Uint8Array) {
 const timestamp = (t: bigint) => (t === AV_NOPTS_VALUE ? "" : String(t));
 
 /**
- * Reads `ring`, woken by `wake`, to its END record and resolves with each stream's packet count
+ * Reads `ring` to its END record and resolves with each stream's packet count
  * and the SHA-256 of its lines `pts,dts,key,size,crc32`, without dts unless `dts`
  * (scripts/gen-fixtures.ts); or with "failed" at a FAILED record.
  */
-export async function hashRing(ring: SharedArrayBuffer, wake: MessagePort, dts: boolean) {
-  const consumer = createConsumer(ring, wake);
+export async function hashRing(ring: SharedArrayBuffer, dts: boolean) {
+  const consumer = createConsumer(ring);
   const lines = new Map<number, string[]>();
 
   for (;;) {
@@ -113,10 +113,9 @@ export async function play(
   });
   await createAudioOutput(context, pcm, worklet);
   // No packets: the ring only gets the END record.
-  const { port1 } = new MessageChannel();
   const ring = createRing(64);
   const audio = { stream, pcm, preroll: 0 };
-  await media.request({ type: "demux", ring, wake: port1, streams: [], from: 0, audio }, [port1]);
+  await media.request({ type: "demux", ring, streams: [], from: 0, audio });
   const offsets: number[] = [];
 
   // Samples the clock, which only the audio thread moves, with rendering suspended at
@@ -180,11 +179,8 @@ type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K>
 /** The first packet of `stream` in the file open in `media`, which stops demuxing after it. */
 export async function firstPacket(media: ReturnType<typeof startMedia>, stream: number) {
   const ring = createRing(1 << 22);
-  const { port1, port2 } = new MessageChannel();
-  const consumer = createConsumer(ring, port2);
-  const demuxed = media.request({ type: "demux", ring, wake: port1, streams: [stream], from: 0 }, [
-    port1,
-  ]);
+  const consumer = createConsumer(ring);
+  const demuxed = media.request({ type: "demux", ring, streams: [stream], from: 0 });
 
   for (;;) {
     const packet = consumer.peek();
@@ -315,14 +311,11 @@ export async function render(
   const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC;
   context.configure({ device, format, usage, alphaMode: "opaque" });
   const ring = createRing(RING_CAPACITY);
-  const { port1, port2 } = new MessageChannel();
-  const demuxed = media.request({ type: "demux", ring, wake: port1, streams: [stream], from: 0 }, [
-    port1,
-  ]);
+  const demuxed = media.request({ type: "demux", ring, streams: [stream], from: 0 });
   // Wakes the wait for frames below on every change in how far decoding is.
   const decoding = { changed: () => {} };
   const compositor = createCompositor(device, context, format);
-  const output = createVideoOutput(ring, port2, p, compositor, () => decoding.changed());
+  const output = createVideoOutput(ring, p, compositor, () => decoding.changed());
   // Rows of a texture copy are a multiple of 256 bytes apart.
   const stride = Math.ceil((width * 4) / 256) * 256;
   const buffer = device.createBuffer({

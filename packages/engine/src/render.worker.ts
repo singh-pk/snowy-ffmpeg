@@ -123,7 +123,7 @@ function clear() {
   state.compositor.clear();
 }
 
-function play({ id, ring, wake, params, pcm, from }: Extract<ToRender, { type: "play" }>) {
+function play({ id, ring, params, pcm, from }: Extract<ToRender, { type: "play" }>) {
   stop();
   if (!state.compositor) throw new Error("play before init");
   const clock = createPcmControl(pcm);
@@ -131,7 +131,6 @@ function play({ id, ring, wake, params, pcm, from }: Extract<ToRender, { type: "
   // the PCM ring's doorbell for room in either ring (src/pcm.ts).
   const output = createVideoOutput(
     ring,
-    wake,
     params,
     state.compositor,
     () => update(),
