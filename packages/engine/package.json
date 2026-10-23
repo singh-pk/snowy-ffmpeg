@@ -38,7 +38,9 @@
   "scripts": {
     "build": "bun scripts/build.ts",
     "test": "bun test",
+    "test:low-end": "SNOWY_PROFILE=low-end bun test",
     "bench": "bun bench/run.ts",
+    "bench:low-end": "SNOWY_PROFILE=low-end bun bench/run.ts",
     "fixtures": "bun scripts/gen-fixtures.ts",
     "typecheck": "bun --bun tsc && bun --bun tsc -p tsconfig.worker.json && bun --bun tsc -p tsconfig.worklet.json"
   },
