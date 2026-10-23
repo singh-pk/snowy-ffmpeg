@@ -284,15 +284,178 @@ test("a role in use can't be removed", () => {
   expect(project.item(id(2, 0))?.removed).toBe(true);
 });
 
-test("a connected change reports the range it covered before and after", () => {
+test("a marker's change reports the range it covered before and after", () => {
   const { apply } = setUp();
-  apply(clip({ anchor: { origin: sequence, at: SECOND } }));
+  apply({
+    op: "item.add",
+    item: {
+      kind: "marker",
+      anchor: { origin: sequence, at: SECOND },
+      duration: SECOND,
+      type: "marker",
+      name: "m",
+    },
+  });
   const result = apply({
     op: "item.move",
     id: id(2, 0),
     anchor: { origin: sequence, at: 3 * SECOND },
   });
   expect(result.ranges.get(sequence)).toEqual({ from: SECOND, to: 4 * SECOND });
+});
+
+test("a connected clip's change reports all after it, since later clips can change lanes", () => {
+  const { apply } = setUp();
+  apply(clip({ anchor: { origin: sequence, at: SECOND } }));
+  const result = apply({ op: "item.set", id: id(2, 0), path: "lane", value: 3 });
+  expect(result.ranges.get(sequence)).toEqual({ from: SECOND, to: Number.POSITIVE_INFINITY });
+});
+
+test("trimming a clip's head reports where its connected items were, even before it", () => {
+  const { project, apply } = setUp();
+  apply(
+    clip({ in: 24_000 }),
+    clip({ anchor: at("a1"), in: 24_000 }),
+    clip({ anchor: { clip: id(2, 1), at: 0 }, lane: 1 }),
+  );
+  expect(project.start(id(2, 2))).toBe(0);
+  const result = apply({ op: "item.set", id: id(2, 1), path: "in", value: 48_000 });
+  expect(project.start(id(2, 2))).toBe(-SECOND);
+  expect(result.ranges.get(sequence)).toEqual({ from: -SECOND, to: Number.POSITIVE_INFINITY });
+});
+
+test("a role's order or a sequence's settings redraw the whole sequence", () => {
+  const { project, apply } = setUp();
+  const named = apply({ op: "role.set", id: video, path: "name", value: "Pictures" });
+  expect(named.ranges.size).toBe(0);
+  expect(project.role(video)?.name).toBe("Pictures");
+  const ordered = apply({ op: "role.set", id: video, path: "order", value: "a2" });
+  expect(ordered.ranges.get(sequence)).toEqual({
+    from: Number.NEGATIVE_INFINITY,
+    to: Number.POSITIVE_INFINITY,
+  });
+  const resized = apply({ op: "sequence.set", id: sequence, path: "width", value: 1280 });
+  expect(resized.ranges.get(sequence)).toEqual({
+    from: Number.NEGATIVE_INFINITY,
+    to: Number.POSITIVE_INFINITY,
+  });
+});
+
+test("a time past the safe integers is skipped, and changes nothing", () => {
+  const { project, apply } = setUp();
+  const half = Math.floor(Number.MAX_SAFE_INTEGER / 2) + 1;
+  const result = apply(
+    clip(),
+    clip({ anchor: { clip: id(2, 0), at: Number.MAX_SAFE_INTEGER }, lane: 1 }),
+    clip({ anchor: at("a1"), duration: half }),
+    clip({ anchor: at("a2"), duration: half }),
+    { op: "item.set", id: id(2, 2), path: "duration", value: Number.MAX_SAFE_INTEGER },
+    { op: "item.set", id: id(2, 0), path: "duration", value: 2 * SECOND },
+  );
+  expect(result.skipped.map(({ index, reason }) => [index, reason])).toEqual([
+    [1, "malformed"],
+    [3, "malformed"],
+    [4, "malformed"],
+  ]);
+  expect(project.item(id(2, 1))).toBeUndefined();
+  expect(project.item(id(2, 3))).toBeUndefined();
+  expect(project.item(id(2, 2))?.duration).toBe(half);
+  expect(project.storyline(sequence).map((placed) => placed.id)).toEqual([id(2, 0), id(2, 2)]);
+});
+
+test("a storyline item keeps its place while a transition sits on it", () => {
+  const { project, apply } = setUp();
+  apply(clip(), clip({ anchor: at("a1") }), {
+    op: "item.add",
+    item: {
+      kind: "transition",
+      cut: id(2, 0),
+      duration: 2 * FRAME,
+      effect: "cross.dissolve",
+      params: {},
+    },
+  });
+  const off = { op: "item.move" as const, id: id(2, 0), anchor: { origin: sequence, at: 0 } };
+  expect(apply(off).skipped.map(({ reason }) => reason)).toEqual(["structural"]);
+  // Removing the cut hides the transition until the cut is restored.
+  apply({ op: "item.remove", id: id(2, 0) });
+  expect(project.start(id(2, 2))).toBeUndefined();
+  expect(apply({ op: "item.set", id: id(2, 2), path: "duration", value: FRAME }).skipped).toEqual(
+    [],
+  );
+});
+
+test("an asset in use can't be removed, and adding it again takes the new record", () => {
+  const { project, apply } = setUp();
+  apply(clip());
+  expect(apply({ op: "asset.remove", id: asset }).skipped.map(({ reason }) => reason)).toEqual([
+    "structural",
+  ]);
+  apply({ op: "item.remove", id: id(2, 0) });
+  expect(apply({ op: "asset.remove", id: asset }).skipped).toEqual([]);
+  const record = project.asset(asset);
+  if (record === undefined) throw new Error("no asset");
+  expect(apply({ op: "asset.add", asset: { ...record, name: "b.mp4" } }).skipped).toEqual([]);
+  expect(project.asset(asset)?.name).toBe("b.mp4");
+  expect(apply({ op: "asset.add", asset: record }).skipped.map(({ reason }) => reason)).toEqual([
+    "stale",
+  ]);
+});
+
+test("a sequence that holds items, or that a compound clip plays, can't be removed", () => {
+  const { apply } = setUp();
+  const { seq } = apply({
+    op: "sequence.add",
+    sequence: { name: "Inner", rate: [24, 1], width: 1920, height: 1080, sampleRate: 48_000 },
+  });
+  const inner = id(seq, 0);
+  apply(clip({ source: { sequence: inner } }));
+  const reasons = (ops: Op[]) => apply(...ops).skipped.map(({ reason }) => reason);
+  expect(reasons([{ op: "sequence.remove", id: sequence }])).toEqual(["structural"]);
+  expect(reasons([{ op: "sequence.remove", id: inner }])).toEqual(["structural"]);
+  expect(
+    reasons([
+      { op: "item.remove", id: id(3, 0) },
+      { op: "sequence.remove", id: inner },
+    ]),
+  ).toEqual([]);
+  expect(reasons([{ op: "item.restore", id: id(3, 0) }])).toEqual(["stale"]);
+});
+
+test("applying a batch again adds nothing twice", () => {
+  const { project } = setUp();
+  const ops: Op[] = [
+    { op: "project.set", name: "Film" },
+    {
+      op: "sequence.add",
+      sequence: { name: "Other", rate: [24, 1], width: 1920, height: 1080, sampleRate: 48_000 },
+    },
+    {
+      op: "role.add",
+      role: { sequence, name: "Titles", kind: "video", color: "#ffffff", order: "a3" },
+    },
+  ];
+  expect(project.apply({ author, seq: 9, ops }).skipped).toEqual([]);
+  expect(project.name()).toBe("Film");
+  expect(project.apply({ author, seq: 9, ops }).skipped.map(({ reason }) => reason)).toEqual([
+    "stale",
+    "stale",
+  ]);
+});
+
+test("a generator clip's parameters are set by path", () => {
+  const { project, apply } = setUp();
+  apply(clip({ source: { generator: "solid", params: { color: "#ffffff" } } }));
+  const result = apply(
+    { op: "item.set", id: id(2, 0), path: "source.params.color", value: "#000000" },
+    { op: "item.set", id: id(2, 0), path: "source.generator", value: "text" },
+  );
+  expect(result.skipped.map(({ index, reason }) => [index, reason])).toEqual([[1, "malformed"]]);
+  const item = project.item(id(2, 0));
+  expect(item?.kind === "clip" ? item.source : undefined).toEqual({
+    generator: "solid",
+    params: { color: "#000000" },
+  });
 });
 
 test("lanes stack connected clips of a role that overlap", () => {
