@@ -12,6 +12,9 @@
 "package:sync":
   - changed-files:
       - any-glob-to-any-file: packages/sync/**
+"package:timeline":
+  - changed-files:
+      - any-glob-to-any-file: packages/timeline/**
 "area:ci":
   - changed-files:
       - any-glob-to-any-file: [.github/**, .githooks/**, scripts/**, tooling/**]
