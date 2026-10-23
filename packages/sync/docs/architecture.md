@@ -559,11 +559,17 @@ type ChatMessage = {
 };
 ```
 
+- **Canonical bytes:** a message's JSON with its fields in the order above, absent fields left out, as UTF-8. A peer re-encodes every message it parses, so every peer hashes a message the same way. A message with an unknown field, or fields that don't fit its `kind`, is refused.
+- **Hashes** (`prev`, a checkpoint's `head`) are the SHA-256 of a message's canonical bytes, as unpadded base64url.
+- A `PeerId` has exactly one spelling: one whose unused trailing bits aren't zero is refused, so one author can't have two logs.
+
 ### Order
 
 - Every peer sorts messages by `(hlc, author)`, so every peer shows the same order. The HLC is fixed-width, so comparing it as a string compares it as a number.
 - The HLC moves forward on every message sent and every message received. A reply therefore always sorts after the message it answers.
-- A message that arrives after later ones (because it was written offline) goes into its sorted position and is marked *arrived late*.
+- A received HLC more than 60 s ahead of the local wall clock doesn't move the clock; the message is still stored and sorted. A peer with a wrong clock, or a hostile one, can't drag everyone's clock forward.
+- A counter past 16 bits carries into the wall-clock part instead of wrapping. A peer stores its clock with its log, so the clock never goes back across a reload.
+- A message whose HLC is below the receiving peer's clock when it arrives (because it was written offline) goes into its sorted position and is marked *arrived late*. The mark is local to each peer. Since the clock ignores HLCs too far ahead, one message from the future can't make the ones after it late.
 
 ### Edits, deletes and reactions
 
@@ -585,14 +591,16 @@ Chat stays append-only:
 - A gap is noticed locally: receiving `A:n` while the newest stored `A` message is below `n − 1`.
 - **The peer that has the gap chooses who to ask:** the candidates are the author (if online) and its connected group peers, ranked by `SHA-256(candidate ‖ author ‖ firstMissingSeq)`. It asks the lowest one, then the next if the answer is `gone` or the link closes.
 - The answer goes only to the peer that asked, on `inbox/<requester>/deliver/<responder>` or over the direct `ctl` channel.
-- **On reconnect**, a peer sends its version vector `{ author: newestSeq }` once to the first candidate, who replies with every message it holds beyond that.
+- **On reconnect**, a peer sends its version vector `{ author: seq }` once to the first candidate, who replies with every message it holds beyond that. Each `seq` is the highest held with none missing below it, so the reply also fills older gaps.
 - There is no gossip when nothing is missing.
 
 ### Authenticity
 
 - Messages arriving on the author's own track are authenticated by the relay's permissions.
 - Every message's `prev` hash links it to the author's previous one, forming a chain.
-- When the author's send queue empties, it publishes a **checkpoint** `{ author, seq, head: SHA-256(message seq), sig }` signed with its peer key.
+- When the author's send queue empties, it publishes a **checkpoint** `{ author, seq, head: SHA-256(message seq), sig }` signed with its peer key. The signature covers `snowy checkpoint v1\n` followed by the JSON `{ author, seq, head }`; the prefix keeps it from passing for anything else the peer key signs.
+- A checkpoint proves its own message and each earlier one whose successor's `prev` names it, back to the first missing or mismatched message, or to the newest message already shown. Messages after it wait for a later checkpoint. If repair brings several messages for one seq, only the one the chain names counts. A signature, like a `PeerId`, has exactly one spelling.
+- A peer keeps the first message it shows for each `(author, seq)` and ignores any other. An author that sends two messages under one seq may therefore be shown differently by different peers.
 - A message received through repair is shown only after its chain checks out against a checkpoint. Until then it's held unshown.
 
 ### Display
@@ -716,6 +724,7 @@ The sync package needs these engine capabilities through public exports:
 | Data channel buffer: pause / resume | 1 MiB / 256 KiB |
 | AES-GCM nonce | 96 random bits per encryption |
 | HLC layout | 16 hex digits: 48-bit wall ms, then 16-bit counter |
+| Received HLC ignored when ahead of the wall clock by | More than 60 s |
 
 ## Limits
 
