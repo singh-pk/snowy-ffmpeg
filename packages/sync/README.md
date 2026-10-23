@@ -8,14 +8,19 @@
 [![ci](https://github.com/singh-pk/snowy-media/actions/workflows/ci.yml/badge.svg)](https://github.com/singh-pk/snowy-media/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/singh-pk/snowy-media/blob/main/LICENSE)
 
-Watch-together sessions for [Snowy](https://github.com/singh-pk/snowy-media): one person plays a local file to a group of viewers, everyone shares a chat, and each viewer picks their own audio and subtitle tracks. Media goes once from the source to a stateless [MoQ](https://datatracker.ietf.org/wg/moq/about/) relay over WebTransport, and is shared onwards through WebRTC peer groups. Every peer keeps its own copy, so playback and chat carry on through a dropped connection. It plays through [`@snowy-media/engine`](../engine). The same transport runs edit sessions, where people and agents edit one [`@snowy-media/timeline`](../timeline) project together, each streaming their own media from their own disk.
+Live sessions for [Snowy](https://github.com/singh-pk/snowy-media), over a stateless [MoQ](https://datatracker.ietf.org/wg/moq/about/) relay on WebTransport. It runs two kinds:
+
+- **Watch sessions:** one person plays a local file to a group of viewers, everyone shares a chat, and each viewer picks their own audio and subtitle tracks. Media goes once from the source to the relay and is shared onwards through WebRTC peer groups. It plays through [`@snowy-media/engine`](../engine).
+- **Edit sessions:** people and agents edit one [`@snowy-media/timeline`](../timeline) project together. Each editor's media stays on their own disk and is streamed from there to the others who need it.
+
+Every peer keeps its own copy of what it receives, so playback, chat and editing carry on through a dropped connection. Everything is end-to-end encrypted: the relay sees only track names and sizes.
 
 > [!NOTE]
-> In design and not yet published. There is no code yet; [docs/architecture.md](docs/architecture.md) is the design.
+> In development and not yet published, with no public API yet. So far it has the signed and encrypted objects that sessions exchange (media chunks and chat batches) and chat: ordering, edits, deletes and reactions, sending, and repairing missed messages from other peers. [docs/architecture.md](docs/architecture.md) is the design.
 
 ## Requirements
 
-A page served with cross-origin isolation (`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`) in desktop Chromium, as `@snowy-media/engine` needs, which also has WebTransport, WebRTC data channels, the Origin Private File System, and Ed25519 in Web Crypto. A session needs a MoQ relay and two STUN endpoints; nothing else runs on a server.
+A page served with cross-origin isolation (`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`) in desktop Chromium, as `@snowy-media/engine` needs, which also has WebTransport, WebRTC data channels, the Origin Private File System, and Ed25519 in Web Crypto. A session needs a MoQ relay, and a watch session two STUN endpoints for its peer groups; nothing else runs on a server.
 
 ## Licence
 
