@@ -11,7 +11,7 @@
 The edit document of the [Snowy](https://github.com/singh-pk/snowy-media) editor: a magnetic timeline whose storyline closes up by itself and whose connected clips move with what they belong to, the typed operations that change it, and one linear history that every person and agent editing a project shares, with undo, revert and branches. It has no DOM, network or media, so it runs in Bun as well as the browser; [`@snowy-media/engine`](../engine) plays what it describes and [`@snowy-media/sync`](../sync) carries it between peers.
 
 > [!NOTE]
-> In development and not yet published, with no public API yet. So far it has time in flicks, item ids, storyline position keys, and layout: the storyline's start times, connected items' times and lanes. [docs/architecture.md](docs/architecture.md) is the design.
+> In development and not yet published, with no public API yet. So far it has time in flicks, item ids, storyline position keys, layout (the storyline's start times, connected items' times and lanes), and batches of operations in signed canonical bytes. [docs/architecture.md](docs/architecture.md) is the design.
 
 ## Licence
 
