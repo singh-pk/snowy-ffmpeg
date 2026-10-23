@@ -20,6 +20,8 @@ This package runs watch-together sessions: a local file streamed from one source
 | `src/hlc.ts` | the hybrid logical clock that orders chat |
 | `src/chat.ts` | chat messages in canonical bytes, their hash chain, and signed checkpoints |
 | `src/chat-log.ts` | the chat log: shared order, gaps, version vectors, and edits, deletes and reactions applied |
+| `src/chat-batch.ts` | the chat batch: an author's queued messages and checkpoint, sealed as one object |
+| `src/chat-sender.ts` | sending this peer's chat: chaining each message, and batching whenever the stream is free |
 | `test/` | Bun tests; `test/support/` holds what they share |
 
 ## Rules

@@ -584,6 +584,9 @@ Chat stays append-only:
 
 - A message is written to the local log first, then sent on `peer/<self>/chat`.
 - While the relay stream is busy, new messages queue. When it's free, everything queued goes as one batch object. Batching therefore follows network speed, not a clock.
+- A batch is the JSON `{ messages, checkpoint }`, sealed under its key `chat/<author>/<firstSeq>-<lastSeq>`. `messages` holds the author's consecutive messages from `firstSeq` to `lastSeq` in canonical form, and `checkpoint` is the author's checkpoint at `lastSeq`. A batch always empties the queue, so every batch carries one.
+- A batch proves itself: a peer accepts one only if its checkpoint verifies and proves every message in it, so a batch checks out whoever forwards it. It proves its messages, not who sealed it: every member holds the content key, so any member can seal a valid batch from an author's messages, such as a sub-range or two batches merged. A batch key's range is never treated as something the author published.
+- A batch sealed while the stream closed, even if it has since reopened, goes back to the queue and is sealed again with whatever queued meanwhile.
 - Offline, messages queue in the log and are sent when the reconnect event fires.
 
 ### Gaps and repair
@@ -598,7 +601,7 @@ Chat stays append-only:
 
 - Messages arriving on the author's own track are authenticated by the relay's permissions.
 - Every message's `prev` hash links it to the author's previous one, forming a chain.
-- When the author's send queue empties, it publishes a **checkpoint** `{ author, seq, head: SHA-256(message seq), sig }` signed with its peer key. The signature covers `snowy checkpoint v1\n` followed by the JSON `{ author, seq, head }`; the prefix keeps it from passing for anything else the peer key signs.
+- Each batch ends with a **checkpoint** `{ author, seq, head: SHA-256(message seq), sig }` signed with its peer key. The signature covers `snowy checkpoint v1\n` followed by the JSON `{ author, seq, head }`; the prefix keeps it from passing for anything else the peer key signs.
 - A checkpoint proves its own message and each earlier one whose successor's `prev` names it, back to the first missing or mismatched message, or to the newest message already shown. Messages after it wait for a later checkpoint. If repair brings several messages for one seq, only the one the chain names counts. A signature, like a `PeerId`, has exactly one spelling.
 - A peer keeps the first message it shows for each `(author, seq)` and ignores any other. An author that sends two messages under one seq may therefore be shown differently by different peers.
 - A message received through repair is shown only after its chain checks out against a checkpoint. Until then it's held unshown.
