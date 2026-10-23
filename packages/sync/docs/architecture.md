@@ -699,7 +699,7 @@ The sync package needs these engine capabilities through public exports:
 | Capability | Used for |
 | --- | --- |
 | **A pluggable packet source**: play from codec setup plus packet records supplied by the caller, not a `File` | Playing chunks from the store |
-| **Demuxer access at the source**: read packets and track info from a `File`, and seek to a time | Cutting chunks, and cutting past chunks again |
+| **Demuxer access at the source**: read packets and track info from a `FileSystemFileHandle`, and seek to a time | Cutting chunks, and cutting past chunks again |
 | **Choosing the audio track**, including while playing | Per-viewer audio |
 | **Subtitle rendering**: text (SRT, ASS) and bitmap (PGS), with the track chosen while playing | Per-viewer subtitles |
 | **Scheduled play, pause and seek** at a given wall-clock time, carried out by the media clock, with `started` and `paused` events | Commands that every peer applies at the same moment |
