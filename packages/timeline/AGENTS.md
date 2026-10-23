@@ -26,7 +26,8 @@ This package is the edit document of the Snowy editor: a magnetic timeline of se
 | `src/batch.ts` | batches, as signed objects |
 | `src/entry.ts` | entries and refusals, as signed objects |
 | `src/project.ts` | a project's document, changed by applying batches, which checks each operation and skips any that doesn't fit: items, splits and joins, effects and keyframes; and its snapshot, which another project starts from |
-| `src/history.ts` | one branch's history: entries applied in order, then the pending batches, and the sequencer appending them |
+| `src/history.ts` | one branch's history: entries applied in order, then the pending batches, the sequencer appending them, going back, reverting and what to undo |
+| `src/undo.ts` | the operations that undo a batch, from the documents before and after it and now |
 | `test/` | unit tests (`*.unit.ts`), run in Chromium by `unit.test.ts` |
 
 ## Rules
