@@ -745,7 +745,7 @@ An agent connected in a tab has its own peer key and grant, but no relay connect
 
 One content key would last the project's whole life, across every presence update, batch and repair, so in an edit session each peer seals with its own: `HKDF-SHA256(sessionSecret, salt = SessionId, info = "snowy content v1 " + PeerId)`.
 
-- **An object is sealed with the key of the peer that seals it,** never with its author's key or the key of the peer whose track it belongs to, except on `source/*` (below). The AES-GCM limit of 2³² encryptions with random nonces is a limit on whoever draws the nonces, so each peer spends only its own key's budget. It stays below the limit unless one peer seals more than 4 billion objects in a project.
+- **An object is sealed with the key of the peer that seals it,** which the track it arrives on names (on `source/*`, the session's key, below), never with its author's key. The AES-GCM limit of 2³² encryptions with random nonces is a limit on whoever draws the nonces, so each peer spends only its own key's budget. It stays below the limit unless one peer seals more than 4 billion objects in a project.
 - **In an edit session, a peer seals everything it sends,** and never forwards bytes another peer sealed. The peer that sent an object is therefore the one whose key opens it, and the receiver always knows which peer that is:
 
   | Object | Sealed by |
