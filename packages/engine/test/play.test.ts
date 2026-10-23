@@ -273,9 +273,9 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
           // Each frame due on screen as it plays.
           for (const [phase, reads] of Object.entries({ first: play.first, second: play.second })) {
             const checked = fresh(reads, firefox);
-            expect(checked.length, `${file} ${phase}: reads checked`).toBeGreaterThan(
-              reads.length * 0.9,
-            );
+            const start = reads.slice(0, 8).map(([time, id]) => `${ms(time)}:${id}`);
+            const what = `${file} ${phase}: reads checked; first reads ${start.join(" ")}`;
+            expect(checked.length, what).toBeGreaterThan(reads.length * 0.9);
 
             for (const [time, id] of checked) {
               const o = offset(v, id, time);
