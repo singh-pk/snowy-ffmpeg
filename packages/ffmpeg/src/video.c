@@ -41,34 +41,35 @@ API int sny_frame_linesize(const AVFrame *frame, int i) { return frame->linesize
 
 // ---- Video output ----
 
-// Pixel formats a WebCodecs VideoFrame accepts in Chromium, Firefox and WebKit, with its name
-// for each. The spec has more (I422, I444, 10- and 12-bit), but Firefox and WebKit reject
-// them, so frames in those are converted. The yuvj formats are deprecated full-range aliases
-// that decoders such as MJPEG still output; they are accepted but never converted to
-// (sny_frame_color_range gives the range).
+// The pixel formats of a WebCodecs VideoFrame, with their names, at any size: each one that
+// Chromium constructs and imports into WebGPU, which leaves out 12-bit with alpha. The yuvj formats
+// are deprecated full-range aliases that decoders such as MJPEG still output; they are accepted but
+// never converted to (sny_frame_color_range gives the range).
 static const struct {
   enum AVPixelFormat format;
   const char *name;
   int alias;
 } video_formats[] = {
-    {AV_PIX_FMT_YUV420P, "I420"}, {AV_PIX_FMT_YUVJ420P, "I420", 1}, {AV_PIX_FMT_YUVA420P, "I420A"},
-    {AV_PIX_FMT_NV12, "NV12"},    {AV_PIX_FMT_RGBA, "RGBA"},        {AV_PIX_FMT_RGB0, "RGBX"},
-    {AV_PIX_FMT_BGRA, "BGRA"},    {AV_PIX_FMT_BGR0, "BGRX"},
+    {AV_PIX_FMT_YUV420P, "I420"},        {AV_PIX_FMT_YUVJ420P, "I420", 1},
+    {AV_PIX_FMT_YUV420P10LE, "I420P10"}, {AV_PIX_FMT_YUV420P12LE, "I420P12"},
+    {AV_PIX_FMT_YUVA420P, "I420A"},      {AV_PIX_FMT_YUVA420P10LE, "I420AP10"},
+    {AV_PIX_FMT_YUV422P, "I422"},        {AV_PIX_FMT_YUVJ422P, "I422", 1},
+    {AV_PIX_FMT_YUV422P10LE, "I422P10"}, {AV_PIX_FMT_YUV422P12LE, "I422P12"},
+    {AV_PIX_FMT_YUVA422P, "I422A"},      {AV_PIX_FMT_YUVA422P10LE, "I422AP10"},
+    {AV_PIX_FMT_YUV444P, "I444"},        {AV_PIX_FMT_YUVJ444P, "I444", 1},
+    {AV_PIX_FMT_YUV444P10LE, "I444P10"}, {AV_PIX_FMT_YUV444P12LE, "I444P12"},
+    {AV_PIX_FMT_YUVA444P, "I444A"},      {AV_PIX_FMT_YUVA444P10LE, "I444AP10"},
+    {AV_PIX_FMT_NV12, "NV12"},           {AV_PIX_FMT_RGBA, "RGBA"},
+    {AV_PIX_FMT_RGB0, "RGBX"},           {AV_PIX_FMT_BGRA, "BGRA"},
+    {AV_PIX_FMT_BGR0, "BGRX"},
 };
 
 #define NB_VIDEO_FORMATS (int)(sizeof video_formats / sizeof *video_formats)
 
-// Firefox rejects an odd width or height in a chroma-subsampled format, so a frame of odd
-// size is only accepted in an RGB one.
-static int accepts(enum AVPixelFormat format, int width, int height) {
-  const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(format);
-  return !((width | height) & 1) || (!desc->log2_chroma_w && !desc->log2_chroma_h);
-}
-
 static const char *video_format(const AVFrame *frame) {
   for (int i = 0; i < NB_VIDEO_FORMATS; i++)
     if (video_formats[i].format == frame->format)
-      return accepts(frame->format, frame->width, frame->height) ? video_formats[i].name : NULL;
+      return video_formats[i].name;
   return NULL;
 }
 
@@ -101,21 +102,25 @@ API void sny_scaler_free(SwsContext *sws) { sws_free_context(&sws); }
 
 // Makes out a frame VideoFrame accepts: in itself (referenced, not copied) when it has a
 // VideoFrame format, otherwise in converted by libswscale, at the same size, to the nearest
-// such format (rgb24 to RGBX, 10-bit 4:2:0 to I420, …). Returns 0 or a negative AVERROR.
+// such format (rgb24 to RGBX, …). Returns 0 or a negative AVERROR.
 API int sny_to_video_format(SwsContext *sws, const AVFrame *in, AVFrame *out) {
   av_frame_unref(out);
   if (video_format(in))
     return av_frame_ref(out, in);
 
-  enum AVPixelFormat accepted[NB_VIDEO_FORMATS + 1];
-  int n = 0;
-  for (int i = 0; i < NB_VIDEO_FORMATS; i++)
-    if (!video_formats[i].alias && accepts(video_formats[i].format, in->width, in->height))
-      accepted[n++] = video_formats[i].format;
-  accepted[n] = AV_PIX_FMT_NONE;
   const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(in->format);
   if (!desc)
     return AVERROR(EINVAL);
+  // RGB, XYZ and gray stay RGB: their frames carry no YUV matrix to convert with.
+  const int rgb =
+      (desc->flags & (AV_PIX_FMT_FLAG_RGB | AV_PIX_FMT_FLAG_XYZ)) || desc->nb_components < 3;
+  enum AVPixelFormat accepted[NB_VIDEO_FORMATS + 1];
+  int n = 0;
+  for (int i = 0; i < NB_VIDEO_FORMATS; i++)
+    if (!video_formats[i].alias &&
+        (!rgb || av_pix_fmt_desc_get(video_formats[i].format)->flags & AV_PIX_FMT_FLAG_RGB))
+      accepted[n++] = video_formats[i].format;
+  accepted[n] = AV_PIX_FMT_NONE;
   // libswscale reads both frames' colour properties: copied first, YUV stays in the source's
   // range and matrix instead of being squeezed to limited range; RGB is full range.
   int ret = av_frame_copy_props(out, in);

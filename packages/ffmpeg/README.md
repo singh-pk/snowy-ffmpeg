@@ -150,7 +150,7 @@ const picture = new VideoFrame(video.HEAPU8.slice(dst, dst + size), {
 video._free(dst);
 ```
 
-`_sny_to_video_format` passes a frame through untouched when it is I420, I420A, NV12 or 8-bit RGB, at an even size unless RGB, and otherwise converts it with libswscale (10-bit to 8-bit, 4:2:2 and 4:4:4 to I420 or RGB). The decoder's own frame stays available, planes and all, through `_sny_frame_data` and `_sny_frame_linesize`, for a WebGL or WebGPU renderer that wants full precision. Every decoder produces exactly what native FFmpeg does.
+`_sny_to_video_format` passes a frame through untouched when it is in a `VideoFrame` format (4:2:0, 4:2:2 or 4:4:4 at 8, 10 or 12 bits, with alpha up to 10 bits, NV12, or 8-bit RGB with alpha or padding), at any size, and otherwise converts it with libswscale (RGB24, gray and RGB deeper than 8 bits to RGBX, …). The decoder's own frame stays available, planes and all, through `_sny_frame_data` and `_sny_frame_linesize`, for a WebGL or WebGPU renderer that wants what conversion drops, such as RGB deeper than 8 bits. Every decoder produces exactly what native FFmpeg does.
 
 Every `_sny_*` call that can fail returns a negative AVERROR code, and `_sny_strerror` describes it. The full API is in [`src/`](src): [`demux.c`](src/demux.c), [`decode.c`](src/decode.c), [`audio.c`](src/audio.c), [`video.c`](src/video.c) and [`common.c`](src/common.c); `dist/core/index.d.ts` types every function and constant. [docs/architecture.md](docs/architecture.md) explains the design.
 
