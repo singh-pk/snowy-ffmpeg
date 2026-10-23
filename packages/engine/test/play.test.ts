@@ -30,8 +30,7 @@ const expected: Record<string, { video: Video; audio: { resampled: { frames: num
 const video = expected[FILE]?.video ?? { timeBase: "1/1", width: 0, height: 0, pts: [] };
 // Where play starts as video waits for packets, where it starts at the end of the audio, where
 // it starts before the first frame, and the long one; each is played, paused and played on,
-// for WATCH seconds a play. Frame 0 reads like a black canvas, so the late video plays after a
-// file that leaves another frame up, to catch a first frame not shown.
+// for WATCH seconds a play.
 const SPARSE = "sparse-h264-aac.mp4";
 const STARTS = [SPARSE, "short-audio-h264-aac.mp4", "late-video-h264-aac.mp4", FILE];
 const WATCH = 2;
@@ -98,13 +97,11 @@ function frameAt(v: Video, time: number) {
 // first read, in Firefox and now and then in Chromium, may show a frame from five or more
 // frames before, with the frame due on the next read under a millisecond later in Chromium.
 // That is no late frame: play prerolls a quarter second of video before the clock starts. So
-// the first read is left out in every browser. It may even show the file played before, so it
-// does not count as the newest frame read.
+// the first read is left out in every browser.
 function fresh(reads: [time: number, id: number][], firefox: boolean) {
   const newest = { id: -1 };
   return reads.filter(([, id], i) => {
-    if (i === 0) return false;
-    const stale = firefox && id < newest.id;
+    const stale = i === 0 || (firefox && id < newest.id);
     newest.id = Math.max(newest.id, id);
     return !stale;
   });
@@ -233,6 +230,10 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
               await player.play();
               const second = await support.watchScreen(player, canvas, seconds * 1000);
               plays.push({ first, paused, second });
+              // Back to the first frame: the next file's first reads can still show what is up,
+              // and frame 0 is ahead of none of its frames.
+              await player.pause();
+              await player.seek(0);
             }
 
             player.close();
