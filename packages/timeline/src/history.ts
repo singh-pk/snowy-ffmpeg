@@ -239,6 +239,7 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
     for (const [other, { batch }] of pending) {
       if (keyOf(batch) !== key) continue;
       pending.delete(other);
+      if (other !== each.hash) held.delete(other);
       others ||= other !== each.hash;
     }
 

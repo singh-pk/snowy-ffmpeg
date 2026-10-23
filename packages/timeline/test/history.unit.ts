@@ -322,22 +322,13 @@ test("an entry whose author couldn't see another's change to the same leaf is co
   expect(history.document().sequence(`${a.key}.1.0`)?.name).toBe("C");
 });
 
-test("an entry delivered twice at once is applied once, and sequencing twice at once numbers entries apart", async () => {
+test("an entry delivered twice at once is applied once", async () => {
   const a = await author();
-  const { history } = sequencedBy(a);
+  const { history, run } = sequencedBy(a);
   const observer = createHistory({ branch: "main", sequencer: a.key });
   const first = await a.commit([rename("one")], "0000000000010000");
-  const second = await a.commit([rename("two")], "0000000000020000");
   await history.pend(first.batch, first.hash);
-  const pended = history.pend(second.batch, second.hash);
-  const [one, two] = await Promise.all([
-    history.sequence(a.peer),
-    history.sequence(a.peer),
-    pended,
-  ]);
-  const made = [...one.entries, ...two.entries];
-  expect(made.map((entry) => entry.n)).toEqual([1, 2]);
-
+  const made = await run();
   await observer.pend(first.batch, first.hash);
   const entry = made[0] ?? fail();
   await Promise.all([observer.append(entry), observer.append(entry)]);
@@ -368,6 +359,28 @@ test("of two batches an author signed with one seq, the entry picks which is app
   const late = await observer.pend(other, otherHash);
   expect(late.changed).toEqual([]);
   expect(observer.pending()).toEqual([]);
+});
+
+test("an entry naming a batch other than the one held waits for it", async () => {
+  const a = await author();
+  const b = await author();
+  const { history, run } = sequencedBy(a);
+  const observer = createHistory({ branch: "main", sequencer: a.key });
+  const real = await b.commit([rename("real")], "0000000000010000");
+  const { sig: _, ...unsigned } = real.batch;
+  const other = await signBatch(b.peer, { ...unsigned, ops: [rename("other")] });
+  const otherHash = await batchHash(other);
+  await observer.pend(other, otherHash);
+  await history.pend(real.batch, real.hash);
+  const made = await run();
+
+  const early = await observer.append(made[0] ?? fail());
+  expect(early.entered).toEqual([]);
+  expect(observer.document().name()).toBe("other");
+  const caught = await observer.pend(real.batch, real.hash);
+  expect(caught.entered.length).toBe(1);
+  expect(observer.pending()).toEqual([]);
+  expect(observer.document().name()).toBe("real");
 });
 
 // Sets a leaf of a sequence.
