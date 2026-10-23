@@ -6,83 +6,20 @@
 // Usage: bun run test
 
 import { expect, test } from "../../../tooling/unit";
-import type { Batch } from "../src/batch";
-import type { ItemRecord } from "../src/document";
-import { createProject } from "../src/project";
-
-type Op = Batch["ops"][number];
-
-const SECOND = 705_600_000;
-const FRAME = SECOND / 24;
-const author = "A".repeat(43);
-const id = (seq: number, index: number) => `${author}.${seq}.${index}`;
-const sequence = id(1, 0);
-const video = id(1, 1);
-const audio = id(1, 2);
-const asset = "Q".repeat(43);
-
-// A project with a 24 fps sequence, a video and an audio role, and an asset with a video
-// stream in 1/24000 and an audio stream in 1/48000.
-function setUp() {
-  const project = createProject();
-  const ops: Op[] = [
-    {
-      op: "sequence.add",
-      sequence: { name: "Main", rate: [24, 1], width: 1920, height: 1080, sampleRate: 48_000 },
-    },
-    {
-      op: "role.add",
-      role: { sequence, name: "Video", kind: "video", color: "#3366ff", order: "a0" },
-    },
-    {
-      op: "role.add",
-      role: { sequence, name: "Music", kind: "audio", color: "#33cc66", order: "a1" },
-    },
-    {
-      op: "asset.add",
-      asset: {
-        id: asset,
-        size: 1000,
-        head: "E".repeat(43),
-        tail: "I".repeat(43),
-        name: "a.mp4",
-        streams: [
-          { index: 0, kind: "video", timeBase: [1, 24_000], start: 0, duration: 60 * SECOND },
-          { index: 1, kind: "audio", timeBase: [1, 48_000], start: 0, duration: 60 * SECOND },
-        ],
-      },
-    },
-  ];
-  expect(project.apply({ author, seq: 1, ops }).skipped).toEqual([]);
-  let seq = 1;
-
-  function apply(...more: Op[]) {
-    seq += 1;
-    return { seq, ...project.apply({ author, seq, ops: more }) };
-  }
-
-  return { project, apply };
-}
-
-function clip(changes: Partial<Extract<ItemRecord, { kind: "clip" }>> = {}): Op {
-  return {
-    op: "item.add",
-    item: {
-      kind: "clip",
-      source: { asset, stream: 0 },
-      in: 0,
-      duration: SECOND,
-      speed: [1, 1],
-      anchor: { storyline: sequence, position: "a0" },
-      role: video,
-      lane: 0,
-      enabled: true,
-      ...changes,
-    },
-  };
-}
-
-const at = (position: string) => ({ storyline: sequence, position });
+import {
+  asset,
+  at,
+  audio,
+  author,
+  clip,
+  FRAME,
+  id,
+  SECOND,
+  sequence,
+  setUp,
+  video,
+  type Op,
+} from "./support/project";
 
 test("storyline items follow each other by position", () => {
   const { project, apply } = setUp();
@@ -122,7 +59,7 @@ test("an operation that doesn't fit is skipped, and the rest apply", () => {
     { op: "item.set", id: id(9, 9), path: "duration", value: 1 },
     { op: "item.set", id: id(2, 0), path: "kind", value: "gap" },
     { op: "item.set", id: id(2, 0), path: "duration", value: -1 },
-    { op: "clip.split", id: id(2, 0), at: 5 },
+    { op: "branch.close", branch: "main" },
     { op: "item.set", id: id(2, 0), path: "duration", value: 2 * SECOND },
   );
   expect(result.skipped.map(({ index, reason }) => [index, reason])).toEqual([
@@ -521,12 +458,13 @@ test("a frame rate that isn't whole flicks is skipped", () => {
   ).toHaveLength(1);
 });
 
+const transition = (cut: string): Op => ({
+  op: "item.add",
+  item: { kind: "transition", cut, duration: 2 * FRAME, effect: "cross.dissolve", params: {} },
+});
+
 test("a transition sits on its cut and needs a storyline item", () => {
   const { project, apply } = setUp();
-  const transition = (cut: string): Op => ({
-    op: "item.add",
-    item: { kind: "transition", cut, duration: 2 * FRAME, effect: "cross.dissolve", params: {} },
-  });
   apply(clip(), clip({ anchor: at("a1") }), clip({ anchor: { origin: sequence, at: 0 }, lane: 1 }));
   const result = apply(transition(id(2, 0)), transition(id(2, 2)));
   expect(result.skipped.map(({ index, reason }) => [index, reason])).toEqual([[1, "structural"]]);

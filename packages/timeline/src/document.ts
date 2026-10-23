@@ -181,7 +181,7 @@ export const item = union("kind", {
   }),
 });
 
-const effect = record({
+export const effect = record({
   clip: itemId,
   kind: string(/^[a-z][a-z0-9]*(\.[a-z][A-Za-z0-9]*)*$/, NAME),
   position,
@@ -255,5 +255,9 @@ export type SequenceRecord = ReturnType<typeof sequence>;
 export type RoleRecord = ReturnType<typeof role>;
 /** A clip, gap, transition or marker, without its id. */
 export type ItemRecord = ReturnType<typeof item>;
+/** An effect, without its id. */
+export type EffectRecord = ReturnType<typeof effect>;
+/** A keyframe, known by its target, param and source point. */
+export type KeyframeRecord = ReturnType<typeof keyframe>;
 /** Where an item is. */
 export type Anchor = ReturnType<typeof anchor>;

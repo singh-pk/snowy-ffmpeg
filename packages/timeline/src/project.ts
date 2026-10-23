@@ -9,12 +9,15 @@
 
 import type { Batch } from "./batch";
 import {
+  effect as effectSchema,
   item as itemSchema,
   role as roleSchema,
   sequence as sequenceSchema,
   type Anchor,
   type Asset,
+  type EffectRecord,
   type ItemRecord,
+  type KeyframeRecord,
   type RoleRecord,
   type SequenceRecord,
   type Value,
@@ -22,8 +25,9 @@ import {
 import { itemId, type ItemId } from "./ids";
 import { assignLanes, clipAnchorStart, originAnchorStart } from "./layout";
 import { InvalidError } from "./schema";
+import { keyBetween } from "./position";
 import { createStoryline } from "./storyline";
-import { FLICKS_PER_SECOND, frameFlicks, type Ratio } from "./time";
+import { FLICKS_PER_SECOND, flicksToSource, frameFlicks, type Ratio } from "./time";
 
 type Operation = Batch["ops"][number];
 
@@ -69,6 +73,8 @@ type SequenceState = {
 type RoleState = { record: RoleRecord; removed: boolean };
 type ItemState = { record: ItemRecord; sequence: ItemId; removed: boolean };
 type AssetState = { record: Asset; removed: boolean };
+type EffectState = { record: EffectRecord; removed: boolean };
+type Clip = Extract<ItemRecord, { kind: "clip" }>;
 
 // What a clip's absent video or audio fields are, so setting one leaf of them fills the rest.
 const DEFAULTS: Record<string, Value | Record<string, unknown>> = {
@@ -89,7 +95,12 @@ const SETTABLE: Record<string, ReadonlySet<string>> = {
   gap: new Set(["duration"]),
   transition: new Set(["duration", "effect", "params"]),
   marker: new Set(["duration", "type", "name", "note", "done"]),
+  effect: new Set(["position", "enabled", "params"]),
 };
+
+// The fields of a clip a keyframe may animate: its picture, its sound and its generator's
+// parameters, never its timing or its place.
+const ANIMATED = /^(video|audio|source\.params)\./;
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -139,8 +150,29 @@ function checkRate(rate: Ratio) {
 // The item an operation is about, whose extent before and after it changed.
 function subject(op: Operation, id: ItemId) {
   if (op.op === "item.add") return id;
-  if (op.op.startsWith("item.") && "id" in op) return op.id;
+  if ((op.op.startsWith("item.") || op.op.startsWith("clip.")) && "id" in op) return op.id;
   return undefined;
+}
+
+// Strings in UTF-16 code unit order, never by locale, as storylines order position keys.
+const byCodeUnit = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+// Whether a parameter's new value is of the type its old one was.
+const sameType = (a: Value, b: Value) =>
+  typeof a === typeof b && Array.isArray(a) === Array.isArray(b);
+
+const keyframeKey = (param: string, at: number) => `${param} ${at}`;
+
+// Whether a source point is in the second piece of a clip split at `point`: the second piece
+// plays on from it, upwards, or downwards in reverse.
+const pastSplit = (at: number, point: number, clip: Clip) =>
+  clip.speed[0] > 0 ? at >= point : at <= point;
+
+// A clip with one of its fades set to `length`; a clip without audio has none.
+function withFade(clip: Clip, fade: "fadeIn" | "fadeOut", length: number) {
+  return clip.audio === undefined ? clip : { ...clip, audio: { ...clip.audio, [fade]: length } };
 }
 
 const inStoryline = (record: ItemRecord) =>
@@ -202,6 +234,11 @@ export function createProject() {
   const members = new Map<ItemId, Set<ItemId>>();
   const dependents = new Map<string, Set<ItemId>>();
   const users = new Map<string, Set<ItemId>>();
+  const effects = new Map<ItemId, EffectState>();
+  // Each clip's effects, removed ones included.
+  const chains = new Map<ItemId, Set<ItemId>>();
+  // Each target's keyframes, by param and source point.
+  const keyframes = new Map<ItemId, Map<string, KeyframeRecord>>();
 
   function live(index: Map<string, Set<ItemId>>, key: string) {
     return [...(index.get(key) ?? [])].filter((id) => items.get(id)?.removed === false);
@@ -525,6 +562,238 @@ export function createProject() {
     state.removed = true;
   }
 
+  function liveClip(id: ItemId) {
+    const state = liveItem(id);
+    if (state.record.kind !== "clip") skip("structural", `${id} isn't a clip`);
+    return { state, clip: state.record };
+  }
+
+  // Gives item `id` a new record, keeping the indexes in step.
+  function replace(id: ItemId, record: ItemRecord) {
+    const state = items.get(id);
+    if (state === undefined) throw new RangeError(`no item ${id}`);
+    unlink(id, state.record);
+    state.record = record;
+    link(id, record);
+  }
+
+  // Where the second piece of `clip` goes, `offset` flicks into it: next in the storyline, or
+  // that much later on its anchor.
+  function pieceAnchor(clip: Clip, offset: number, sequence: ItemId): Anchor {
+    const { anchor } = clip;
+
+    if ("storyline" in anchor) {
+      const after = storylineOf(sequence).keyAfter(anchor.position);
+      return { ...anchor, position: keyBetween(anchor.position, after) };
+    }
+
+    if ("origin" in anchor) return { ...anchor, at: anchor.at + offset };
+    const parent = items.get(anchor.clip)?.record;
+    if (parent?.kind !== "clip") skip("stale", `no clip ${anchor.clip}`);
+    return { ...anchor, at: anchor.at + flicksToSource(offset, timeBaseOf(parent), parent.speed) };
+  }
+
+  // Moves what a split or a join hands from one piece to the other: the connected items at
+  // source points `moves` picks, a transition on the cut, and the clip's own keyframes.
+  function handOver(from: ItemId, to: ItemId, moves: (at: number) => boolean) {
+    const moved: ItemId[] = [];
+
+    // A copy, since moving one changes the set.
+    for (const dependent of Array.from(dependents.get(from) ?? [])) {
+      const record = items.get(dependent)?.record;
+      if (record === undefined) continue;
+
+      if (record.kind === "transition") replace(dependent, { ...record, cut: to });
+      else if ("clip" in record.anchor && moves(record.anchor.at)) {
+        replace(dependent, { ...record, anchor: { clip: to, at: record.anchor.at } });
+      } else continue;
+
+      moved.push(dependent);
+    }
+
+    const own = keyframes.get(from);
+    const target = keyframes.get(to) ?? new Map<string, KeyframeRecord>();
+
+    for (const [key, keyframe] of own ?? []) {
+      if (!moves(keyframe.at)) continue;
+      own?.delete(key);
+      if (!target.has(key)) target.set(key, { ...keyframe, target: to });
+    }
+
+    if (target.size > 0) keyframes.set(to, target);
+    return moved;
+  }
+
+  // Whether a live storyline item shares the clip's position key after it: a piece can't be
+  // put between the two, since order within a key is by id.
+  function tiedAfter(id: ItemId, position: string, sequence: ItemId) {
+    const line = storylineOf(sequence);
+
+    for (let next = line.next(id); next !== undefined; next = line.next(next)) {
+      const state = items.get(next);
+      const record = state?.record;
+      if (record === undefined || record.kind === "transition" || !("storyline" in record.anchor))
+        break;
+      if (record.anchor.position !== position) break;
+      if (!state?.removed) return true;
+    }
+
+    return false;
+  }
+
+  // Splits a clip at a timeline time: it keeps what is before, and a new clip, `piece`, takes
+  // what is after. Where the piece's anchor lands, rounded to its anchor's units and snapped to a
+  // frame, is where the split falls, so the two pieces always meet.
+  function splitClip(id: ItemId, at: number, piece: ItemId) {
+    if (items.has(piece)) skip("stale", `${piece} exists`);
+    const { state, clip } = liveClip(id);
+    const { sequence } = state;
+    const from = start(id);
+    const wanted = from === undefined ? 0 : at - from;
+    if (wanted <= 0 || wanted >= clip.duration) skip("stale", "the clip doesn't cover the time");
+    const anchor = guarded(() => pieceAnchor(clip, wanted, sequence));
+    if ("at" in anchor && !Number.isSafeInteger(anchor.at))
+      skip("malformed", "a time out of range");
+
+    if ("storyline" in anchor && "storyline" in clip.anchor) {
+      if (tiedAfter(id, clip.anchor.position, sequence)) {
+        skip("structural", "another item shares the clip's position key after it");
+      }
+    }
+
+    const lands = "storyline" in anchor ? at : startOf(piece, { ...clip, anchor }, sequence);
+    const offset = lands === undefined || from === undefined ? 0 : lands - from;
+    if (offset <= 0 || offset >= clip.duration) skip("stale", "the clip doesn't cover the time");
+    const point = guarded(() => clip.in + flicksToSource(offset, timeBaseOf(clip), clip.speed));
+    if (!Number.isSafeInteger(point)) skip("malformed", "a source point out of range");
+    const first = withFade({ ...clip, duration: offset }, "fadeOut", 0);
+    const rest = { ...clip, in: point, duration: clip.duration - offset, anchor };
+    const second = withFade(rest, "fadeIn", 0);
+    if (inStoryline(clip)) storylineOf(sequence).setDuration(id, offset);
+    if ("storyline" in anchor)
+      storylineOf(sequence).insert(piece, anchor.position, second.duration);
+    replace(id, first);
+    items.set(piece, { record: second, sequence, removed: false });
+    add(members, sequence, piece);
+    link(piece, second);
+    return [id, piece, ...handOver(id, piece, (source) => pastSplit(source, point, clip))];
+  }
+
+  // Whether `next` starts where `clip` ends, on the same anchor.
+  function meets(id: ItemId, clip: Clip, nextId: ItemId, next: Clip) {
+    const a = clip.anchor;
+    const b = next.anchor;
+    const end = (start(id) ?? 0) + clip.duration;
+
+    if ("storyline" in a || "storyline" in b) {
+      return (
+        "storyline" in a && "storyline" in b && storylineOf(a.storyline).at(end)?.id === nextId
+      );
+    }
+
+    const sameAnchor =
+      "origin" in a ? "origin" in b && a.origin === b.origin : "clip" in b && a.clip === b.clip;
+    return sameAnchor && start(nextId) === end;
+  }
+
+  // Joins two pieces of one source that meet exactly, as a split left them, back into the first.
+  function joinClips(id: ItemId, nextId: ItemId) {
+    const { state, clip } = liveClip(id);
+    const { state: nextState, clip: next } = liveClip(nextId);
+    if (id === nextId) skip("malformed", "a clip joins another");
+
+    if (
+      state.sequence !== nextState.sequence ||
+      clip.role !== next.role ||
+      !same(clip.source, next.source) ||
+      !same(clip.speed, next.speed)
+    ) {
+      skip("structural", "only pieces of one clip join");
+    }
+
+    const point = guarded(
+      () => clip.in + flicksToSource(clip.duration, timeBaseOf(clip), clip.speed),
+    );
+    if (next.in !== point || !meets(id, clip, nextId, next)) skip("stale", "the pieces don't meet");
+
+    if (live(dependents, id).some((each) => items.get(each)?.record.kind === "transition")) {
+      skip("structural", "a transition sits on the cut");
+    }
+
+    const own = keyframes.get(id);
+
+    for (const key of keyframes.get(nextId)?.keys() ?? []) {
+      if (own?.has(key) === true) skip("stale", "both pieces have a keyframe at one source point");
+    }
+
+    const joined = { ...clip, duration: clip.duration + next.duration };
+    const record =
+      next.audio === undefined ? joined : withFade(joined, "fadeOut", next.audio.fadeOut);
+    const line = storylineOf(state.sequence);
+
+    if (inStoryline(clip)) {
+      line.setDuration(nextId, 0);
+      line.setDuration(id, record.duration);
+    }
+
+    replace(id, record);
+    nextState.removed = true;
+    return [id, nextId, ...handOver(nextId, id, () => true)];
+  }
+
+  function addEffect(id: ItemId, record: EffectRecord) {
+    if (effects.has(id)) skip("stale", `${id} exists`);
+    liveClip(record.clip);
+    effects.set(id, { record, removed: false });
+    add(chains, record.clip, id);
+  }
+
+  // A live effect of a live clip.
+  function liveEffect(id: ItemId) {
+    const state = effects.get(id);
+    if (state === undefined || state.removed) skip("stale", `no effect ${id}`);
+    liveClip(state.record.clip);
+    return state;
+  }
+
+  function setEffect(id: ItemId, path: string, value: Value) {
+    const state = liveEffect(id);
+    const old = path.startsWith("params.") ? state.record.params[path.slice(7)] : undefined;
+    if (old !== undefined && !sameType(old, value)) skip("malformed", `${path} takes another type`);
+    state.record = checked(effectSchema, withLeaf(state.record, "effect", path, value));
+  }
+
+  // A keyframe's target and param must name a live value of its type: an effect's parameter, or
+  // an animated field of a clip.
+  function checkKeyframe(target: ItemId, param: string, value: Value) {
+    const effect = effects.get(target);
+
+    if (effect !== undefined) {
+      liveEffect(target);
+      const old = effect.record.params[param];
+      if (old === undefined) skip("stale", `no parameter ${param} in ${target}`);
+      if (!sameType(old, value)) skip("malformed", `${param} takes another type`);
+      return;
+    }
+
+    const { clip } = liveClip(target);
+    if (!ANIMATED.test(param)) skip("malformed", `${param} isn't animated`);
+    checked(itemSchema, withLeaf(clip, "clip", param, value));
+  }
+
+  function setKeyframe(keyframe: KeyframeRecord) {
+    checkKeyframe(keyframe.target, keyframe.param, keyframe.value);
+    const own = keyframes.get(keyframe.target) ?? new Map<string, KeyframeRecord>();
+    own.set(keyframeKey(keyframe.param, keyframe.at), keyframe);
+    keyframes.set(keyframe.target, own);
+  }
+
+  function removeKeyframe(target: ItemId, param: string, at: number) {
+    if (keyframes.get(target)?.delete(keyframeKey(param, at)) !== true) {
+      skip("stale", `no keyframe of ${param} at ${at} on ${target}`);
+    }
+  }
+
   // Applies one operation, whose own id is `id`; returns the ids of the records it changed.
   function applyOne(op: Operation, id: ItemId): ItemId[] {
     switch (op.op) {
@@ -570,8 +839,27 @@ export function createProject() {
       case "item.restore":
         restoreItem(op.id);
         return [op.id];
+      case "clip.split":
+        return splitClip(op.id, op.at, id);
+      case "clip.join":
+        return joinClips(op.id, op.next);
+      case "effect.add":
+        addEffect(id, op.effect);
+        return [id];
+      case "effect.set":
+        setEffect(op.id, op.path, op.value);
+        return [op.id];
+      case "effect.remove":
+        liveEffect(op.id).removed = true;
+        return [op.id];
+      case "keyframe.set":
+        setKeyframe(op.keyframe);
+        return [op.keyframe.target];
+      case "keyframe.remove":
+        removeKeyframe(op.target, op.param, op.at);
+        return [op.target];
       default:
-        return skip("unsupported", `${op.op} isn't applied yet`);
+        return skip("unsupported", `${op.op} is applied by the history`);
     }
   }
 
@@ -580,6 +868,25 @@ export function createProject() {
     if (op.op === "sequence.set") return op.id;
     if (op.op === "role.set" && op.path === "order") return roles.get(op.id)?.record.sequence;
     return undefined;
+  }
+
+  // The clip whose look or sound an effect or keyframe operation changes, in place.
+  function touched(op: Operation) {
+    let target: ItemId | undefined;
+    if (op.op === "effect.add") return op.effect.clip;
+    if (op.op === "effect.set" || op.op === "effect.remove") target = op.id;
+    else if (op.op === "keyframe.set") target = op.keyframe.target;
+    else if (op.op === "keyframe.remove") target = op.target;
+    else return undefined;
+    return effects.get(target)?.record.clip ?? target;
+  }
+
+  // Where an item plays, if it is shown.
+  function playing(id: ItemId) {
+    const state = items.get(id);
+    const from = start(id);
+    if (state === undefined || from === undefined) return [];
+    return [{ sequence: state.sequence, from, to: from + state.record.duration }];
   }
 
   /** Applies a batch's operations in order, skipping any that doesn't fit the document. */
@@ -598,7 +905,11 @@ export function createProject() {
     for (const [index, op] of batch.ops.entries()) {
       const id = itemId(batch.author, batch.seq, index);
       const about = subject(op, id);
-      const before = about === undefined ? [] : extents(about);
+      const clip = touched(op);
+      const before = [
+        ...(about === undefined ? [] : extents(about)),
+        ...(clip === undefined ? [] : playing(clip)),
+      ];
       let changes: ItemId[];
 
       try {
@@ -610,7 +921,10 @@ export function createProject() {
       }
 
       for (const changedId of changes) changed.add(changedId);
-      const after = about === undefined ? [] : extents(about);
+      const after = [
+        ...(about === undefined ? [] : extents(about)),
+        ...(clip === undefined ? [] : playing(clip)),
+      ];
       for (const span of [...before, ...after]) widen(span);
       const sequence = wholeSequence(op);
       if (sequence !== undefined) widen({ sequence, ...EVERYTHING });
@@ -650,6 +964,20 @@ export function createProject() {
     return assignLanes(placed);
   }
 
+  /** A clip's live effects in chain order, by position and then id, each with its id. */
+  function chain(clip: ItemId) {
+    const found = [];
+
+    for (const id of chains.get(clip) ?? []) {
+      const state = effects.get(id);
+      if (state !== undefined && !state.removed) found.push({ id, ...state.record });
+    }
+
+    return found.toSorted((a, b) =>
+      a.position === b.position ? byCodeUnit(a.id, b.id) : byCodeUnit(a.position, b.position),
+    );
+  }
+
   return {
     apply,
     item,
@@ -660,5 +988,11 @@ export function createProject() {
     sequence: (id: ItemId) => sequences.get(id)?.record,
     role: (id: ItemId) => roles.get(id)?.record,
     asset: (id: string) => assets.get(id)?.record,
+    effects: chain,
+    /** The keyframes on a clip or effect, by param and then source point. */
+    keyframes: (target: ItemId) =>
+      [...(keyframes.get(target)?.values() ?? [])].toSorted((a, b) =>
+        a.param === b.param ? a.at - b.at : byCodeUnit(a.param, b.param),
+      ),
   };
 }

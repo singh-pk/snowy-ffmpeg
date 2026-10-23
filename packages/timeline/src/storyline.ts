@@ -192,6 +192,37 @@ export function createStoryline() {
     throw new RangeError(`not in the storyline: ${id}`);
   }
 
+  /** The item after `id` in order, if there is one. */
+  function next(id: ItemId) {
+    const { position } = node(id);
+    let found: ItemId | undefined;
+    let cursor = root;
+
+    while (cursor !== undefined) {
+      if (compare(position, id, cursor) < 0) {
+        found = cursor.id;
+        cursor = cursor.left;
+      } else cursor = cursor.right;
+    }
+
+    return found;
+  }
+
+  /** The smallest position key in the storyline after `position`, if there is one. */
+  function keyAfter(position: PositionKey) {
+    let found: PositionKey | undefined;
+    let cursor = root;
+
+    while (cursor !== undefined) {
+      if (cursor.position > position) {
+        found = cursor.position;
+        cursor = cursor.left;
+      } else cursor = cursor.right;
+    }
+
+    return found;
+  }
+
   /** The item playing at `t` flicks: the one with `start <= t < start + duration`. */
   function at(t: number): Placed | undefined {
     let before = 0;
@@ -224,11 +255,11 @@ export function createStoryline() {
         cursor = cursor.left;
       }
 
-      const next = stack.pop();
-      if (next === undefined) return;
-      yield { id: next.id, start: before, duration: next.duration };
-      before += next.duration;
-      cursor = next.right;
+      const visited = stack.pop();
+      if (visited === undefined) return;
+      yield { id: visited.id, start: before, duration: visited.duration };
+      before += visited.duration;
+      cursor = visited.right;
     }
   }
 
@@ -239,6 +270,8 @@ export function createStoryline() {
     setDuration,
     start,
     at,
+    keyAfter,
+    next,
     items,
     has: (id: ItemId) => nodes.has(id),
     /** The storyline's length: the sum of every item's duration. */
