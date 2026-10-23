@@ -32,21 +32,25 @@ for (const tool of ["ffmpeg", "ffprobe"]) {
   if (!version.startsWith(`${tool} version 9.0.2 `)) throw new Error(`needs ${tool} 9.0.2 on PATH`);
 }
 
-// The frame number over the top band, in limited range (16 black, 235 white). geq works in
-// each plane's own coordinates, and the chroma planes have half as many rows.
-const bit = `mod(floor(N/pow(2,floor(X/${CELL}))),2)`;
-const code = [
-  `lum='if(lt(Y,${CELL}),if(lt(X,${CELL * FRAME_ID_BITS}),16+219*${bit},16),lum(X,Y))'`,
-  `cb='if(lt(Y,${CELL / 2}),128,cb(X,Y))'`,
-  `cr='if(lt(Y,${CELL / 2}),128,cr(X,Y))'`,
-].join(":");
+// The frame number over the top band, in squares of `cell` pixels, in limited range (16 black,
+// 235 white). geq works in each plane's own coordinates, and the chroma planes have half as many
+// rows.
+function code(cell: number) {
+  const bit = `mod(floor(N/pow(2,floor(X/${cell}))),2)`;
+  return [
+    `lum='if(lt(Y,${cell}),if(lt(X,${cell * FRAME_ID_BITS}),16+219*${bit},16),lum(X,Y))'`,
+    `cb='if(lt(Y,${cell / 2}),128,cb(X,Y))'`,
+    `cr='if(lt(Y,${cell / 2}),128,cr(X,Y))'`,
+  ].join(":");
+}
 
-// Moving test pattern, or flat grey for the long fixture, which only needs the numbers.
-const video = (seconds: number, source = "testsrc2=", fps = FPS) => [
+// Moving test pattern, or flat grey for the long fixture, which only needs the numbers; `scale`
+// times the size, numbers included, so it reads the same once scaled down to the size.
+const video = (seconds: number, source = "testsrc2=", fps = FPS, scale = 1) => [
   "-f",
   "lavfi",
   "-i",
-  `${source}size=${WIDTH}x${HEIGHT}:rate=${fps}:duration=${seconds},format=yuv420p,geq=${code}`,
+  `${source}size=${WIDTH * scale}x${HEIGHT * scale}:rate=${fps}:duration=${seconds},format=yuv420p,geq=${code(CELL * scale)}`,
 ];
 
 // A 4 kHz burst at every whole second, the same in both channels.
@@ -91,6 +95,7 @@ const fixtures: Record<
     fps?: number;
     audioSeconds?: number;
     twoPass?: boolean;
+    scale?: number;
   }
 > = {
   "h264-aac.mp4": { seconds: 3, args: [...H264, ...AAC] },
@@ -136,6 +141,29 @@ const fixtures: Record<
     input: ["-itsoffset", "0.5"],
   },
   "altref-vp8-opus.webm": { seconds: 3, args: [...VP8_ALTREF, ...OPUS], twoPass: true },
+  // 4K, at a bitrate low enough to keep, with one keyframe in ten seconds: what a scrub decodes
+  // on through (bench/run.ts).
+  "scrub-4k-h264-aac.mp4": {
+    seconds: 10,
+    scale: 12,
+    args: [
+      "-c:v",
+      "libx264",
+      "-b:v",
+      "1M",
+      "-maxrate",
+      "1M",
+      "-bufsize",
+      "1M",
+      "-g",
+      String(10 * FPS),
+      "-keyint_min",
+      String(10 * FPS),
+      "-sc_threshold",
+      "0",
+      ...AAC,
+    ],
+  },
   // Ten minutes, for drift.
   "sync-10min.mp4": { seconds: 600, args: [...H264, ...AAC], source: "color=c=gray:" },
 };
@@ -162,12 +190,13 @@ interface Stream {
   channels?: number;
 }
 
-// The presentation timestamps of video stream `index`, and the frame number on each frame.
+// The presentation timestamps of video stream `index`, and the frame number on each frame, read
+// at `width` × `height`.
 async function readVideo(file: string, index: number, width: number, height: number) {
   const { frames }: { frames: { pts: number }[] } =
     await $`ffprobe -v error -select_streams ${index} -show_entries frame=pts -of json ${file}`.json();
   const grey =
-    await $`ffmpeg -v error -noautorotate -i ${file} -map 0:${index} -fps_mode passthrough -pix_fmt gray -f rawvideo -`.arrayBuffer();
+    await $`ffmpeg -v error -noautorotate -i ${file} -map 0:${index} -fps_mode passthrough -vf scale=${width}:${height} -pix_fmt gray -f rawvideo -`.arrayBuffer();
   const size = width * height;
   if (grey.byteLength !== frames.length * size) throw new Error(`${file}: frame count differs`);
   const ids = frames.map((_, i) => readFrameId(new Uint8Array(grey, i * size, size), width));
@@ -279,8 +308,9 @@ const expected: Record<string, unknown> = {};
 
 for (const [name, fixture] of Object.entries(fixtures)) {
   const { seconds, args, source, input = [], fps = FPS, audioSeconds = seconds, twoPass } = fixture;
+  const scale = fixture.scale ?? 1;
   const file = dir + name;
-  const inputs = [...input, ...video(seconds, source, fps), ...clicks(audioSeconds)];
+  const inputs = [...input, ...video(seconds, source, fps, scale), ...clicks(audioSeconds)];
   await encode(file, inputs, args, twoPass);
 
   const probe =
@@ -290,7 +320,7 @@ for (const [name, fixture] of Object.entries(fixtures)) {
   const v = streams.find((s) => s.codec_type === "video");
   const a = streams.find((s) => s.codec_type === "audio");
   if (!v?.width || !v.height || !a) throw new Error(`${name}: needs a video and an audio stream`);
-  const { pts, ids } = await readVideo(file, v.index, v.width, v.height);
+  const { pts, ids } = await readVideo(file, v.index, v.width / scale, v.height / scale);
   if (ids.length !== seconds * fps) throw new Error(`${name}: ${ids.length} frames`);
   const wrong = ids.findIndex((id, i) => id !== i);
   if (wrong >= 0) throw new Error(`${name}: frame ${wrong} reads as ${ids[wrong]}`);
@@ -323,6 +353,8 @@ for (const [name, fixture] of Object.entries(fixtures)) {
       keyframes: keyframes.map((p) => p.pts),
       // The first frame as shown (referenceGrid).
       ...reference,
+      // Where the frame numbers are this many times their size: they read at `shown` over it.
+      ...(scale > 1 ? { scale } : {}),
       ...hashPackets(packets, v.index, dts),
     },
     audio: {
