@@ -25,6 +25,9 @@ type Run = { first: number; last: number };
 
 export function createChatHoldings() {
   const authors = new Map<KeyId, Author>();
+  // Adds run one after another, so the first copy of a seq is the one added first, however long
+  // each batch takes to hash.
+  let added: Promise<void> = Promise.resolve();
 
   function holding(author: KeyId) {
     const held = authors.get(author) ?? {
@@ -55,14 +58,19 @@ export function createChatHoldings() {
    * checkpoint is kept only if it names the message held at its seq. Then only the checkpoint
    * with the highest seq in each run is kept.
    */
-  async function add({ messages, checkpoint }: ChatBatch) {
+  function add(batch: ChatBatch) {
+    const next = store(added, batch);
+    added = next;
+    return next;
+  }
+
+  async function store(before: Promise<void>, { messages, checkpoint }: ChatBatch) {
+    await before;
     const held = holding(checkpoint.author);
     const fresh = messages.filter((m) => !held.messages.has(m.seq));
     const hashes = await Promise.all(fresh.map(messageHash));
 
     for (const [i, m] of fresh.entries()) {
-      // Another batch added while this one was hashed may hold the seq already.
-      if (held.messages.has(m.seq)) continue;
       held.messages.set(m.seq, m);
       held.hashes.set(m.seq, hashes[i]!);
     }
