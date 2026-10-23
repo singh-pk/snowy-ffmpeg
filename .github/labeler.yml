@@ -9,6 +9,9 @@
 "package:ffmpeg":
   - changed-files:
       - any-glob-to-any-file: packages/ffmpeg/**
+"package:sync":
+  - changed-files:
+      - any-glob-to-any-file: packages/sync/**
 "area:ci":
   - changed-files:
       - any-glob-to-any-file: [.github/**, .githooks/**, scripts/**, tooling/**]

@@ -9,6 +9,7 @@ body:
       options:
         - "@snowy-media/engine"
         - "@snowy-media/ffmpeg"
+        - "@snowy-media/sync"
         - Repository, CI or docs
     validations:
       required: true

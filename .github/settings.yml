@@ -73,6 +73,7 @@ labels:
   - { name: dependencies, color: "0366d6", description: Dependency updates }
   - { name: "package:engine", color: "0e8a16", description: "packages/engine, @snowy-media/engine" }
   - { name: "package:ffmpeg", color: "0e8a16", description: "packages/ffmpeg, @snowy-media/ffmpeg" }
+  - { name: "package:sync", color: "0e8a16", description: "packages/sync, @snowy-media/sync" }
   - {
       name: "area:core",
       color: "1d76db",
