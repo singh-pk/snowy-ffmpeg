@@ -8,6 +8,8 @@
 // WebAssembly files it loads by URL. A page served without a bundler (the tests) passes
 // `ffmpeg`, the URL path the ffmpeg package is served under, and the imports point there.
 
+import { $, Glob } from "bun";
+import { rm } from "node:fs/promises";
 import { dirname } from "node:path";
 
 const pkg = new URL("../", import.meta.url).pathname;
@@ -52,4 +54,20 @@ export async function build({ outdir, ffmpeg, entrypoints }: Options) {
   });
 }
 
-if (import.meta.main) await build({ outdir: new URL("../dist/", import.meta.url).pathname });
+// The package: dist/ emptied, so it holds only this build, then the bundles and the
+// declarations of the public API (tsconfig.dts.json). tsc keeps their relative imports as
+// written, without an extension, which a consumer resolving as Node does ("node16") cannot
+// follow, so they get the .js the bundles have.
+async function buildPackage() {
+  const outdir = `${pkg}dist/`;
+  await rm(outdir, { recursive: true, force: true });
+  await build({ outdir });
+  await $`bun --bun tsc -p ${pkg}tsconfig.dts.json`;
+
+  for (const file of new Glob("*.d.ts").scanSync(outdir)) {
+    const text = await Bun.file(outdir + file).text();
+    await Bun.write(outdir + file, text.replaceAll(/(from "\.\/[\w.-]+)"/g, '$1.js"'));
+  }
+}
+
+if (import.meta.main) await buildPackage();

@@ -55,18 +55,18 @@ Welcome, on the same terms as any other: you are responsible for every line, and
 
 ## Releasing
 
-Maintainers release a package from `main`, in a pull request and then a tag. For `@snowy-media/ffmpeg`:
+Maintainers release a package from `main`, in a pull request and then a tag. For `@snowy-media/<name>`, here `ffmpeg` or `engine`:
 
-1. In a pull request titled `chore(release): release @snowy-media/ffmpeg X.Y.Z` (the summary must start with a lowercase letter), set `version` in `packages/ffmpeg/package.json` and rename `## [Unreleased]` in `packages/ffmpeg/CHANGELOG.md` to `## [X.Y.Z] - date`, with a new empty `## [Unreleased]` above it and the links at the bottom updated. Merge it.
-2. Tag the merge commit with the package name and version, and push the tag: `git tag @snowy-media/ffmpeg@X.Y.Z && git push origin @snowy-media/ffmpeg@X.Y.Z`. Only admins can create, move or delete `@snowy-media/*` tags.
+1. In a pull request titled `chore(release): release @snowy-media/<name> X.Y.Z` (the summary must start with a lowercase letter), set `version` in `packages/<name>/package.json` and rename `## [Unreleased]` in `packages/<name>/CHANGELOG.md` to `## [X.Y.Z] - date`, with a new empty `## [Unreleased]` above it and the links at the bottom updated. Merge it.
+2. Tag the merge commit with the package name and version, and push the tag: `git tag @snowy-media/<name>@X.Y.Z && git push origin @snowy-media/<name>@X.Y.Z`. Only admins can create, move or delete `@snowy-media/*` tags.
 
 [`release.yml`](.github/workflows/release.yml) then:
 
 1. checks that the tag is on `main`;
-2. rebuilds the modules without a cache and checks them against `dist.sha256`;
-3. packs the npm tarball and checks it holds exactly the files it should ([`scripts/release.ts`](packages/ffmpeg/scripts/release.ts));
-4. creates a draft GitHub release with the changelog section, the tarball and the source archive;
-5. publishes that tarball to npm with provenance through [trusted publishing](https://docs.npmjs.com/trusted-publishers), so no npm token exists anywhere;
+2. for ffmpeg, rebuilds the modules without a cache and checks them against `dist.sha256`; for the engine, builds it;
+3. packs the npm tarball and checks it holds exactly the files it should (the package's `scripts/release.ts`: [ffmpeg](packages/ffmpeg/scripts/release.ts), [engine](packages/engine/scripts/release.ts)). The engine's also checks that `@snowy-media/ffmpeg` as it is in the repository, which the engine was tested against, is released: release ffmpeg first when it has unreleased changes;
+4. creates a draft GitHub release with the changelog section and the tarball, plus for ffmpeg the source archive;
+5. publishes that tarball to npm with provenance, the engine on the `next` dist-tag and as a GitHub pre-release while its API settles, through [trusted publishing](https://docs.npmjs.com/trusted-publishers), so no npm token exists anywhere;
 6. publishes the GitHub release. Releases are immutable once published, which is why this comes last.
 
 If a run fails, nothing has reached npm and the GitHub release is still a draft: fix the cause, delete the draft, and re-run the workflow. If the fix changes the repository, merge it and move the tag to the new commit on `main` instead.

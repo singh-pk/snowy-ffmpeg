@@ -1,0 +1,15 @@
+{
+  // The declarations of the public API, into dist/: src/index.ts and the files its types
+  // come from (bun run build).
+  "extends": "./tsconfig.json",
+  "include": [],
+  "files": ["src/index.ts"],
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "types": []
+  }
+}

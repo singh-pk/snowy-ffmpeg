@@ -8,4 +8,4 @@ packages/*/LICENSE
 packages/ffmpeg/.build.log
 packages/ffmpeg/bench/media/
 packages/ffmpeg/bench/variants/
-packages/ffmpeg/release/
+packages/*/release/
