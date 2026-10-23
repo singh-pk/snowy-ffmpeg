@@ -18,6 +18,8 @@ This package is the edit document of the Snowy editor: a magnetic timeline of se
 | `src/time.ts` | flicks: frame lengths, exact conversions from time bases and through speed, and snapping to frames |
 | `src/ids.ts` | key ids and item ids, `<author>.<seq>.<index>` |
 | `src/position.ts` | position keys: fractional indexes that order a storyline and fit between any two |
+| `src/storyline.ts` | a storyline's layout: items in position order in a balanced tree, with each item's start and the item at a time in O(log n) |
+| `src/layout.ts` | connected items: the time a clip or origin anchor gives, and each role's lanes |
 | `test/` | unit tests (`*.unit.ts`), run in Chromium by `unit.test.ts` |
 
 ## Rules
