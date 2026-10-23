@@ -84,9 +84,11 @@ jobs:
           if changed engine; then engine=true; fi
           sync=false
           if changed sync; then sync=true; fi
-          echo "ffmpeg=$ffmpeg" >> "$GITHUB_OUTPUT"
-          echo "engine=$engine" >> "$GITHUB_OUTPUT"
-          echo "sync=$sync" >> "$GITHUB_OUTPUT"
+          {
+            echo "ffmpeg=$ffmpeg"
+            echo "engine=$engine"
+            echo "sync=$sync"
+          } >> "$GITHUB_OUTPUT"
 
   # Also builds the modules the engine job tests against; ffmpeg's own tests run only when
   # it changed.
