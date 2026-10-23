@@ -12,7 +12,7 @@ import { entries, refusals, type Entry } from "../src/entry";
 import { createHistory } from "../src/history";
 import { createProject } from "../src/project";
 import { InvalidError } from "../src/schema";
-import { clip, id, sequence, setUp, type Op } from "./support/project";
+import { asset, clip, id, sequence, setUp, video, type Op } from "./support/project";
 import { rejection } from "./support/rejection";
 
 const generate = () => crypto.subtle.generateKey("Ed25519", false, ["sign", "verify"]);
@@ -110,9 +110,16 @@ test("a project started from a snapshot reads and applies as the original", () =
   const ops: Op[] = [
     { op: "clip.split", id: first, at: 705_600_000 },
     { op: "item.restore", id: id(3, 0) },
+    // Both in use, as the copy's indexes must know.
+    { op: "role.remove", id: video },
+    { op: "asset.remove", id: asset },
   ];
   const original = project.apply({ author: "E".repeat(43), seq: 1, ops });
   const copied = copy.apply({ author: "E".repeat(43), seq: 1, ops });
+  expect(original.skipped.map(({ index, reason }) => [index, reason])).toEqual([
+    [2, "structural"],
+    [3, "structural"],
+  ]);
   expect(copied).toEqual(original);
   expect(copy.snapshot()).toEqual(project.snapshot());
 });
@@ -220,7 +227,7 @@ test("an entry waits for its batch and for the entries before it", async () => {
   expect(observer.document().name()).toBe("two");
 });
 
-test("an entry not signed by the sequencer, or not following the last, is refused", async () => {
+test("an entry not signed by the sequencer, not following the last, or unlike the one appended is refused", async () => {
   const a = await author();
   const b = await author();
   const history = createHistory({ branch: "main", sequencer: a.key });
@@ -237,18 +244,29 @@ test("an entry not signed by the sequencer, or not following the last, is refuse
   const forgedError = await rejection(history.append(forged));
   expect(forgedError).toBeInstanceOf(RangeError);
 
+  const real = { branch: "main", n: 1, term: 1, prev: "", batch: ref } as const;
+  const entry = await entries.sign(a.peer.privateKey, real);
+  await history.append(entry);
+  const second = await a.commit([rename("y")], "0000000000020000");
+  await history.pend(second.batch, second.hash);
   const unchained = await entries.sign(a.peer.privateKey, {
-    branch: "main",
-    n: 1,
-    term: 1,
-    prev: "",
+    ...real,
+    n: 2,
+    prev: "Q".repeat(43),
+    batch: { author: a.key, seq: 2, hash: second.hash },
+  });
+  const another = await entries.sign(a.peer.privateKey, {
+    ...real,
     batch: { ...ref, hash: "Q".repeat(43) },
   });
   const unchainedError = await rejection(history.append(unchained));
+  const anotherError = await rejection(history.append(another));
   const notSequencer = await rejection(history.sequence(b.peer));
   expect(unchainedError).toBeInstanceOf(RangeError);
+  expect(anotherError).toBeInstanceOf(RangeError);
   expect(notSequencer).toBeInstanceOf(RangeError);
-  expect(history.head().n).toBe(0);
+  expect(history.head().n).toBe(1);
+  expect(history.document().name()).toBe("y");
 });
 
 test("the sequencer appends a batch only after its author's previous one on the branch", async () => {
@@ -302,4 +320,87 @@ test("an entry whose author couldn't see another's change to the same leaf is co
   const { change: next } = await history.sequence(a.peer);
   expect(next.entered.map(({ concurrent }) => concurrent)).toEqual([false]);
   expect(history.document().sequence(`${a.key}.1.0`)?.name).toBe("C");
+});
+
+test("an entry delivered twice at once is applied once, and sequencing twice at once numbers entries apart", async () => {
+  const a = await author();
+  const { history } = sequencedBy(a);
+  const observer = createHistory({ branch: "main", sequencer: a.key });
+  const first = await a.commit([rename("one")], "0000000000010000");
+  const second = await a.commit([rename("two")], "0000000000020000");
+  await history.pend(first.batch, first.hash);
+  const pended = history.pend(second.batch, second.hash);
+  const [one, two] = await Promise.all([
+    history.sequence(a.peer),
+    history.sequence(a.peer),
+    pended,
+  ]);
+  const made = [...one.entries, ...two.entries];
+  expect(made.map((entry) => entry.n)).toEqual([1, 2]);
+
+  await observer.pend(first.batch, first.hash);
+  const entry = made[0] ?? fail();
+  await Promise.all([observer.append(entry), observer.append(entry)]);
+  expect(observer.entries()).toEqual([entry]);
+  const entryHash = await hashOf(entry);
+  expect(observer.head()).toEqual({ n: 1, hash: entryHash });
+});
+
+test("of two batches an author signed with one seq, the entry picks which is applied", async () => {
+  const a = await author();
+  const b = await author();
+  const { history } = sequencedBy(a);
+  const observer = createHistory({ branch: "main", sequencer: a.key });
+  const real = await b.commit([rename("real")], "0000000000010000");
+  const { sig: _, ...unsigned } = real.batch;
+  const other = await signBatch(b.peer, { ...unsigned, ops: [rename("other")] });
+  const otherHash = await batchHash(other);
+  await observer.pend(other, otherHash);
+  await observer.pend(real.batch, real.hash);
+  expect(observer.pending().length).toBe(2);
+
+  await history.pend(real.batch, real.hash);
+  const { entries: made } = await history.sequence(a.peer);
+  const change = await observer.append(made[0] ?? fail());
+  expect(change.entered.length).toBe(1);
+  expect(observer.pending()).toEqual([]);
+  expect(observer.document().name()).toBe("real");
+  const late = await observer.pend(other, otherHash);
+  expect(late.changed).toEqual([]);
+  expect(observer.pending()).toEqual([]);
+});
+
+// Sets a leaf of a sequence.
+const setLeaf = (target: string, path: string, value: string | number): Op => ({
+  op: "sequence.set",
+  id: target,
+  path,
+  value,
+});
+
+test("removing an item clashes with any leaf of it, and a skipped operation touches nothing", async () => {
+  const a = await author();
+  const b = await author();
+  const { history } = sequencedBy(a);
+  const start = await a.commit([sequenceAdd, sequenceAdd], "0000000000010000");
+  await history.pend(start.batch, start.hash);
+  await history.sequence(a.peer);
+  const base = history.head();
+  const [kept, gone] = [`${a.key}.1.0`, `${a.key}.1.1`];
+  const commits: Array<[typeof a, Op[], string]> = [
+    [a, [setLeaf(kept, "name", "A"), setLeaf(gone, "name", "A")], "0000000000020000"],
+    // A name that isn't a string is skipped, so touches nothing.
+    [b, [setLeaf(kept, "name", 5)], "0000000000030000"],
+    [b, [setLeaf(kept, "height", 720)], "0000000000040000"],
+    [b, [{ op: "sequence.remove", id: gone }], "0000000000050000"],
+  ];
+
+  for (const [by, ops, hlc] of commits) {
+    const { batch, hash } = await by.commit(ops, hlc, base);
+    await history.pend(batch, hash);
+  }
+
+  const { change } = await history.sequence(a.peer);
+  expect(change.entered.map(({ concurrent }) => concurrent)).toEqual([false, false, false, true]);
+  expect(change.entered[1]?.skipped.length).toBe(1);
 });

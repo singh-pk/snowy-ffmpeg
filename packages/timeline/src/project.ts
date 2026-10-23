@@ -232,7 +232,6 @@ function add(index: Map<string, Set<ItemId>>, key: string, id: ItemId) {
 
 const EVERYTHING = { from: Number.NEGATIVE_INFINITY, to: Number.POSITIVE_INFINITY };
 
-/** An empty project. */
 /** A project's document, empty or as a snapshot left it. */
 export function createProject(initial?: Snapshot) {
   let name = "";

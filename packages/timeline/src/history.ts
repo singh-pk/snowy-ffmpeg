@@ -36,11 +36,14 @@ const FIRST_TERM = 1;
 
 const keyOf = (ref: { author: KeyId; seq: number }) => `${ref.author} ${ref.seq}`;
 
-// The provisional order of pending batches: by clock, then author, by code unit.
+// The provisional order of pending batches: by clock, then author, by code unit, then seq, and
+// last by hash, for an author who signed two batches with one seq.
 function byClock(a: Held, b: Held) {
   const ka = `${a.batch.hlc} ${a.batch.author}`;
   const kb = `${b.batch.hlc} ${b.batch.author}`;
-  return ka < kb ? -1 : ka > kb ? 1 : 0;
+  if (ka !== kb) return ka < kb ? -1 : 1;
+  if (a.batch.seq !== b.batch.seq) return a.batch.seq - b.batch.seq;
+  return a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0;
 }
 
 // What an operation touches, for telling concurrent entries: an item as a whole, written `id`,
@@ -51,6 +54,7 @@ function touches(op: Operation): string[] {
     case "project.set":
       return ["project name"];
     case "asset.add":
+      // An asset's id is its content's, so two authors can add the same one.
       return [op.asset.id];
     case "sequence.set":
     case "role.set":
@@ -73,9 +77,22 @@ function touches(op: Operation): string[] {
       return [op.id];
     case "clip.join":
       return [op.id, op.next];
-    default:
-      // What an operation adds has a new id no one else can have touched.
+    case "sequence.add":
+    case "role.add":
+    case "item.add":
+    case "effect.add":
+      // What the operation adds has its own new id, which no one else can have touched.
       return [];
+    case "revert":
+    case "branch.create":
+    case "branch.merge":
+    case "branch.close":
+      // Applied by the history, not to a document, so they touch nothing here.
+      return [];
+    default: {
+      const unknown: never = op;
+      return unknown;
+    }
   }
 }
 
@@ -111,10 +128,20 @@ function record(change: Change, applied: Applied) {
   widen(change.ranges, applied.ranges);
 }
 
+// Waits for a call that came before, whatever it did: its caller has its error.
+async function after(previous: Promise<unknown>) {
+  try {
+    await previous;
+  } catch {
+    // Reported to that call's caller.
+  }
+}
+
 /**
  * The history of `branch`, sequenced by `sequencer`, whose document starts from `from`, or empty.
  * Batches handed to it must already be verified: signed by their author and chained to the
- * author's previous batch.
+ * author's previous batch. Its calls run one at a time, in the order they are made, so an entry
+ * that arrives twice at once is applied once.
  */
 export function createHistory(options: { branch: BranchId; sequencer: KeyId; from?: Snapshot }) {
   const { branch, sequencer } = options;
@@ -122,18 +149,33 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
   const hashes: string[] = [];
   // Each entry's author and touches, for telling later entries concurrent.
   const touched: Array<{ author: KeyId; touches: Set<string> }> = [];
+  // Batches by hash: an author who signs two batches with one seq has both held until an entry
+  // picks one.
   const held = new Map<string, Held>();
   const pending = new Map<string, Held>();
   // Entries that arrived before their batch or before the entry ahead of them, by n.
   const early = new Map<number, Entry>();
-  // Batches the sequencer has received but not yet appended, as they arrived.
+  // Batches the sequencer has received but not yet appended, by hash, as they arrived.
   const queue: string[] = [];
-  // Batches appended to this branch, which the same author's next batch there can follow.
+  // Batches appended to this branch, by author and seq, which the same author's next batch there
+  // can follow.
   const settled = new Set<string>();
   const entered = createProject(options.from);
   let view = createProject(entered.snapshot());
   // The pending batches as applied to the shown document, in order.
   let shown: Array<{ held: Held; applied: Applied }> = [];
+  let last: Promise<unknown> = Promise.resolve();
+
+  // Runs `work` once every call before it has finished.
+  function serial<T>(work: () => Promise<T>): Promise<T> {
+    const previous = last;
+    const run = (async () => {
+      await after(previous);
+      return work();
+    })();
+    last = run;
+    return run;
+  }
 
   function head() {
     const n = appended.length;
@@ -164,11 +206,24 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
     return false;
   }
 
+  // Whether an entry can be the next: chained to the last, naming a batch whose author's seq on
+  // the branch isn't appended yet, and that is the batch held under its hash if one is.
+  function follows(entry: Entry) {
+    const each = held.get(entry.batch.hash);
+    return (
+      entry.n === appended.length + 1 &&
+      entry.prev === head().hash &&
+      !settled.has(keyOf(entry.batch)) &&
+      (each === undefined || keyOf(each.batch) === keyOf(entry.batch))
+    );
+  }
+
   // Applies the next entry, whose batch is held, to the entries' document.
   function enter(entry: Entry, hash: string, change: Change) {
-    const key = keyOf(entry.batch);
-    const each = held.get(key);
-    if (each === undefined) throw new RangeError(`no batch ${key}`);
+    const each = held.get(entry.batch.hash);
+    if (each === undefined || !follows(entry))
+      throw new RangeError(`entry ${entry.n} can't follow`);
+    const key = keyOf(each.batch);
     const applied = entered.apply(each.batch);
     const skipped = new Set(applied.skipped.map((skip) => skip.index));
     const mine = new Set(each.batch.ops.filter((_, i) => !skipped.has(i)).flatMap(touches));
@@ -177,30 +232,24 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
     hashes.push(hash);
     touched.push({ author: each.batch.author, touches: mine });
     settled.add(key);
-    pending.delete(key);
     change.entered.push({ entry, skipped: applied.skipped, concurrent: isConcurrent });
+    // Another batch the author signed with the same seq can never be appended now.
+    let others = false;
+
+    for (const [other, { batch }] of pending) {
+      if (keyOf(batch) !== key) continue;
+      pending.delete(other);
+      others ||= other !== each.hash;
+    }
 
     // The entry orders its batch as the shown document had it first: nothing shown changes.
-    if (shown[0]?.held === each) {
+    if (shown[0]?.held === each && !others) {
       shown.shift();
       return;
     }
 
     record(change, applied);
     reshow(change);
-  }
-
-  // Whether an entry can be the next: chained to the last, naming a batch not yet appended, with
-  // the hash of the batch held under that name.
-  function follows(entry: Entry) {
-    const key = keyOf(entry.batch);
-    const each = held.get(key);
-    return (
-      entry.n === appended.length + 1 &&
-      entry.prev === head().hash &&
-      !settled.has(key) &&
-      (each === undefined || each.hash === entry.batch.hash)
-    );
   }
 
   // Applies every early entry that is next and whose batch is held. One that turns out not to
@@ -212,7 +261,7 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
         return;
       }
 
-      if (!held.has(keyOf(next.batch))) return;
+      if (!held.has(next.batch.hash)) return;
       early.delete(next.n);
       const hash = await entryFormat.hash(next);
       enter(next, hash, change);
@@ -220,19 +269,17 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
     }
   }
 
-  /** Takes a verified batch for this branch, showing it as pending until an entry appends it. */
-  async function pend(batch: Batch, hash: string): Promise<Change> {
+  async function pendNow(batch: Batch, hash: string): Promise<Change> {
     if (batch.branch !== branch) throw new RangeError(`a batch for ${batch.branch}`);
-    const key = keyOf(batch);
     const change = emptyChange();
-    if (held.has(key)) return change;
+    if (held.has(hash) || settled.has(keyOf(batch))) return change;
     const each = { batch, hash };
-    held.set(key, each);
-    pending.set(key, each);
-    queue.push(key);
-    const last = shown.at(-1)?.held;
+    held.set(hash, each);
+    pending.set(hash, each);
+    queue.push(hash);
+    const end = shown.at(-1)?.held;
 
-    if (last === undefined || byClock(last, each) < 0) {
+    if (end === undefined || byClock(end, each) < 0) {
       const applied = view.apply(batch);
       shown.push({ held: each, applied });
       record(change, applied);
@@ -244,18 +291,19 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
     return change;
   }
 
-  /**
-   * Takes an entry from the sequencer. One for a batch not yet held, or ahead of the next entry,
-   * waits until both are here. Throws a RangeError for an entry that isn't this branch's
-   * sequencer's, or that is next and doesn't follow the last.
-   */
-  async function append(entry: Entry): Promise<Change> {
+  async function appendNow(entry: Entry): Promise<Change> {
     if (entry.branch !== branch) throw new RangeError(`an entry of ${entry.branch}`);
     if (entry.term !== FIRST_TERM) throw new RangeError(`an entry of term ${entry.term}`);
     const valid = await entryFormat.verify(entry, sequencer);
     if (!valid) throw new RangeError("an entry not signed by the sequencer");
     const change = emptyChange();
-    if (entry.n <= appended.length) return change;
+
+    if (entry.n <= appended.length) {
+      const hash = await entryFormat.hash(entry);
+      if (hash !== hashes[entry.n - 1]) throw new RangeError(`another entry ${entry.n}`);
+      return change;
+    }
+
     if (entry.n === appended.length + 1 && !follows(entry))
       throw new RangeError(`entry ${entry.n} doesn't follow`);
     early.set(entry.n, entry);
@@ -263,24 +311,22 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
     return change;
   }
 
-  // Whether a batch can be appended: its author's previous batch on the branch is.
+  // Whether a batch can be appended: its seq isn't yet, and its author's previous batch on the
+  // branch is.
   const ready = ({ batch }: Held) =>
-    batch.branchPrev === 0 || settled.has(keyOf({ author: batch.author, seq: batch.branchPrev }));
+    !settled.has(keyOf(batch)) &&
+    (batch.branchPrev === 0 || settled.has(keyOf({ author: batch.author, seq: batch.branchPrev })));
 
-  /**
-   * As the sequencer, appends every received batch that can be: in (hlc, author) order, each once
-   * its author's previous batch on the branch is appended. Returns the entries to publish.
-   */
-  async function sequence(peer: CryptoKeyPair) {
+  async function sequenceNow(peer: CryptoKeyPair) {
     const self = await keyIdOf(peer.publicKey);
     if (self !== sequencer) throw new RangeError("only the sequencer appends");
     const change = emptyChange();
     const made: Entry[] = [];
     const waiting = queue
       .splice(0)
-      .flatMap((key) => {
-        const each = held.get(key);
-        return each === undefined || settled.has(key) ? [] : [each];
+      .flatMap((hash) => {
+        const each = held.get(hash);
+        return each === undefined || settled.has(keyOf(each.batch)) ? [] : [each];
       })
       .toSorted(byClock);
 
@@ -302,14 +348,26 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
       made.push(entry);
     }
 
-    queue.unshift(...waiting.map((each) => keyOf(each.batch)));
+    queue.unshift(...waiting.map((each) => each.hash));
     return { entries: made, change };
   }
 
   return {
-    pend,
-    append,
-    sequence,
+    /** Takes a verified batch for this branch, showing it as pending until an entry appends it. */
+    pend: (batch: Batch, hash: string) => serial(() => pendNow(batch, hash)),
+    /**
+     * Takes an entry from the sequencer. One for a batch not yet held, or ahead of the next
+     * entry, waits until both are here. Throws a RangeError for an entry that isn't this
+     * branch's sequencer's, that is next and doesn't follow the last, or that differs from the
+     * entry already appended with its number.
+     */
+    append: (entry: Entry) => serial(() => appendNow(entry)),
+    /**
+     * As the sequencer, appends every received batch that can be: in (hlc, author, seq) order,
+     * each once its author's previous batch on the branch is appended. Returns the entries to
+     * publish.
+     */
+    sequence: (peer: CryptoKeyPair) => serial(() => sequenceNow(peer)),
     /** The last entry, as a batch's `base` names it. */
     head,
     /** The entries, 1 to n. */

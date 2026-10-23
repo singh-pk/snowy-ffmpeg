@@ -414,7 +414,7 @@ A batch waits between being committed and being appended. Nobody waits for it:
 
 ### Concurrent edits
 
-An entry is **concurrent** if an entry by another author, between its batch's `base` and itself, touched an item or leaf it touches: its author couldn't see that change. Concurrency is worked out when the entry is applied, so every peer marks the same entries. An operation the entry skipped touches nothing. Setting a leaf touches that leaf, and a keyframe its target's parameter at its source point; moving, removing, restoring, splitting or joining an item touches all of it, so it clashes with any leaf of it; adding touches nothing, since the new id is the entry's own. Two leaves of one item don't clash. The history shows the mark, and an agent is told, so a person can look at that edit again. Nothing is refused or merged by hand.
+An entry is **concurrent** if an entry by another author, between its batch's `base` and itself, touched an item or leaf it touches: its author couldn't see that change. Concurrency is worked out when the entry is applied, so every peer marks the same entries. An operation the entry skipped touches nothing. Setting a leaf touches that leaf, and a keyframe its target's parameter at its source point; moving, removing, restoring, splitting or joining an item touches all of it, so it clashes with any leaf of it; adding touches nothing, since the new id is the entry's own, except adding an asset, which touches it: its id is its content's, so two authors can add the same one. Two leaves of one item don't clash. The history shows the mark, and an agent is told, so a person can look at that edit again. Nothing is refused or merged by hand.
 
 ### Changing sequencer
 
