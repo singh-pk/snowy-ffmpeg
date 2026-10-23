@@ -27,7 +27,10 @@ export type ChatSenderOptions = {
    * `last` (`unsent` in src/chat-store.ts): queued again, to go with the first batch.
    */
   pending?: ChatMessage[] | undefined;
-  /** Hands a batch to the stream; `writable()` is called once the stream takes more. */
+  /**
+   * Hands a batch to the stream; `writable()` is called once the stream takes more. A throw
+   * keeps the batch's messages queued for then.
+   */
   publish(key: string, bytes: Bytes): void;
 };
 
@@ -79,8 +82,18 @@ export function createChatSender(options: ChatSenderOptions) {
     await options.keep(message);
     state.last = message;
     queue.push(message);
-    void flush();
+    void flushQuietly();
     return message;
+  }
+
+  // A flush that a write starts: a batch that fails to seal or publish is already back in the
+  // queue, and the next `writable()` reports the failure.
+  async function flushQuietly() {
+    try {
+      await flush();
+    } catch {
+      // Kept for the next writable event.
+    }
   }
 
   // Sends what has queued if the stream is writable; one batch is sealed at a time, and a call
@@ -131,7 +144,14 @@ export function createChatSender(options: ChatSenderOptions) {
     }
 
     state.writable = false;
-    options.publish(sealed.key, sealed.bytes);
+
+    try {
+      options.publish(sealed.key, sealed.bytes);
+    } catch (error) {
+      // The stream refused it: the messages wait for the next writable event.
+      queue.unshift(...messages);
+      throw error;
+    }
   }
 
   /**
