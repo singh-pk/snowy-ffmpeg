@@ -13,43 +13,8 @@ import { createHistory } from "../src/history";
 import { createProject } from "../src/project";
 import { InvalidError } from "../src/schema";
 import { asset, clip, id, sequence, setUp, video, type Op } from "./support/project";
+import { author, fail, generate, rename, sequenceAdd, sequencedBy } from "./support/history";
 import { rejection } from "./support/rejection";
-
-const generate = () => crypto.subtle.generateKey("Ed25519", false, ["sign", "verify"]);
-
-// A peer that signs its batches in order, each on `main`.
-async function author() {
-  const peer = await generate();
-  const key = await keyIdOf(peer.publicKey);
-  const hashes: string[] = [];
-
-  async function commit(ops: Op[], hlc: string, base = { n: 0, hash: "" }) {
-    const seq = hashes.length + 1;
-    const batch = await signBatch(peer, {
-      author: key,
-      seq,
-      prev: hashes.at(-1) ?? "",
-      branch: "main",
-      branchPrev: seq - 1,
-      base,
-      hlc,
-      label: "Edit",
-      ops,
-    });
-    const hash = await batchHash(batch);
-    hashes.push(hash);
-    return { batch, hash };
-  }
-
-  return { peer, key, commit };
-}
-
-const rename = (name: string): Op => ({ op: "project.set", name });
-
-const sequenceAdd: Op = {
-  op: "sequence.add",
-  sequence: { name: "Main", rate: [24, 1], width: 1920, height: 1080, sampleRate: 48_000 },
-};
 
 test("an entry and a refusal sign, verify and read back from their bytes", async () => {
   const sequencer = await generate();
@@ -124,23 +89,7 @@ test("a project started from a snapshot reads and applies as the original", () =
   expect(copy.snapshot()).toEqual(project.snapshot());
 });
 
-// A history of main sequenced by `sequencer`, and a helper that appends what it sequences.
-function sequencedBy(sequencer: Awaited<ReturnType<typeof author>>) {
-  const history = createHistory({ branch: "main", sequencer: sequencer.key });
-
-  async function run() {
-    const { entries: made } = await history.sequence(sequencer.peer);
-    return made;
-  }
-
-  return { history, run };
-}
-
 const hashOf = (entry: Entry | undefined) => entries.hash(entry ?? fail());
-
-function fail(): never {
-  throw new Error("missing");
-}
 
 test("a batch shows at once, and its entry changes nothing shown", async () => {
   const sequencer = await author();

@@ -10,14 +10,11 @@
 import { keyIdOf, type Batch } from "./batch";
 import { entries as entryFormat, type Entry } from "./entry";
 import type { ItemId, KeyId } from "./ids";
-import { createProject, type Applied, type Range, type Snapshot } from "./project";
-
-type Project = ReturnType<typeof createProject>;
+import type { EntryRef } from "./document";
+import { createProject, type Applied, type Document, type Range, type Snapshot } from "./project";
+import { undoBatch, type Undo } from "./undo";
 type Operation = Batch["ops"][number];
 type BranchId = Batch["branch"];
-
-/** What a peer reads of a document: everything but applying. */
-export type Document = Omit<Project, "apply">;
 
 /** An entry as applied: the operations it skipped, and whether its author couldn't see a change. */
 type Entered = { entry: Entry; skipped: Applied["skipped"]; concurrent: boolean };
@@ -33,6 +30,14 @@ type Held = { batch: Batch; hash: string };
 
 // The term every branch's first sequencer starts; later terms come with changing sequencer.
 const FIRST_TERM = 1;
+
+/** How many entries apart the history keeps a snapshot, so going back applies fewer than that. */
+export const SNAPSHOT_EVERY = 512;
+
+type BatchRef = { author: KeyId; seq: number };
+
+// What a revert touches: every item and leaf.
+const EVERYTHING = "*";
 
 const keyOf = (ref: { author: KeyId; seq: number }) => `${ref.author} ${ref.seq}`;
 
@@ -84,6 +89,7 @@ function touches(op: Operation): string[] {
       // What the operation adds has its own new id, which no one else can have touched.
       return [];
     case "revert":
+      return [EVERYTHING];
     case "branch.create":
     case "branch.merge":
     case "branch.close":
@@ -98,6 +104,9 @@ function touches(op: Operation): string[] {
 
 // Whether two sets of touches clash: the same leaf, or an item and anything of it.
 function clash(mine: Set<string>, theirs: Set<string>) {
+  if ((mine.has(EVERYTHING) && theirs.size > 0) || (theirs.has(EVERYTHING) && mine.size > 0))
+    return true;
+
   for (const touch of theirs) {
     if (mine.has(touch)) return true;
     const [item = "", leaf] = touch.split(" ");
@@ -129,7 +138,7 @@ function record(change: Change, applied: Applied) {
 }
 
 // Waits for a call that came before, whatever it did: its caller has its error.
-async function after(previous: Promise<unknown>) {
+async function settledOf(previous: Promise<unknown>) {
   try {
     await previous;
   } catch {
@@ -149,6 +158,10 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
   const hashes: string[] = [];
   // Each entry's author and touches, for telling later entries concurrent.
   const touched: Array<{ author: KeyId; touches: Set<string> }> = [];
+  // Each entry's skipped operations, by index, for undoing it.
+  const skips: Array<ReadonlySet<number>> = [];
+  // The entry that appended each batch, by author and seq.
+  const entryOf = new Map<string, number>();
   // Batches by hash: an author who signs two batches with one seq has both held until an entry
   // picks one.
   const held = new Map<string, Held>();
@@ -161,6 +174,8 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
   // can follow.
   const settled = new Set<string>();
   const entered = createProject(options.from);
+  // The entries' document every SNAPSHOT_EVERY entries, from entry 0.
+  const snapshots = new Map<number, Snapshot>([[0, entered.snapshot()]]);
   let view = createProject(entered.snapshot());
   // The pending batches as applied to the shown document, in order.
   let shown: Array<{ held: Held; applied: Applied }> = [];
@@ -170,7 +185,7 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
   function serial<T>(work: () => Promise<T>): Promise<T> {
     const previous = last;
     const run = (async () => {
-      await after(previous);
+      await settledOf(previous);
       return work();
     })();
     last = run;
@@ -182,13 +197,119 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
     return { n, hash: n === 0 ? "" : (hashes[n - 1] ?? "") };
   }
 
+  // The batch an entry appended.
+  function batchOf(n: number) {
+    const each = held.get(appended[n - 1]?.batch.hash ?? "");
+    if (each === undefined) throw new RangeError(`no batch for entry ${n}`);
+    return each.batch;
+  }
+
+  // The entries' document at an entry, from the snapshot at or before it and the entries after
+  // that; undefined for an entry this history doesn't have under that hash.
+  function atEntry(ref: EntryRef): Snapshot | undefined {
+    if (ref.n > appended.length || ref.hash !== (ref.n === 0 ? "" : hashes[ref.n - 1]))
+      return undefined;
+    if (ref.n === appended.length) return entered.snapshot();
+    const from = ref.n - (ref.n % SNAPSHOT_EVERY);
+    const project = createProject(snapshots.get(from));
+    for (let n = from + 1; n <= ref.n; n += 1) project.apply(batchOf(n), atEntry);
+    return project.snapshot();
+  }
+
+  /** A read-only document at an entry: going back. Throws a RangeError for an unknown entry. */
+  function at(ref: EntryRef): Document {
+    const snapshot = atEntry(ref);
+    if (snapshot === undefined) throw new RangeError(`no entry ${ref.n} with that hash`);
+    return createProject(snapshot);
+  }
+
+  // The documents just before and just after a batch of the branch, appended or pending, and the
+  // operations it skipped there.
+  function around(ref: BatchRef) {
+    const key = keyOf(ref);
+    const n = entryOf.get(key);
+    let before: ReturnType<typeof createProject>;
+    let batch: Batch;
+
+    if (n === undefined) {
+      const index = shown.findIndex(({ held: each }) => keyOf(each.batch) === key);
+      const found = shown[index];
+      if (found === undefined) throw new RangeError(`no batch ${key} on ${branch}`);
+      before = createProject(entered.snapshot());
+      for (const { held: each } of shown.slice(0, index)) before.apply(each.batch, atEntry);
+      batch = found.held.batch;
+    } else {
+      before = createProject(atEntry({ n: n - 1, hash: n === 1 ? "" : (hashes[n - 2] ?? "") }));
+      batch = batchOf(n);
+    }
+
+    const after = createProject(before.snapshot());
+    const { skipped } = after.apply(batch, atEntry);
+    return { batch, before, after, skipped: new Set(skipped.map(({ index }) => index)) };
+  }
+
+  /**
+   * The operations that undo a batch of this branch, appended or pending, worked out against the
+   * document as shown. Undoing someone else's batch is reverting it. Throws a RangeError for a
+   * batch the branch doesn't have.
+   */
+  function undo(ref: BatchRef): Undo {
+    const { batch, before, after, skipped } = around(ref);
+    return undoBatch(batch, skipped, { before, after, now: view });
+  }
+
+  // An author's batches on the branch, appended or pending, newest first, with the keys of those
+  // a live undo has taken back. An undo is newer than what it undoes, so it is seen first.
+  function undoState(author: KeyId) {
+    const own = [
+      ...appended.map((entry, i) => (entry.batch.author === author ? batchOf(i + 1) : undefined)),
+      ...shown.map(({ held: each }) => each.batch),
+    ]
+      .filter((batch) => batch?.author === author)
+      .flatMap((batch) => (batch === undefined ? [] : [batch]))
+      .toSorted((a, b) => b.seq - a.seq);
+    const undone = new Set<string>();
+    const isUndo = new Set<string>();
+
+    for (const batch of own) {
+      if (batch.undoes === undefined) continue;
+      isUndo.add(keyOf(batch));
+      if (!undone.has(keyOf(batch))) undone.add(keyOf(batch.undoes));
+    }
+
+    return { own, undone, isUndo };
+  }
+
+  /** The author's latest batch on the branch that isn't an undo and isn't undone: what undo takes back. */
+  function undoable(author: KeyId): BatchRef | undefined {
+    const { own, undone } = undoState(author);
+    const found = own.find((batch) => batch.undoes === undefined && !undone.has(keyOf(batch)));
+    return found === undefined ? undefined : { author, seq: found.seq };
+  }
+
+  /**
+   * The author's latest undo that isn't itself undone, if no edit of theirs came after it: what
+   * redo takes back. A redo is an undo of an undo, so it is never redone itself.
+   */
+  function redoable(author: KeyId): BatchRef | undefined {
+    const { own, undone, isUndo } = undoState(author);
+
+    for (const batch of own) {
+      if (undone.has(keyOf(batch))) continue;
+      if (batch.undoes === undefined) return undefined;
+      if (!isUndo.has(keyOf(batch.undoes))) return { author, seq: batch.seq };
+    }
+
+    return undefined;
+  }
+
   // Shows the pending batches again from the entries' document, in order, recording what both
   // the old and the new showing touched.
   function reshow(change: Change) {
     for (const { applied } of shown) record(change, applied);
     view = createProject(entered.snapshot());
     shown = [...pending.values()].toSorted(byClock).map((each) => {
-      const applied = view.apply(each.batch);
+      const applied = view.apply(each.batch, atEntry);
       record(change, applied);
       return { held: each, applied };
     });
@@ -224,13 +345,16 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
     if (each === undefined || !follows(entry))
       throw new RangeError(`entry ${entry.n} can't follow`);
     const key = keyOf(each.batch);
-    const applied = entered.apply(each.batch);
+    const applied = entered.apply(each.batch, atEntry);
     const skipped = new Set(applied.skipped.map((skip) => skip.index));
     const mine = new Set(each.batch.ops.filter((_, i) => !skipped.has(i)).flatMap(touches));
     const isConcurrent = concurrent(entry, each.batch, mine);
     appended.push(entry);
     hashes.push(hash);
     touched.push({ author: each.batch.author, touches: mine });
+    skips.push(skipped);
+    entryOf.set(key, entry.n);
+    if (entry.n % SNAPSHOT_EVERY === 0) snapshots.set(entry.n, entered.snapshot());
     settled.add(key);
     change.entered.push({ entry, skipped: applied.skipped, concurrent: isConcurrent });
     // Another batch the author signed with the same seq can never be appended now.
@@ -281,7 +405,7 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
     const end = shown.at(-1)?.held;
 
     if (end === undefined || byClock(end, each) < 0) {
-      const applied = view.apply(batch);
+      const applied = view.apply(batch, atEntry);
       shown.push({ held: each, applied });
       record(change, applied);
     } else {
@@ -371,6 +495,10 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
     sequence: (peer: CryptoKeyPair) => serial(() => sequenceNow(peer)),
     /** The last entry, as a batch's `base` names it. */
     head,
+    at,
+    undo,
+    undoable,
+    redoable,
     /** The entries, 1 to n. */
     entries: (): readonly Entry[] => appended,
     /** The pending batches, in the order they are shown. */

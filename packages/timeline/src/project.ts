@@ -10,6 +10,7 @@
 import type { Batch } from "./batch";
 import {
   effect as effectSchema,
+  type EntryRef,
   item as itemSchema,
   role as roleSchema,
   sequence as sequenceSchema,
@@ -76,6 +77,12 @@ type AssetState = { record: Asset; removed: boolean };
 type EffectState = { record: EffectRecord; removed: boolean };
 type Clip = Extract<ItemRecord, { kind: "clip" }>;
 
+/** What a peer reads of a document: everything but applying. */
+export type Document = Omit<ReturnType<typeof createProject>, "apply">;
+
+/** The document at an entry of the branch, or undefined for one it doesn't have. */
+export type AtEntry = (ref: EntryRef) => Snapshot | undefined;
+
 /** A project's whole state as plain data, which a new project can start from. */
 export type Snapshot = {
   name: string;
@@ -138,6 +145,46 @@ function withLeaf(record: object, kind: string, path: string, value: Value) {
 
   node[segments.at(-1) ?? ""] = value;
   return copy;
+}
+
+/**
+ * The leaf at `path` of a record, reading an absent `video` or `audio` as its defaults, as
+ * setting one of its leaves fills them in; undefined for a leaf the record doesn't have.
+ */
+export function leafOf(record: object, path: string): Value | undefined {
+  const [root = "", ...rest] = path.split(".");
+  let node: unknown = isObject(record) ? (record[root] ?? DEFAULTS[root]) : undefined;
+
+  for (const segment of rest) {
+    if (!isObject(node)) return undefined;
+    node = node[segment];
+  }
+
+  return isValue(node) ? node : undefined;
+}
+
+function isValue(value: unknown): value is Value {
+  const type = typeof value;
+  if (type === "boolean" || type === "number" || type === "string") return true;
+  return Array.isArray(value) && value.every(isValue);
+}
+
+const byId = (state: { id: ItemId }) => state.id;
+
+// Adds to `target`'s states those only `now` has, removed, so a revert keeps their ids taken.
+function withRemoved<T extends { removed: boolean }>(
+  target: T[],
+  now: T[],
+  idOf: (state: T) => string,
+) {
+  const kept = new Set(target.map(idOf));
+  const states = [...target];
+
+  for (const state of now) {
+    if (!kept.has(idOf(state))) states.push({ ...state, removed: true });
+  }
+
+  return states;
 }
 
 // `check(value)`, or a skip for a value that doesn't fit.
@@ -805,8 +852,35 @@ export function createProject(initial?: Snapshot) {
     }
   }
 
+  // Sets the document back to a snapshot's state. What the snapshot doesn't have is removed, not
+  // forgotten, so its id stays taken and its state kept.
+  function revertTo(target: Snapshot): ItemId[] {
+    const now = snapshot();
+    const state: Snapshot = {
+      name: target.name,
+      assets: withRemoved(target.assets, now.assets, ({ record }) => record.id),
+      sequences: withRemoved(target.sequences, now.sequences, byId),
+      roles: withRemoved(target.roles, now.roles, byId),
+      items: withRemoved(target.items, now.items, byId),
+      effects: withRemoved(target.effects, now.effects, byId),
+      keyframes: target.keyframes,
+    };
+    for (const index of [assets, sequences, roles, items, members, dependents, users])
+      index.clear();
+    for (const index of [effects, chains, keyframes]) index.clear();
+    load(state);
+    return [
+      ...state.sequences.map(byId),
+      ...state.roles.map(byId),
+      ...state.items.map(byId),
+      ...state.effects.map(byId),
+      ...state.assets.map(({ record }) => record.id),
+    ];
+  }
+
   // Applies one operation, whose own id is `id`; returns the ids of the records it changed.
-  function applyOne(op: Operation, id: ItemId): ItemId[] {
+  // `at` gives the document at an entry, for a revert.
+  function applyOne(op: Operation, id: ItemId, at: AtEntry | undefined): ItemId[] {
     switch (op.op) {
       case "project.set":
         name = op.name;
@@ -869,16 +943,24 @@ export function createProject(initial?: Snapshot) {
       case "keyframe.remove":
         removeKeyframe(op.target, op.param, op.at);
         return [op.target];
+      case "revert": {
+        if (at === undefined) skip("unsupported", "a revert is applied by the history");
+        const target = at(op.to);
+        if (target === undefined) skip("stale", `no entry ${op.to.n} with that hash`);
+        return revertTo(target);
+      }
       default:
         return skip("unsupported", `${op.op} is applied by the history`);
     }
   }
 
-  // What an operation redraws as a whole sequence: a sequence's settings, a role's order.
-  function wholeSequence(op: Operation) {
-    if (op.op === "sequence.set") return op.id;
-    if (op.op === "role.set" && op.path === "order") return roles.get(op.id)?.record.sequence;
-    return undefined;
+  // What an operation redraws as a whole sequence: a sequence's settings, a role's order; and
+  // what a revert redraws: every sequence.
+  function wholeSequences(op: Operation): ItemId[] {
+    if (op.op === "revert") return [...sequences.keys()];
+    if (op.op === "sequence.set") return [op.id];
+    const sequence = op.op === "role.set" && op.path === "order" ? roles.get(op.id) : undefined;
+    return sequence === undefined ? [] : [sequence.record.sequence];
   }
 
   // The clip whose look or sound an effect or keyframe operation changes, in place.
@@ -900,8 +982,11 @@ export function createProject(initial?: Snapshot) {
     return [{ sequence: state.sequence, from, to: from + state.record.duration }];
   }
 
-  /** Applies a batch's operations in order, skipping any that doesn't fit the document. */
-  function apply(batch: Pick<Batch, "author" | "seq" | "ops">): Applied {
+  /**
+   * Applies a batch's operations in order, skipping any that doesn't fit the document. `at`
+   * gives the document at an entry of its branch, for a revert; without it a revert is skipped.
+   */
+  function apply(batch: Pick<Batch, "author" | "seq" | "ops">, at?: AtEntry): Applied {
     const skipped: Skip[] = [];
     const changed = new Set<ItemId>();
     const ranges = new Map<ItemId, Range>();
@@ -924,7 +1009,7 @@ export function createProject(initial?: Snapshot) {
       let changes: ItemId[];
 
       try {
-        changes = applyOne(op, id);
+        changes = applyOne(op, id, at);
       } catch (error) {
         if (!(error instanceof Skipped)) throw error;
         skipped.push({ index, reason: error.reason, detail: error.message });
@@ -937,8 +1022,7 @@ export function createProject(initial?: Snapshot) {
         ...(clip === undefined ? [] : playing(clip)),
       ];
       for (const span of [...before, ...after]) widen(span);
-      const sequence = wholeSequence(op);
-      if (sequence !== undefined) widen({ sequence, ...EVERYTHING });
+      for (const sequence of wholeSequences(op)) widen({ sequence, ...EVERYTHING });
     }
 
     return { skipped, changed: [...changed], ranges };
@@ -1049,9 +1133,17 @@ export function createProject(initial?: Snapshot) {
 
   if (initial !== undefined) load(initial);
 
+  /** The record with an id, of any kind, and whether it is removed. */
+  function recordOf(id: string): { record: object; removed: boolean } | undefined {
+    const found = items.get(id) ?? sequences.get(id) ?? roles.get(id) ?? effects.get(id);
+    const { record, removed } = found ?? assets.get(id) ?? {};
+    return record === undefined ? undefined : { record, removed: removed === true };
+  }
+
   return {
     apply,
     snapshot,
+    record: recordOf,
     item,
     start,
     storyline,

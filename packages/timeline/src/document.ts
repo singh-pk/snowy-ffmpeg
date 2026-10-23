@@ -261,3 +261,5 @@ export type EffectRecord = ReturnType<typeof effect>;
 export type KeyframeRecord = ReturnType<typeof keyframe>;
 /** Where an item is. */
 export type Anchor = ReturnType<typeof anchor>;
+
+export type EntryRef = ReturnType<typeof entryRef>;

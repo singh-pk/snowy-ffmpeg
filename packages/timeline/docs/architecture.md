@@ -445,8 +445,8 @@ None of these rewrites history. Each is a new batch, so it can itself be undone,
 
 | Action | What it does |
 | --- | --- |
-| **Undo** | A batch with `undoes` naming one of the author's own batches, by default their latest not yet undone |
-| **Redo** | An undo of the undo |
+| **Undo** | A batch with `undoes` naming one of the author's own batches, by default their latest on the branch that isn't an undo and isn't undone |
+| **Redo** | An undo of the undo, by default the author's latest undo that isn't undone, if no edit of theirs came after it |
 | **Revert a batch** | The same as undo, for any author's batch: "take back what Claude did in entry 212", even after later edits |
 | **Revert to an entry** | One `revert` operation naming an `EntryRef`. Applying it sets every item and leaf to its state at that entry, worked out from the nearest snapshot and the entries after it, so the batch stays small whatever the project's size. |
 | **Go back** | A read-only view of the document at any entry, the same way. Nothing changes until the user reverts or branches. |
@@ -455,12 +455,19 @@ None of these rewrites history. Each is a new batch, so it can itself be undone,
 An undo's operations are worked out when it is committed, from the document its author sees, and applied like any batch's, with the same skipping:
 
 - **A leaf the batch set** is set back, if it still has the value the batch gave it. If someone has changed it since, it is left alone, and the undo reports it.
-- **An item the batch added** is removed, unless someone else has changed it since: then it is left, and reported.
-- **An item the batch removed** is restored, with its state.
-- **A keyframe the batch set** is removed if it was new, or set back to its earlier value and ease, if it still has the ones the batch gave it.
-- **A split** is undone with `clip.join`, which also takes back the connected items and keyframes the split moved, since both are anchored to source points.
+- **A record the batch added** (a sequence, role, item, effect or asset) is removed, unless someone has changed it since: then it is left, and reported. Setting a leaf of, or moving, a record the same batch added needs nothing more.
+- **An item the batch removed** is restored, with its state, and **an item it restored** is removed. A sequence, role or effect it removed stays removed and is reported, since only items have a restore.
+- **A move** is moved back to the anchor it had, if the item still has the one the batch gave it.
+- **A keyframe the batch set** is removed if it was new, or set back to its earlier value and ease, if it still has the ones the batch gave it; **one it removed** is set again, if nothing has been set there since.
+- **A split** is undone with `clip.join`, which also takes back the connected items and keyframes the split moved, since both are anchored to source points. **A join** is undone with `clip.split` where the first piece ended, if the clip is as the join left it; the second piece then has a new id.
+- **A revert** isn't undone: reverting to the entry before it does that. Branch operations aren't undone either.
+- What an undo leaves alone is reported per operation, with why. A batch is undone against the document as shown, pending batches included, so the author's latest edit can be undone before the sequencer has appended it.
 
 Undo is per author: undo takes back your edits, never someone else's that came after them.
+
+Reverting to an entry sets each record to its state at that entry. A record added after it is removed, keeping its state and id, so a later batch can restore it. Keyframes are those of that entry. A revert naming an entry the branch doesn't have under that hash, such as one a new term dropped, is skipped as stale. It redraws every sequence, and touches every item for telling concurrent entries.
+
+The history keeps the entries' document every `SNAPSHOT_EVERY` entries in memory, as the project folder does on disk, so going back to an entry or reverting to it applies fewer than that many entries.
 
 ## Branches
 
