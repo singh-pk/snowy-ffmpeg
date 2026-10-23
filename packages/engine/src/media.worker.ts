@@ -21,7 +21,7 @@ import {
   createCore,
   type Ptr,
 } from "@snowy-media/ffmpeg/core";
-import { type VideoParams, WEBCODECS } from "./codec";
+import { colorSpace, type VideoParams, WEBCODECS } from "./codec";
 import { createFileSource } from "./io";
 import { createPcmProducer, pcmFormat } from "./pcm";
 import { createProducer } from "./ring";
@@ -148,6 +148,12 @@ function createMedia(core: CoreModule) {
       height: core._sny_codec_height(st),
       level: core._sny_codec_level(st),
       sampleAspect: [core._sny_codec_sar_num(st), core._sny_codec_sar_den(st)],
+      colorSpace: colorSpace({
+        primaries: str(core._sny_color_primaries_name(core._sny_codec_color_primaries(st))),
+        transfer: str(core._sny_color_trc_name(core._sny_codec_color_trc(st))),
+        matrix: str(core._sny_color_space_name(core._sny_codec_color_space(st))),
+        range: str(core._sny_color_range_name(core._sny_codec_color_range(st))),
+      }),
       timeBase: [core._sny_stream_tb_num(st), core._sny_stream_tb_den(st)],
       start: start === AV_NOPTS_VALUE ? 0 : Number(start),
       matrix: Array.from({ length: 9 }, (_, i) => core._sny_stream_display_matrix(st, i)),

@@ -13,6 +13,7 @@ import {
   createVideo,
   type VideoModule,
 } from "@snowy-media/ffmpeg/video";
+import { colorSpace } from "./codec";
 import type { FromVideo, ToVideo } from "./protocol";
 
 type Ptr = number;
@@ -22,31 +23,6 @@ const LOG_ERRORS = 16;
 // Decoding threads: one a core, at most the module's pool of 8.
 const THREADS = Math.min(navigator.hardwareConcurrency, 8);
 
-// FFmpeg's colour names, as VideoColorSpace names them; any other leaves it unstated.
-// TypeScript's DOM types know fewer of these, and of the formats, than Chromium takes (PQ,
-// HLG, BT.2020, 10 and 12 bits), so they are strings here, checked by the guards below.
-const PRIMARIES: Record<string, string> = {
-  bt709: "bt709",
-  bt470bg: "bt470bg",
-  smpte170m: "smpte170m",
-  bt2020: "bt2020",
-  smpte432: "smpte432",
-};
-const TRANSFERS: Record<string, string> = {
-  bt709: "bt709",
-  smpte170m: "smpte170m",
-  "iec61966-2-1": "iec61966-2-1",
-  linear: "linear",
-  smpte2084: "pq",
-  "arib-std-b67": "hlg",
-};
-const MATRICES: Record<string, string> = {
-  gbr: "rgb",
-  bt709: "bt709",
-  bt470bg: "bt470bg",
-  smpte170m: "smpte170m",
-  bt2020nc: "bt2020-ncl",
-};
 // The formats sny_to_video_format makes.
 const FORMATS = new Set([
   "I420",
@@ -71,11 +47,7 @@ const FORMATS = new Set([
   "BGRX",
 ]);
 
-// Whether a name is one of the maps' or FORMATS.
-const isPrimaries = (v = ""): v is VideoColorPrimaries => Object.values(PRIMARIES).includes(v);
-const isTransfer = (v = ""): v is VideoTransferCharacteristics =>
-  Object.values(TRANSFERS).includes(v);
-const isMatrix = (v = ""): v is VideoMatrixCoefficients => Object.values(MATRICES).includes(v);
+// Whether a name is one of FORMATS. TypeScript's DOM types know fewer than Chromium takes.
 const isFormat = (v: string): v is VideoPixelFormat => FORMATS.has(v);
 
 function post(message: FromVideo, transfer: Transferable[] = []) {
@@ -153,7 +125,7 @@ function createDecoder(
     throw new Error("decoder: out of memory");
   }
 
-  function colorSpace(): VideoColorSpaceInit {
+  function frameColorSpace(): VideoColorSpaceInit {
     const range = m._sny_frame_color_range(converted);
     const primaries = m._sny_frame_color_primaries(converted);
     const trc = m._sny_frame_color_trc(converted);
@@ -161,15 +133,12 @@ function createDecoder(
     const c = colour;
     const same = range === c.range && primaries === c.primaries && trc === c.trc;
     if (same && matrix === c.matrix) return c.space;
-    const space: VideoColorSpaceInit = {};
-    const p = PRIMARIES[name(m._sny_color_primaries_name(primaries))];
-    const t = TRANSFERS[name(m._sny_color_trc_name(trc))];
-    const mc = MATRICES[name(m._sny_color_space_name(matrix))];
-    const r = name(m._sny_color_range_name(range));
-    if (isPrimaries(p)) space.primaries = p;
-    if (isTransfer(t)) space.transfer = t;
-    if (isMatrix(mc)) space.matrix = mc;
-    if (r === "pc" || r === "tv") space.fullRange = r === "pc";
+    const space = colorSpace({
+      primaries: name(m._sny_color_primaries_name(primaries)),
+      transfer: name(m._sny_color_trc_name(trc)),
+      matrix: name(m._sny_color_space_name(matrix)),
+      range: name(m._sny_color_range_name(range)),
+    });
     Object.assign(colour, { range, primaries, trc, matrix, space });
     return space;
   }
@@ -208,7 +177,7 @@ function createDecoder(
       displayHeight: height,
       timestamp: micros(m._sny_frame_pts(frame)),
       ...(duration > 0n ? { duration: micros(duration) } : {}),
-      colorSpace: colorSpace(),
+      colorSpace: frameColorSpace(),
     });
     post({ type: "frame", id, frame: picture }, [picture]);
   }

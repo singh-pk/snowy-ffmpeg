@@ -175,6 +175,21 @@ const fixtures: Record<
   },
   "ffv1-aac.mkv": { seconds: 1, args: ["-c:v", "ffv1", "-pix_fmt", "yuv444p10le", ...AAC] },
   "qtrle-aac.mov": { seconds: 1, args: ["-c:v", "qtrle", "-pix_fmt", "rgb24", ...AAC] },
+  // HDR10: 10-bit BT.2020 PQ, which VP9's bitstream does not state and WebM does.
+  "hdr-vp9-opus.webm": {
+    seconds: 1,
+    args: [
+      ...VP9,
+      "-profile:v",
+      "2",
+      "-pix_fmt",
+      "yuv420p10le",
+      // On the frames: the encoder takes its colour from them.
+      "-vf",
+      "setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc:range=tv",
+      ...OPUS,
+    ],
+  },
   // Ten minutes, for drift.
   "sync-10min.mp4": { seconds: 600, args: [...H264, ...AAC], source: "color=c=gray:" },
 };
@@ -198,6 +213,10 @@ interface Stream {
   width?: number;
   height?: number;
   sample_rate?: string;
+  color_primaries?: string;
+  color_transfer?: string;
+  color_space?: string;
+  color_range?: string;
   channels?: number;
 }
 
@@ -362,6 +381,13 @@ for (const [name, fixture] of Object.entries(fixtures)) {
       // Frame i shows the number i, so this is also every frame's number in order.
       pts,
       keyframes: keyframes.map((p) => p.pts),
+      // Its colour as FFmpeg names it, "" where unstated.
+      colour: {
+        primaries: v.color_primaries ?? "",
+        transfer: v.color_transfer ?? "",
+        matrix: v.color_space ?? "",
+        range: v.color_range ?? "",
+      },
       // The first frame as shown (referenceGrid).
       ...reference,
       // Where the frame numbers are this many times their size: they read at `shown` over it.
