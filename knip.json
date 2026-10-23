@@ -43,6 +43,9 @@
     },
     "packages/sync": {
       "entry": ["test/*.unit.ts"]
+    },
+    "packages/timeline": {
+      "entry": ["test/*.unit.ts"]
     }
   }
 }
