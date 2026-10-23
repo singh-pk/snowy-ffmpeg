@@ -23,9 +23,9 @@ export type LinkEvents = {
 
 export type Link = {
   peer: KeyId;
-  /** Sends a control message, as JSON: on `inbox/<peer>/<self>`, or the `ctl` channel. */
+  /** Sends a control message, as JSON: on `inbox/<peer>/<self>/ctl`, or the `ctl` channel. */
   send(message: Message): void;
-  /** Sends an object the peer asked for: on `inbox/<peer>/deliver/<self>`, or the channels. */
+  /** Sends an object the peer asked for: on `inbox/<peer>/<self>/deliver`, or the channels. */
   deliver(key: string, bytes: Bytes): void;
   on<E extends keyof LinkEvents>(event: E, handler: LinkEvents[E]): void;
   close(): void;

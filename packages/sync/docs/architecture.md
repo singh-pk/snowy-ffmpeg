@@ -203,7 +203,7 @@ type Caps = {
 A capability record is signed by the peer, so it can be passed on by others. It is published only when one of its fields changes. Where it goes depends on the role:
 
 - **The source and forwarders** publish on `peer/<self>/caps`, which every peer subscribes to, so receivers can find forwarders.
-- **Receivers** send theirs to the source only, on `inbox/<source PeerId>/<self>`. The source needs their `audio` and `wants`.
+- **Receivers** send theirs to the source only, on `inbox/<source PeerId>/<self>/ctl`. The source needs their `audio` and `wants`.
 
 ## Track layout
 
@@ -219,8 +219,8 @@ Every name sits under the namespace `snowy/<SessionId>`. The relay enforces who 
 | `peer/<PeerId>` / `chat` | That peer | All | Chat messages and checkpoints |
 | `peer/<PeerId>` / `have` | Forwarders | That forwarder's group | What chunks the forwarder holds |
 | `peer/<PeerId>` / `probe` | That peer | That peer only | The upload probe |
-| `inbox/<recipient>` / `<sender>` | The sender | The recipient | Requests, replies, signaling, clock sync, receivers' capability records |
-| `inbox/<recipient>` / `deliver/<sender>` | The sender | The recipient | Objects sent on request |
+| `inbox/<recipient>/<sender>` / `ctl` | The sender | The recipient | Requests, replies, signaling, clock sync, receivers' capability records |
+| `inbox/<recipient>/<sender>` / `deliver` | The sender | The recipient | Objects sent on request |
 
 ### Mapping to MoQ
 
@@ -228,6 +228,14 @@ Every name sits under the namespace `snowy/<SessionId>`. The relay enforces who 
 - One chat message, or one batch of messages, is one group with one object.
 - `catalog`, `control` and `caps` publish a new group for every new version. A subscriber keeps only the newest.
 - Priorities, highest first: `control`, then `inbox`, then `chat`, then `catalog`, `caps` and `have`, then `init`, then `media` (subtitle, then audio, then video), then `probe`.
+- **The protocol is MoQ Transport draft 18**, spoken through the [`moqtail`](https://www.npmjs.com/package/moqtail) client, pinned to a release of its draft-18 branch. A relay must speak the same draft; moving to another is a deliberate change of both.
+- **Each sender has a namespace of its own** under `inbox/<recipient>`, so every namespace has exactly one publisher, and a relay never has to choose between two.
+- **Every object is a group of its own**, inbox messages included, so one lost or slow object never holds up another. Objects on the relay may therefore arrive in any order: everything sent through it is either self-proving (batches, chunks) or answered whatever order it comes in (repair messages).
+- **An object's key travels with it** on `chat` and `deliver`, framed as a 2-byte big-endian key length, the key in UTF-8, then the sealed bytes. A message on `ctl` is JSON.
+- **Presence** is `SUBSCRIBE_NAMESPACE` on `peer`: a peer is online while its `peer/<PeerId>` namespace is announced, and the relay reports the announcements and withdrawals.
+- **Tracks are published before their namespace is announced**, so a peer that subscribes on seeing a namespace finds every track in it. A peer publishes its own tracks before announcing `peer/<PeerId>`, so they are fixed when it connects.
+- **A link over the relay** opens at each end once it has subscribed to both tracks of `inbox/<self>/<peer>` and heard anything on them. An end sends nothing before it has both of its own subscriptions, so whatever arrives proves the other end can hear this one. Each end sends a `link-open` message after subscribing, and answers with one more when it opens on hearing the other first, since a message sent before the other end subscribed is never delivered. As objects arrive in any order, what arrives before the link opens is kept and handed on, in order, once it does. The link closes when either end withdraws its inbox namespace or the peer's `peer/<PeerId>` namespace is withdrawn.
+- Subscriptions start at the next group. Nothing published before a subscription arrives: what a peer missed comes through repair.
 
 ## Objects
 
@@ -441,7 +449,7 @@ covered by a live subscription?              → wait for it to arrive
 urgent
 ├─ a connected forwarder advertises it with a free slot
 │     → ask that forwarder, lowest RTT first
-└─ otherwise → ask the source, through inbox/<source>/<self>
+└─ otherwise → ask the source, through inbox/<source>/<self>/ctl
 ahead
 ├─ a connected forwarder advertises it with a free slot
 │     → ask that forwarder, lowest RTT first
@@ -449,7 +457,7 @@ ahead
 background (only while no urgent or ahead request is waiting), in time order from the playhead to the end, then from the start
 ├─ a connected forwarder advertises it with a free slot
 │     → ask that forwarder, lowest RTT first
-└─ otherwise → ask the source, through inbox/<source>/<self>, which answers at background priority
+└─ otherwise → ask the source, through inbox/<source>/<self>/ctl, which answers at background priority
 ```
 
 - **One request per chunk at a time.** A chunk is asked from a second source only after one of these events about the first:
@@ -466,7 +474,7 @@ background (only while no urgent or ahead request is waiting), in time order fro
 
 ### Requests to the source
 
-- The source answers through `inbox/<requester>/deliver/<source>`, ahead of everything else in its queue except seek targets. It cuts the chunk again from its file ([The source's file](#the-sources-file)).
+- The source answers through `inbox/<requester>/<source>/deliver`, ahead of everything else in its queue except seek targets. It cuts the chunk again from its file ([The source's file](#the-sources-file)).
 - **While the source is offline,** urgent chunks that no forwarder holds wait for a `have` event or the source's return. The peer pauses locally when its buffer runs out ([Playback control](#playback-control)).
 - The source sends a chunk more than once only in answer to a request: a joiner's urgent window when no forwarder holds it, and an editor's background chunks that no connected forwarder holds.
 
@@ -490,7 +498,7 @@ Forwarders form groups among themselves the same way, so chunks can move between
 
 ### Signaling
 
-- Offers, answers and ICE candidates travel as messages on `inbox/<recipient>/<sender>`.
+- Offers, answers and ICE candidates travel as messages on `inbox/<recipient>/<sender>/ctl`.
 - ICE servers are the two STUN endpoints only. There is no TURN.
 - A pair whose ICE check fails stays relay-only, and neither side retries until one of their capability records changes.
 - `symmetric` peers never take part in WebRTC.
@@ -619,7 +627,7 @@ Chat stays append-only:
 - **The peer that has the gap chooses who to ask:** the candidates are the author (if online) and its connected group peers, ranked by `SHA-256(candidate ‖ author ‖ firstMissingSeq)`. It asks the lowest one, then the next if the answer is `chat-gone`, the reply doesn't prove itself or doesn't reach the asked seq, or the link closes. A peer keeps one ask per author; an earlier gap replaces a later one, and a gap the current ask already covers, or that a batch received meanwhile has filled, asks nothing. A gap every candidate failed to fill (`chat-gone`, a bad reply, or one that falls short) is asked again on the next batch from that author only once the candidates change or one of them has closed its link; a candidate whose link closed didn't fail it.
 - **What each peer holds to answer:** every author message it has, and for each run of chained seqs, only the checkpoint with the highest seq. Every batch ends at a checkpoint, so an honest author's runs each end at one, and that one checkpoint proves the whole run. When a gap fills and two runs join, the lower run's checkpoint is dropped. Two runs join only where the upper one's first `prev` names the message held below it, and a checkpoint is kept only if its `head` names the message held at its seq, so an author that forks its chain can't make a peer drop the checkpoint that proves what it holds.
 - **The answer is a batch**, sealed by the responder from what it holds: from the asked seq to its run's checkpoint. It proves itself like any batch, so the asker takes it through the same path as one from the author's track. A responder that holds the asked seq but not the whole gap answers with what it has; the asker sees the gap now starts later and asks again from there. A responder that doesn't hold the asked seq, or can't prove it or seal the reply, answers `chat-gone`.
-- The answer goes only to the peer that asked, on `inbox/<requester>/deliver/<responder>` or over the direct `ctl` channel.
+- The answer goes only to the peer that asked, on `inbox/<requester>/<responder>/deliver` or over the direct `ctl` channel.
 - **The messages** go with the link's `send`, as JSON, and a receiver checks every field before using it:
 
   | Message | From | Answered with |
@@ -772,8 +780,8 @@ One content key would last the project's whole life, across every presence updat
   | --- | --- |
   | On a track under `peer/<P>` or `asset/<P>`, including everything P publishes for the agents it carries | P |
   | On `source/*` | The owner, under the key derived with `SessionId` in place of a `PeerId` |
-  | On `inbox/<recipient>/<sender>` | The sender |
-  | On `inbox/<requester>/deliver/<responder>`: repair replies, state on join and chunks sent on request | The responder |
+  | On `inbox/<recipient>/<sender>/ctl` | The sender |
+  | On `inbox/<requester>/<responder>/deliver`: repair replies, state on join and chunks sent on request | The responder |
   | A chunk read back from the store | The source its path names |
 
 - **The receiver picks the key from the track an object arrived on,** never from a field inside it. The author, signer and checkpoint are inside the ciphertext, so they can't be read before the key is chosen; a carried agent's batch names the agent but arrives sealed by its carrier.
@@ -833,9 +841,9 @@ The transports' keepalives and idle timeouts (QUIC's idle timeout, WebRTC's conn
 | Who | May publish | May subscribe |
 | --- | --- | --- |
 | Source `S` (token signed by the session key and `S`'s peer key) | `source/*`, plus everything peer `S` may publish | Everything |
-| Peer `P` (join grant plus a request signed by `P`) | `peer/P/*`, `inbox/*/P`, `inbox/*/deliver/P` | `source/*`, `peer/*/caps`, `peer/*/chat`, `peer/*/have`, `peer/P/probe`, `inbox/P/*` |
+| Peer `P` (join grant plus a request signed by `P`) | `peer/P/*`, `inbox/*/P/*` | `source/*`, `peer/*/caps`, `peer/*/chat`, `peer/*/have`, `peer/P/probe`, `inbox/P/*` |
 | Edit session: owner `O` (token signed by the project key and `O`'s peer key) | `source/*`, plus everything peer `O` may publish | Everything |
-| Edit session: peer `P` with `view` | `peer/P/*` except `batches` and `history/*`, `inbox/*/P`, `inbox/*/deliver/P` | `source/*`, `asset/*`, `peer/*/chat`, `peer/*/grants`, `peer/*/batches`, `peer/*/history/*`, `peer/*/presence`, `peer/*/control`, `inbox/P/*` |
+| Edit session: peer `P` with `view` | `peer/P/*` except `batches` and `history/*`, `inbox/*/P/*` | `source/*`, `asset/*`, `peer/*/chat`, `peer/*/grants`, `peer/*/batches`, `peer/*/history/*`, `peer/*/presence`, `peer/*/control`, `inbox/P/*` |
 | Edit session: peer `P` with `propose` or `edit` | The same, plus `peer/P/batches`, `peer/P/history/*` and, with `edit`, `asset/P/*` | The same |
 
 The relay checks the signatures once per connection.
@@ -938,4 +946,6 @@ The sync package needs these engine capabilities through public exports:
 ## Testing
 
 - **Unit tests** (`test/*.unit.ts`, `bun run test`) run in Chromium, each file in a module worker of its own page (`tooling/run-unit.ts`), as every package's tests do: never in Bun, so Web Crypto, `DataView` and base64 are tested in the browser that ships them. The worker is a dedicated one, so the chat store's OPFS sync access handles are tested there too, each test in a session directory of its own. Peers in a test are joined by links in memory (`test/support/memory-link.ts`), which carry messages as JSON, as a transport does. They run in CI's `sync test` job on every change to the package.
-- **Browser tests** drive a page with Playwright, as the engine's do, for the modules that need one: IndexedDB, File System Access, WebTransport, WebRTC, and the engine itself. The first such module adds them.
+- **Browser tests** (`test/*.test.ts` other than `unit.test.ts`) drive a page with Playwright, as the engine's do, for the modules that need one: IndexedDB, File System Access, WebTransport, WebRTC, and the engine itself.
+- **The relay tests** (`test/relay.test.ts`) run peers in workers of Chromium pages against a real relay: MOQtail's draft-18 relay, pinned by digest and started in Docker for each test (`test/support/relay.ts`). One relay per test keeps a relay that fails from failing the next test: MOQtail's stops answering once a peer leaves while it is handling that peer's `PUBLISH`. Its certificate is made for each run and trusted by its hash, so none is kept. On Colima, which doesn't forward UDP ports, the relay is reached at the VM's address: start Colima with `colima start --network-address`.
+- **The test relay keeps objects** for a while after forwarding them, which the design's relay doesn't. No test relies on it: every subscription starts at the next group.
