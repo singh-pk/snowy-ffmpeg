@@ -21,6 +21,7 @@ Snowy is a frontend-only media toolkit for the browser: a video player that play
 | [`@snowy-media/engine`](packages/engine) | The playback pipeline: demuxing, decoding, an audio clock and WebGPU rendering in workers (in development) | [MIT](LICENSE) |
 | [`@snowy-media/ffmpeg`](packages/ffmpeg) | FFmpeg 9 compiled to small, lazily loaded WebAssembly modules for demuxing and decoding | [LGPL-2.1-or-later](LICENSES/LGPL-2.1-or-later.txt) |
 | [`@snowy-media/sync`](packages/sync) | Watch-together sessions: a local file streamed to a group, with shared chat and per-viewer audio and subtitles (in design) | [MIT](LICENSE) |
+| [`@snowy-media/timeline`](packages/timeline) | The edit document of the editor: a magnetic timeline, its operations, and one linear history shared by every person and agent editing it (in design) | [MIT](LICENSE) |
 
 Each package has its own README, documentation in `docs/` and CHANGELOG.
 

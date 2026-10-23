@@ -10,6 +10,7 @@ body:
         - "@snowy-media/engine"
         - "@snowy-media/ffmpeg"
         - "@snowy-media/sync"
+        - "@snowy-media/timeline"
         - Repository, CI or docs
     validations:
       required: true

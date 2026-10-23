@@ -75,6 +75,11 @@ labels:
   - { name: "package:ffmpeg", color: "0e8a16", description: "packages/ffmpeg, @snowy-media/ffmpeg" }
   - { name: "package:sync", color: "0e8a16", description: "packages/sync, @snowy-media/sync" }
   - {
+      name: "package:timeline",
+      color: "0e8a16",
+      description: "packages/timeline, @snowy-media/timeline",
+    }
+  - {
       name: "area:core",
       color: "1d76db",
       description: "packages/ffmpeg/src/, the FFmpeg modules and its JavaScript API",
