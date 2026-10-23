@@ -15,6 +15,60 @@
 /** The codecs WebCodecs decodes, by FFmpeg's name; FFmpeg decodes the rest (src/video.worker.ts). */
 export const WEBCODECS = new Set(["h264", "hevc", "vp8", "vp9", "av1"]);
 
+// FFmpeg's colour names, as VideoColorSpace names them; any other leaves it unstated.
+// TypeScript's DOM types know fewer of these than Chromium takes (PQ, HLG, BT.2020), so they
+// are strings here, checked by the guards below.
+const PRIMARIES: Record<string, string> = {
+  bt709: "bt709",
+  bt470bg: "bt470bg",
+  smpte170m: "smpte170m",
+  bt2020: "bt2020",
+  smpte432: "smpte432",
+};
+const TRANSFERS: Record<string, string> = {
+  bt709: "bt709",
+  smpte170m: "smpte170m",
+  "iec61966-2-1": "iec61966-2-1",
+  linear: "linear",
+  // BT.2020's 10- and 12-bit transfer is BT.709's curve.
+  "bt2020-10": "bt709",
+  "bt2020-12": "bt709",
+  smpte2084: "pq",
+  "arib-std-b67": "hlg",
+};
+const MATRICES: Record<string, string> = {
+  gbr: "rgb",
+  bt709: "bt709",
+  bt470bg: "bt470bg",
+  smpte170m: "smpte170m",
+  bt2020nc: "bt2020-ncl",
+};
+const isPrimaries = (v = ""): v is VideoColorPrimaries => Object.values(PRIMARIES).includes(v);
+const isTransfer = (v = ""): v is VideoTransferCharacteristics =>
+  Object.values(TRANSFERS).includes(v);
+const isMatrix = (v = ""): v is VideoMatrixCoefficients => Object.values(MATRICES).includes(v);
+
+/**
+ * The VideoColorSpace of a stream or frame whose colour FFmpeg names so (`sny_color_*_name`),
+ * stating only what it names and WebCodecs knows.
+ */
+export function colorSpace(names: {
+  primaries: string;
+  transfer: string;
+  matrix: string;
+  range: string;
+}): VideoColorSpaceInit {
+  const space: VideoColorSpaceInit = {};
+  const primaries = PRIMARIES[names.primaries];
+  const transfer = TRANSFERS[names.transfer];
+  const matrix = MATRICES[names.matrix];
+  if (isPrimaries(primaries)) space.primaries = primaries;
+  if (isTransfer(transfer)) space.transfer = transfer;
+  if (isMatrix(matrix)) space.matrix = matrix;
+  if (names.range === "pc" || names.range === "tv") space.fullRange = names.range === "pc";
+  return space;
+}
+
 /** What the media worker knows of a video stream before decoding it. */
 export interface VideoParams {
   /** FFmpeg's codec name. */
@@ -36,6 +90,8 @@ export interface VideoParams {
   level: number;
   /** The width of a pixel over its height, as a fraction; 0/1 when unknown. */
   sampleAspect: [number, number];
+  /** Its colour, as the container or codec parameters state it (colorSpace). */
+  colorSpace: VideoColorSpaceInit;
   /** The stream's time base, as a fraction of a second. */
   timeBase: [number, number];
   /** When its first frame is due, in the time base; 0 when unknown. */
@@ -353,7 +409,16 @@ export function videoConfig(p: VideoParams, keyframe: Uint8Array): VideoDecoderC
   // frames than the stream reorders, and in sparse video those wait seconds for the packets
   // that let them out. Decoding 4K is about as fast with it
   // (docs/architecture.md#video-decoder-configs).
-  const size = { codedWidth: p.width, codedHeight: p.height, ...aspect, optimizeForLatency: true };
+  // The colour the container states. Without it, Chromium takes a VP9 stream, whose
+  // bitstream states no transfer, for BT.709 SDR, HDR included.
+  const colour = Object.keys(p.colorSpace).length > 0 ? { colorSpace: p.colorSpace } : {};
+  const size = {
+    codedWidth: p.width,
+    codedHeight: p.height,
+    ...aspect,
+    ...colour,
+    optimizeForLatency: true,
+  };
   if (p.codec === "h264") return { ...h264(p, keyframe), ...size };
   if (p.codec === "hevc") return { ...hevc(p, keyframe), ...size };
   if (p.codec === "vp9") return { codec: vp9Codec(keyframe, p.width, p.height, p.level), ...size };

@@ -3,7 +3,8 @@
 //
 // WebCodecs decoder configs (src/codec.ts) in Chromium: every fixture has a decoder, and for
 // every fixture WebCodecs decodes, the browser's VideoDecoder takes the config made from the
-// media worker's parameters and the first packet, and decodes that packet to frame 0; the codec
+// media worker's parameters and the first packet, and decodes that packet to frame 0, in the
+// colour the file states (as ffprobe names it, test/fixtures/expected.json); the codec
 // string is the one native FFmpeg writes, where it writes one (test/fixtures/expected.json).
 // The same holds for the stream as it would be without a configuration record (MPEG-TS, raw
 // streams): Annex B, its parameter sets in band.
@@ -13,9 +14,22 @@ import { afterAll, expect, test } from "bun:test";
 import { launch } from "./support/browsers";
 import { MEDIA_WORKER, PAGE, serveEngine } from "./support/serve";
 
-const expected: Record<string, { video: { id: number; codec: string; codecString?: string } }> =
-  await Bun.file(new URL("fixtures/expected.json", import.meta.url)).json();
-const files = Object.entries(expected).map(([name, e]) => ({ name, stream: e.video.id }));
+interface Colour {
+  primaries: string;
+  transfer: string;
+  matrix: string;
+  range: string;
+}
+
+const expected: Record<
+  string,
+  { video: { id: number; codec: string; codecString?: string; colour: Colour } }
+> = await Bun.file(new URL("fixtures/expected.json", import.meta.url)).json();
+const files = Object.entries(expected).map(([name, e]) => ({
+  name,
+  stream: e.video.id,
+  colour: e.video.colour,
+}));
 const server = await serveEngine("<!doctype html><title>test</title>");
 
 afterAll(() => server.stop(true));
@@ -35,7 +49,7 @@ test("decodes the first frame of every fixture with the config the engine makes"
         // An error names its fixture instead of ending the run.
         const results: Record<string, Checked | { error: string } | { decoder: string }> = {};
 
-        for (const { name: n, stream } of all) {
+        for (const { name: n, stream, colour } of all) {
           const res = await fetch(`/test/fixtures/${n}`);
           const blob = await res.blob();
           const opened = await media.request({ type: "open", file: new File([blob], n) });
@@ -52,7 +66,7 @@ test("decodes the first frame of every fixture with the config the engine makes"
           const keyframe = await support.firstPacket(media, stream);
 
           try {
-            results[n] = await support.checkVideoConfig(params, keyframe);
+            results[n] = await support.checkVideoConfig(params, keyframe, colour);
           } catch (e) {
             results[n] = { error: String(e) };
           }
@@ -79,6 +93,10 @@ test("decodes the first frame of every fixture with the config the engine makes"
 
       expect(got.supported, `${file} ${got.codec} supported`).toBe(true);
       expect(got.id, `${file} first frame`).toBe(0);
+
+      // The decoded frame carries the colour the file states.
+      expect(got.colour, `${file} colour`).toMatchObject(got.stated ?? {});
+
       expect(got.inBandId, `${file} first frame in band`).toBe(0);
       // A record names HEVC hvc1 (parameter sets out of band), parameter sets in band hev1.
       expect(got.inBandCodec, `${file} in band`).toBe(got.codec.replace(/^hvc1/, "hev1"));

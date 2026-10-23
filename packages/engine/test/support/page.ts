@@ -9,7 +9,7 @@
 
 import { AV_NOPTS_VALUE, AV_PKT_FLAG_KEY } from "@snowy-media/ffmpeg/core";
 import { createAudioOutput } from "../../src/audio";
-import { type VideoParams, videoConfig } from "../../src/codec";
+import { colorSpace, type VideoParams, videoConfig } from "../../src/codec";
 import { createCompositor } from "../../src/compositor";
 import { createPcmControl, createPcmRing } from "../../src/pcm";
 import type { FromMedia, ToMedia } from "../../src/protocol";
@@ -267,31 +267,40 @@ async function decodeFrameId(config: VideoDecoderConfig, keyframe: Uint8Array) {
   const frame = await decoded.promise;
   await flushed;
   decoder.close();
+  const colour = frame.colorSpace.toJSON();
   const canvas = new OffscreenCanvas(frame.displayWidth, frame.displayHeight);
   const context = canvas.getContext("2d");
   if (!context) throw new Error("no 2D context");
   context.drawImage(frame, 0, 0);
   frame.close();
   const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
-  return readFrameId(data, canvas.width * 4, 4);
+  return { id: readFrameId(data, canvas.width * 4, 4), colour };
 }
 
 /**
  * The decoder config of a stream with parameters `p` and first packet `keyframe`, whether
- * the browser's VideoDecoder takes it, and if it does, the frame number of the frame it
- * decodes; and the same for the stream as it would be without a configuration record, its
- * parameter sets in band.
+ * the browser's VideoDecoder takes it, and if it does, the frame number and colour space of
+ * the frame it decodes, and the colour space the stream states as FFmpeg `names` it; and the
+ * frame number for the stream as it would be without a configuration record, its parameter
+ * sets in band.
  */
-export async function checkVideoConfig(p: VideoParams, keyframe: Uint8Array) {
+export async function checkVideoConfig(
+  p: VideoParams,
+  keyframe: Uint8Array,
+  names: Parameters<typeof colorSpace>[0],
+) {
   const config = videoConfig(p, keyframe);
   const inBandKeyframe = inBand(p, keyframe);
   const inBandConfig = videoConfig({ ...p, extradata: new Uint8Array() }, inBandKeyframe);
   const { supported = false } = await VideoDecoder.isConfigSupported(config);
   const result = { codec: config.codec, inBandCodec: inBandConfig.codec, supported };
-  if (!supported) return { ...result, id: undefined, inBandId: undefined };
-  const id = await decodeFrameId(config, keyframe);
-  const inBandId = await decodeFrameId(inBandConfig, inBandKeyframe);
-  return { ...result, id, inBandId };
+  const none = { id: undefined, inBandId: undefined, colour: undefined, stated: undefined };
+  if (!supported) return { ...result, ...none };
+  const { id, colour } = await decodeFrameId(config, keyframe);
+  const { id: inBandId } = await decodeFrameId(inBandConfig, inBandKeyframe);
+  // The colour the stream states, as the decoded frame should carry it.
+  const stated = colorSpace(names);
+  return { ...result, id, inBandId, colour, stated };
 }
 
 /**

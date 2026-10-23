@@ -10,6 +10,7 @@
 
 import { expect, test } from "../../../tooling/unit";
 import {
+  colorSpace,
   hevcCodec,
   isRasl,
   makesFrame,
@@ -18,7 +19,7 @@ import {
   vp9Codec,
 } from "../src/codec";
 
-// A stream without a configuration record, a level or a display matrix.
+// A stream without a configuration record, a level, a display matrix or a stated colour.
 const STREAM: VideoParams = {
   codec: "av1",
   decoder: "webcodecs",
@@ -29,6 +30,7 @@ const STREAM: VideoParams = {
   height: 1080,
   level: -99,
   sampleAspect: [1, 1],
+  colorSpace: {},
   timeBase: [1, 1000],
   start: 0,
   matrix: [],
@@ -147,6 +149,32 @@ test("AV1: a reduced still picture header, profile 2, 12-bit", () => {
 test("a codec WebCodecs does not decode is an error", () => {
   const p = { ...STREAM, codec: "mpeg4" };
   expect(() => videoConfig(p, new Uint8Array())).toThrow("not a codec WebCodecs decodes");
+});
+
+test("FFmpeg's colour names become WebCodecs', and only those WebCodecs knows", () => {
+  const pq = { primaries: "bt2020", transfer: "smpte2084", matrix: "bt2020nc", range: "tv" };
+  expect(colorSpace(pq)).toEqual({
+    primaries: "bt2020",
+    transfer: "pq",
+    matrix: "bt2020-ncl",
+    fullRange: false,
+  });
+  const hlg = { primaries: "unknown", transfer: "arib-std-b67", matrix: "gbr", range: "pc" };
+  expect(colorSpace(hlg)).toEqual({ transfer: "hlg", matrix: "rgb", fullRange: true });
+  expect(colorSpace({ primaries: "", transfer: "", matrix: "", range: "unknown" })).toEqual({});
+  const sdr10 = { primaries: "bt2020", transfer: "bt2020-10", matrix: "bt2020nc", range: "" };
+  expect(colorSpace(sdr10)).toEqual({
+    primaries: "bt2020",
+    transfer: "bt709",
+    matrix: "bt2020-ncl",
+  });
+});
+
+test("the stated colour goes into the config; none states none", () => {
+  const space: VideoColorSpaceInit = { primaries: "bt709", fullRange: false };
+  const stated = { ...STREAM, codec: "vp8", colorSpace: space };
+  expect(videoConfig(stated, new Uint8Array()).colorSpace).toEqual(space);
+  expect(videoConfig({ ...STREAM, codec: "vp8" }, new Uint8Array()).colorSpace).toBeUndefined();
 });
 
 const vp8 = (sampleAspect: [number, number]) =>
