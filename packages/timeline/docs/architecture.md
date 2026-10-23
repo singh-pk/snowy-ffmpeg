@@ -398,6 +398,8 @@ type Refusal = {
 - It appends a batch only after the same author's previous batch on the branch (`branchPrev`) is appended or refused, so each author's edits on a branch stay in the order they made them. A batch for another branch never holds one back.
 - It checks a batch's signature, chain and rights before appending it. A batch that fails gets a **refusal**, which settles that seq: the author's next batch can follow it, and the author is told why.
 - **The document is the entries applied in order, 1 to n.** Every peer with the same entries has the same document.
+- Entries and refusals are signed the way batches are, under the domains `snowy entry v1\n` and `snowy refusal v1\n`. An entry's hash is its `prev` in the next entry and its `hash` in an `EntryRef`.
+- An entry that arrives before its batch, or before the entry ahead of it, waits for both; one that doesn't follow the last entry, or names a batch already appended or under another hash, is never applied.
 
 ### Pending batches
 
@@ -406,12 +408,13 @@ A batch waits between being committed and being appended. Nobody waits for it:
 - Each peer shows the document as **the history, then every pending batch it holds**, in `(hlc, author)` order. The author sees their edit at once; peers see it as soon as it arrives, in the same provisional order, before the sequencer does anything.
 - When an entry arrives for a pending batch, the batch moves into the history. The view changes only where the sequencer's order differs from the provisional one and the batches it swaps touch the same items: which value of a leaf wins, which of two items at the same position comes first, which operation is skipped. Edits a few milliseconds apart are the only ones that swap.
 - Pending batches are shown as such in the history, below the last entry.
+- A peer keeps the entries' document apart from the shown one. An entry that appends the first batch shown changes nothing shown; any other entry shows the pending batches again, from the entries' document, and the ranges to redraw are those both showings touched.
 - **The sequencer being away doesn't stop anyone.** Peers keep editing, and their batches stay pending, ordered the same way on every peer.
 - **Offline edits** are pending batches of the peer that made them. The sequencer receives them when the peer reconnects, so they are appended after everything already in the history, with their `base` showing what the author had seen.
 
 ### Concurrent edits
 
-An entry is **concurrent** if an entry by another author, between its batch's `base` and itself, touched an item or leaf it touches: its author couldn't see that change. Concurrency is worked out when the entry is applied, so every peer marks the same entries. The history shows the mark, and an agent is told, so a person can look at that edit again. Nothing is refused or merged by hand.
+An entry is **concurrent** if an entry by another author, between its batch's `base` and itself, touched an item or leaf it touches: its author couldn't see that change. Concurrency is worked out when the entry is applied, so every peer marks the same entries. An operation the entry skipped touches nothing. Setting a leaf touches that leaf, and a keyframe its target's parameter at its source point; moving, removing, restoring, splitting or joining an item touches all of it, so it clashes with any leaf of it; adding touches nothing, since the new id is the entry's own. Two leaves of one item don't clash. The history shows the mark, and an agent is told, so a person can look at that edit again. Nothing is refused or merged by hand.
 
 ### Changing sequencer
 
@@ -427,6 +430,7 @@ type Term = {
 };
 ```
 
+- A branch's first sequencer appends in term 1, with no `Term`: the first in `sequencers` for `main`, the creator for any other branch.
 - A listed peer becomes a **candidate** when every peer listed before it is gone and no sequencer is active. It learns both from presence: `@snowy-media/sync` reports every peer that comes and goes, and nothing waits on a timer.
 - **A candidate catches up first.** It sends its version vectors to every connected peer and takes in every valid entry they reply with, signed by an earlier sequencer of the branch. When every peer has replied or gone, it starts a term after the end of the longest chain it holds. A peer that was offline for a day therefore continues from today's history, not its own.
 - A sequencer that sees a higher term from a peer listed before it stops sequencing.
