@@ -296,7 +296,7 @@ type BatchRef = { author: KeyId; seq: number };
 | `item.set` | Sets one leaf of an item: `{ id, path, value }` |
 | `item.move` | Gives an item a new anchor: a storyline position, a clip and source point, or the origin |
 | `item.remove` / `item.restore` | Removes an item, keeping it as a tombstone with its state; or restores it |
-| `clip.split` | Splits a clip at a timeline time into two, the second with a new id; connected items and keyframes after the split move to the second |
+| `clip.split` | Splits a clip at a timeline time into two, the second with a new id; connected items and keyframes after the split, and a transition on its end, move to the second, and its effects stay with the first |
 | `clip.join` | Joins two neighbouring pieces of one source that meet exactly, as a split left them, back into the first |
 | `effect.add` / `effect.set` / `effect.remove` | An effect, one of its parameters, or its place in the chain |
 | `keyframe.set` / `keyframe.remove` | One keyframe |
@@ -343,6 +343,7 @@ Every editing tool is a batch of these:
 | Roll | `item.set` of the left clip's `duration`, and the right clip's `in` and `duration`, so the cut moves and nothing else does |
 | Slip | `item.set` of `in` |
 | Slide | `item.set` of the previous neighbour's `duration`, and the next neighbour's `in` and `duration` |
+| Blade | `clip.split`, and `effect.add` and `keyframe.set` copying the clip's effects and their keyframes onto the second piece |
 | Overwrite | `clip.split` at both ends of the range, `item.remove` of what lies between, `item.add` of the new clip at its position |
 
 ### Applying
@@ -357,7 +358,11 @@ Every editing tool is a batch of these:
 - **Times stay safe integers.** An operation that would put an item, or a storyline's length, past them is skipped as malformed; an item a later edit pushes past them isn't shown.
 - **A removed storyline item stays in the storyline with no length,** so the items after it close up and the items connected to it keep their place as orphans. Restoring it checks it again, as adding would.
 - **Setting a leaf of an absent `video` or `audio`** fills in the rest with their defaults: opacity 1, `normal` blend, the identity transform; no gain, pan or fades. `kind`, `anchor`, `cut`, `source` (other than a generator's `source.params.*`) and a role's `sequence` are never set: they change by their own operations or not at all.
-- **Applying reports what to redraw:** for each sequence, a range from the earliest start an operation changed. It runs to the end when what follows can move: after a storyline item, and after a connected clip, which can push later clips of its role to other lanes. A sequence's settings and a role's order redraw the whole sequence.
+- **A split** must fall strictly inside a live clip. The second piece starts at the source point the clip has reached there, plays on from it (down from it in reverse), and keeps the clip's fields, except that the first piece has no fade out and the second no fade in. In the storyline it takes a key between the clip's and the next greater one; connected, it takes the clip's anchor that much later. Effects stay with the first piece, since an operation makes only one id; the Blade tool copies them in the same batch.
+- **A join** needs two live clips of one source, speed, role and sequence, where the second starts at the source point and the time the first ends, on the same anchor. The first takes the second's length and fade out; the second is removed, and what the split moved comes back.
+- **An effect** belongs to a live clip; `effect.set` changes its `position`, `enabled` or a parameter, which keeps its type. **A keyframe** animates an effect's existing parameter, with a value of its type, or one of a clip's `video.*`, `audio.*` or `source.params.*` leaves, with a value that leaf takes; never its timing or its place.
+- **Reverting and branching** are applied by the history ([Linear history](#linear-history)), not by applying a batch to a document.
+- **Applying reports what to redraw:** for each sequence, a range from the earliest start an operation changed. It runs to the end when what follows can move: after a storyline item, and after a connected clip, which can push later clips of its role to other lanes. A sequence's settings and a role's order redraw the whole sequence; an effect or a keyframe, its clip alone.
 - **Applying is deterministic.** A skipped operation is recorded on its entry, so every peer skips the same ones, and the author sees which. Applying uses nothing but the entries: no clock, no random numbers, no locale.
 - **A field set replaces the leaf;** the last entry to set a leaf wins. Two people changing different leaves of one clip, one trimming and one grading, both keep their change.
 

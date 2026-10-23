@@ -7,7 +7,14 @@
 // Usage: bun run test
 
 import { expect, test } from "../../../tooling/unit";
-import { FLICKS_PER_SECOND, frameFlicks, snapToFrame, sourceToFlicks, toFlicks } from "../src/time";
+import {
+  FLICKS_PER_SECOND,
+  flicksToSource,
+  frameFlicks,
+  snapToFrame,
+  sourceToFlicks,
+  toFlicks,
+} from "../src/time";
 
 test("a frame at every common video rate is whole flicks", () => {
   const rates: Array<[[number, number], number]> = [
@@ -84,6 +91,16 @@ test("a source offset rounds once, after dividing by speed", () => {
   expect(sourceToFlicks(1, [1, 15_360], [1, 2])).toBe(91_875);
   expect(sourceToFlicks(1, [1, 15_360], [-1, 1])).toBe(-45_937);
   expect(() => sourceToFlicks(1, [1, 15_360], [0, 1])).toThrow(RangeError);
+});
+
+test("flicks played at a speed are that much source, rounded once", () => {
+  expect(flicksToSource(FLICKS_PER_SECOND, [1, 48], [1, 1])).toBe(48);
+  expect(flicksToSource(FLICKS_PER_SECOND, [1, 48], [2, 1])).toBe(96);
+  expect(flicksToSource(FLICKS_PER_SECOND, [1, 48], [-1, 2])).toBe(-24);
+  // A unit of 1/15360 s is 45,937.5 flicks: 22,968 is just under half of one, 22,969 just over.
+  expect(flicksToSource(22_968, [1, 15_360], [1, 1])).toBe(0);
+  expect(flicksToSource(22_969, [1, 15_360], [1, 1])).toBe(1);
+  expect(() => flicksToSource(Number.MAX_SAFE_INTEGER, [1, 2 ** 40], [1, 1])).toThrow(RangeError);
 });
 
 test("a time base that isn't a positive fraction is refused", () => {

@@ -78,6 +78,15 @@ export function sourceToFlicks(delta: number, timeBase: Ratio, [num, den]: Ratio
   return d < 0n ? roundHalfUp(-n, -d) : roundHalfUp(n, d);
 }
 
+/**
+ * How many units of its stream's `timeBase` a clip plays at `speed` in `flicks`: `flicks × speed`,
+ * converted once; the inverse of `sourceToFlicks`, up to rounding.
+ */
+export function flicksToSource(flicks: number, [tbNum, tbDen]: Ratio, [num, den]: Ratio) {
+  const n = integer(flicks, "flicks") * integer(num, "speed") * positive(tbDen, "time base");
+  return roundHalfUp(n, FLICKS * positive(den, "speed") * positive(tbNum, "time base"));
+}
+
 /** `flicks` moved down to the frame boundary at or before it, at `rate`. */
 export function snapToFrame(flicks: number, rate: Ratio) {
   const frame = BigInt(frameFlicks(rate));

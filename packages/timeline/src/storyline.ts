@@ -192,6 +192,21 @@ export function createStoryline() {
     throw new RangeError(`not in the storyline: ${id}`);
   }
 
+  /** The smallest position key in the storyline after `position`, if there is one. */
+  function keyAfter(position: PositionKey) {
+    let found: PositionKey | undefined;
+    let cursor = root;
+
+    while (cursor !== undefined) {
+      if (cursor.position > position) {
+        found = cursor.position;
+        cursor = cursor.left;
+      } else cursor = cursor.right;
+    }
+
+    return found;
+  }
+
   /** The item playing at `t` flicks: the one with `start <= t < start + duration`. */
   function at(t: number): Placed | undefined {
     let before = 0;
@@ -239,6 +254,7 @@ export function createStoryline() {
     setDuration,
     start,
     at,
+    keyAfter,
     items,
     has: (id: ItemId) => nodes.has(id),
     /** The storyline's length: the sum of every item's duration. */

@@ -88,6 +88,16 @@ test("the item at a time is the one that covers it; an item of no length covers 
   expect(storyline.start("b")).toBe(10);
 });
 
+test("the key after a position skips items tied at it", () => {
+  const storyline = createStoryline();
+  storyline.insert("x", "a0", 1);
+  storyline.insert("y", "a0", 1);
+  storyline.insert("z", "a5", 1);
+  expect(storyline.keyAfter("a0")).toBe("a5");
+  expect(storyline.keyAfter("a1")).toBe("a5");
+  expect(storyline.keyAfter("a5")).toBeUndefined();
+});
+
 test("an id is in a storyline once, and only items in it can be changed", () => {
   const storyline = storylineOf([10]);
   expect(() => storyline.insert("a", "a5", 1)).toThrow(RangeError);
