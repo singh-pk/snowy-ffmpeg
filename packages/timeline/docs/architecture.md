@@ -352,6 +352,9 @@ Every editing tool is a batch of these:
   - malformed: a value of the wrong type or out of range, an unknown path;
   - stale: setting a field of an item that doesn't exist, splitting a clip at a time it no longer covers, joining pieces that no longer meet;
   - structural: a compound clip that would contain itself; a connected anchor to an item that isn't a storyline clip; moving a storyline clip off the storyline while items are still connected to it. Re-anchoring those items earlier in the same batch makes the move fit.
+- **Which anchors fit which items:** clips and gaps go in the storyline; clips and markers connect to a storyline clip or to the origin; a transition sits on the end of a storyline item. An item moves only within its sequence. A clip's role must be one of its sequence's roles and take its kind of media (a generator is video), and a sequence or role still used by a live clip can't be removed.
+- **A removed storyline item stays in the storyline with no length,** so the items after it close up and the items connected to it keep their place as orphans. Restoring it checks it again, as adding would.
+- **Setting a leaf of an absent `video` or `audio`** fills in the rest with their defaults: opacity 1, `normal` blend, the identity transform; no gain, pan or fades. `kind`, `anchor`, `cut`, `source` (other than a generator's `source.params.*`) and a role's `sequence` are never set: they change by their own operations or not at all.
 - **Applying is deterministic.** A skipped operation is recorded on its entry, so every peer skips the same ones, and the author sees which. Applying uses nothing but the entries: no clock, no random numbers, no locale.
 - **A field set replaces the leaf;** the last entry to set a leaf wins. Two people changing different leaves of one clip, one trimming and one grading, both keep their change.
 

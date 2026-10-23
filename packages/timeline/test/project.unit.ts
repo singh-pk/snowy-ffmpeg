@@ -1,0 +1,329 @@
+// SPDX-FileCopyrightText: 2026 The Snowy Authors
+// SPDX-License-Identifier: MIT
+//
+// Applying item operations (src/project.ts), in Chromium: operations that fit change the
+// document, the rest are skipped with their reason, and applying reports what changed.
+// Usage: bun run test
+
+import { expect, test } from "../../../tooling/unit";
+import type { Batch } from "../src/batch";
+import type { ItemRecord } from "../src/document";
+import { createProject } from "../src/project";
+
+type Op = Batch["ops"][number];
+
+const SECOND = 705_600_000;
+const FRAME = SECOND / 24;
+const author = "A".repeat(43);
+const id = (seq: number, index: number) => `${author}.${seq}.${index}`;
+const sequence = id(1, 0);
+const video = id(1, 1);
+const audio = id(1, 2);
+const asset = "Q".repeat(43);
+
+// A project with a 24 fps sequence, a video and an audio role, and an asset with a video
+// stream in 1/24000 and an audio stream in 1/48000.
+function setUp() {
+  const project = createProject();
+  const ops: Op[] = [
+    {
+      op: "sequence.add",
+      sequence: { name: "Main", rate: [24, 1], width: 1920, height: 1080, sampleRate: 48_000 },
+    },
+    {
+      op: "role.add",
+      role: { sequence, name: "Video", kind: "video", color: "#3366ff", order: "a0" },
+    },
+    {
+      op: "role.add",
+      role: { sequence, name: "Music", kind: "audio", color: "#33cc66", order: "a1" },
+    },
+    {
+      op: "asset.add",
+      asset: {
+        id: asset,
+        size: 1000,
+        head: "E".repeat(43),
+        tail: "I".repeat(43),
+        name: "a.mp4",
+        streams: [
+          { index: 0, kind: "video", timeBase: [1, 24_000], start: 0, duration: 60 * SECOND },
+          { index: 1, kind: "audio", timeBase: [1, 48_000], start: 0, duration: 60 * SECOND },
+        ],
+      },
+    },
+  ];
+  expect(project.apply({ author, seq: 1, ops }).skipped).toEqual([]);
+  let seq = 1;
+
+  function apply(...more: Op[]) {
+    seq += 1;
+    return { seq, ...project.apply({ author, seq, ops: more }) };
+  }
+
+  return { project, apply };
+}
+
+function clip(changes: Partial<Extract<ItemRecord, { kind: "clip" }>> = {}): Op {
+  return {
+    op: "item.add",
+    item: {
+      kind: "clip",
+      source: { asset, stream: 0 },
+      in: 0,
+      duration: SECOND,
+      speed: [1, 1],
+      anchor: { storyline: sequence, position: "a0" },
+      role: video,
+      lane: 0,
+      enabled: true,
+      ...changes,
+    },
+  };
+}
+
+const at = (position: string) => ({ storyline: sequence, position });
+
+test("storyline items follow each other by position", () => {
+  const { project, apply } = setUp();
+  const { seq } = apply(
+    clip({ anchor: at("a1") }),
+    clip({ anchor: at("a0"), duration: 2 * SECOND }),
+  );
+  expect(project.start(id(seq, 1))).toBe(0);
+  expect(project.start(id(seq, 0))).toBe(2 * SECOND);
+  expect(project.storyline(sequence).map((placed) => placed.id)).toEqual([id(seq, 1), id(seq, 0)]);
+});
+
+test("a connected clip sits at a source point of its clip", () => {
+  const { project, apply } = setUp();
+  const { seq } = apply(
+    clip({ in: 24_000 }),
+    clip({ anchor: { clip: id(2, 0), at: 36_000 }, role: video, lane: 1 }),
+  );
+  expect(seq).toBe(2);
+  // Half a second into the clip's media, which starts one second in.
+  expect(project.start(id(2, 1))).toBe(SECOND / 2);
+  // Trimming the clip's head keeps the connected clip on the same moment of the media.
+  apply({ op: "item.set", id: id(2, 0), path: "in", value: 12_000 });
+  expect(project.start(id(2, 1))).toBe(SECOND);
+});
+
+test("an origin anchor snaps a video clip down to a frame", () => {
+  const { project, apply } = setUp();
+  const { seq } = apply(clip({ anchor: { origin: sequence, at: FRAME + 5 } }));
+  expect(project.start(id(seq, 0))).toBe(FRAME);
+});
+
+test("an operation that doesn't fit is skipped, and the rest apply", () => {
+  const { project, apply } = setUp();
+  const result = apply(
+    clip(),
+    { op: "item.set", id: id(9, 9), path: "duration", value: 1 },
+    { op: "item.set", id: id(2, 0), path: "kind", value: "gap" },
+    { op: "item.set", id: id(2, 0), path: "duration", value: -1 },
+    { op: "clip.split", id: id(2, 0), at: 5 },
+    { op: "item.set", id: id(2, 0), path: "duration", value: 2 * SECOND },
+  );
+  expect(result.skipped.map(({ index, reason }) => [index, reason])).toEqual([
+    [1, "stale"],
+    [2, "malformed"],
+    [3, "malformed"],
+    [4, "unsupported"],
+  ]);
+  expect(project.item(id(2, 0))?.duration).toBe(2 * SECOND);
+  expect(result.changed).toEqual([id(2, 0)]);
+});
+
+test("setting one leaf of absent video fields fills in the rest", () => {
+  const { project, apply } = setUp();
+  apply(clip());
+  apply({ op: "item.set", id: id(2, 0), path: "video.transform.x", value: 10 });
+  const item = project.item(id(2, 0));
+  expect(item?.kind === "clip" ? item.video : undefined).toEqual({
+    opacity: 1,
+    blend: "normal",
+    transform: { x: 10, y: 0, scaleX: 1, scaleY: 1, rotation: 0 },
+  });
+});
+
+test("connected items anchor only to storyline clips", () => {
+  const { apply } = setUp();
+  const result = apply(
+    clip(),
+    clip({ anchor: { clip: id(2, 0), at: 0 }, lane: 1 }),
+    clip({ anchor: { clip: id(2, 1), at: 0 }, lane: 2 }),
+    {
+      op: "item.add",
+      item: { kind: "gap", anchor: { storyline: sequence, position: "a1" }, duration: SECOND },
+    },
+    clip({ anchor: { clip: id(2, 3), at: 0 }, lane: 2 }),
+    {
+      op: "item.add",
+      item: { kind: "marker", anchor: at("a2"), duration: 0, type: "marker", name: "m" },
+    },
+    {
+      op: "item.add",
+      item: { kind: "gap", anchor: { origin: sequence, at: 0 }, duration: SECOND },
+    },
+  );
+  expect(result.skipped.map(({ index, reason }) => [index, reason])).toEqual([
+    [2, "structural"],
+    [4, "structural"],
+    [5, "structural"],
+    [6, "structural"],
+  ]);
+});
+
+test("a clip's role must be of its sequence and take its kind of media", () => {
+  const { apply } = setUp();
+  const result = apply(
+    clip({ role: audio }),
+    clip({ source: { asset, stream: 1 }, role: audio, anchor: { origin: sequence, at: 0 } }),
+    clip({ role: id(9, 9) }),
+    clip({ source: { asset, stream: 7 } }),
+    clip({ source: { generator: "solid", params: { color: "#ffffff" } } }),
+  );
+  expect(result.skipped.map(({ index, reason }) => [index, reason])).toEqual([
+    [0, "structural"],
+    [2, "stale"],
+    [3, "stale"],
+  ]);
+});
+
+test("a compound clip can't contain its own sequence", () => {
+  const { apply } = setUp();
+  const { seq } = apply(
+    {
+      op: "sequence.add",
+      sequence: { name: "Inner", rate: [24, 1], width: 1920, height: 1080, sampleRate: 48_000 },
+    },
+    {
+      op: "role.add",
+      role: { sequence: id(2, 0), name: "V", kind: "video", color: "#000000", order: "a0" },
+    },
+  );
+  const inner = id(seq, 0);
+  const innerRole = id(seq, 1);
+  const result = apply(
+    clip({ source: { sequence: inner } }),
+    clip({
+      source: { sequence: sequence },
+      role: innerRole,
+      anchor: { storyline: inner, position: "a0" },
+    }),
+    clip({ source: { sequence: sequence } }),
+  );
+  expect(result.skipped.map(({ index, reason }) => [index, reason])).toEqual([
+    [1, "structural"],
+    [2, "structural"],
+  ]);
+});
+
+test("a storyline clip can leave the storyline only once nothing is connected to it", () => {
+  const { project, apply } = setUp();
+  apply(clip(), clip({ anchor: { clip: id(2, 0), at: 0 }, lane: 1 }));
+  const off = { op: "item.move" as const, id: id(2, 0), anchor: { origin: sequence, at: 0 } };
+  expect(apply(off).skipped.map(({ reason }) => reason)).toEqual(["structural"]);
+  // Re-anchoring the connected clip earlier in the same batch makes the move fit.
+  const result = apply({ op: "item.move", id: id(2, 1), anchor: { origin: sequence, at: 0 } }, off);
+  expect(result.skipped).toEqual([]);
+  expect(project.storyline(sequence)).toEqual([]);
+});
+
+test("items move only within their sequence", () => {
+  const { apply } = setUp();
+  const { seq } = apply({
+    op: "sequence.add",
+    sequence: { name: "Other", rate: [24, 1], width: 1920, height: 1080, sampleRate: 48_000 },
+  });
+  apply(clip());
+  const result = apply({
+    op: "item.move",
+    id: id(3, 0),
+    anchor: { storyline: id(seq, 0), position: "a0" },
+  });
+  expect(result.skipped.map(({ reason }) => reason)).toEqual(["structural"]);
+});
+
+test("a removed storyline clip closes up, and its connected items become orphans in place", () => {
+  const { project, apply } = setUp();
+  apply(
+    clip(),
+    clip({ anchor: at("a1") }),
+    clip({ anchor: { clip: id(2, 1), at: 12_000 }, lane: 1 }),
+  );
+  expect(project.start(id(2, 2))).toBe(SECOND + SECOND / 2);
+  const removed = apply({ op: "item.remove", id: id(2, 0) });
+  expect(removed.ranges.get(sequence)).toEqual({ from: 0, to: Number.POSITIVE_INFINITY });
+  expect(project.start(id(2, 1))).toBe(0);
+  apply({ op: "item.remove", id: id(2, 1) });
+  expect(project.item(id(2, 2))?.orphaned).toBe(true);
+  expect(project.start(id(2, 2))).toBe(SECOND / 2);
+  expect(project.storyline(sequence)).toEqual([]);
+  // A new item can't anchor to a removed clip, but restoring it brings everything back.
+  expect(
+    apply(clip({ anchor: { clip: id(2, 1), at: 0 } })).skipped.map(({ reason }) => reason),
+  ).toEqual(["stale"]);
+  apply({ op: "item.restore", id: id(2, 1) }, { op: "item.restore", id: id(2, 0) });
+  expect(project.start(id(2, 1))).toBe(SECOND);
+  expect(project.item(id(2, 2))?.orphaned).toBe(false);
+});
+
+test("a role in use can't be removed", () => {
+  const { project, apply } = setUp();
+  apply(clip());
+  expect(apply({ op: "role.remove", id: video }).skipped.map(({ reason }) => reason)).toEqual([
+    "structural",
+  ]);
+  apply({ op: "item.remove", id: id(2, 0) }, { op: "role.remove", id: video });
+  // Restoring the clip finds its role gone.
+  expect(apply({ op: "item.restore", id: id(2, 0) }).skipped.map(({ reason }) => reason)).toEqual([
+    "stale",
+  ]);
+  expect(project.item(id(2, 0))?.removed).toBe(true);
+});
+
+test("a connected change reports the range it covered before and after", () => {
+  const { apply } = setUp();
+  apply(clip({ anchor: { origin: sequence, at: SECOND } }));
+  const result = apply({
+    op: "item.move",
+    id: id(2, 0),
+    anchor: { origin: sequence, at: 3 * SECOND },
+  });
+  expect(result.ranges.get(sequence)).toEqual({ from: SECOND, to: 4 * SECOND });
+});
+
+test("lanes stack connected clips of a role that overlap", () => {
+  const { project, apply } = setUp();
+  apply(
+    clip({ anchor: { origin: sequence, at: 0 }, duration: 2 * SECOND }),
+    clip({ anchor: { origin: sequence, at: SECOND } }),
+    clip({ anchor: { origin: sequence, at: 2 * SECOND } }),
+  );
+  const lanes = project.lanes(video);
+  expect([lanes.get(id(2, 0)), lanes.get(id(2, 1)), lanes.get(id(2, 2))]).toEqual([0, 1, 0]);
+});
+
+test("a frame rate that isn't whole flicks is skipped", () => {
+  const { project, apply } = setUp();
+  const result = apply({ op: "sequence.set", id: sequence, path: "rate", value: [11, 1] });
+  expect(result.skipped.map(({ reason }) => reason)).toEqual(["malformed"]);
+  expect(project.sequence(sequence)?.rate).toEqual([24, 1]);
+  expect(
+    apply({ op: "role.set", id: video, path: "sequence", value: id(9, 9) }).skipped,
+  ).toHaveLength(1);
+});
+
+test("a transition sits on its cut and needs a storyline item", () => {
+  const { project, apply } = setUp();
+  const transition = (cut: string): Op => ({
+    op: "item.add",
+    item: { kind: "transition", cut, duration: 2 * FRAME, effect: "cross.dissolve", params: {} },
+  });
+  apply(clip(), clip({ anchor: at("a1") }), clip({ anchor: { origin: sequence, at: 0 }, lane: 1 }));
+  const result = apply(transition(id(2, 0)), transition(id(2, 2)));
+  expect(result.skipped.map(({ index, reason }) => [index, reason])).toEqual([[1, "structural"]]);
+  expect(project.start(id(result.seq, 0))).toBe(SECOND - FRAME);
+});
