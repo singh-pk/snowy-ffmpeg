@@ -7,7 +7,13 @@
 // Usage: bun test test/chat-batch.test.ts
 
 import { expect, test } from "bun:test";
-import { batchKey, decodeBatch, encodeBatch, InvalidBatchError } from "../src/chat-batch";
+import {
+  batchKey,
+  decodeBatch,
+  encodeBatch,
+  InvalidBatchError,
+  sealBatch,
+} from "../src/chat-batch";
 import { signCheckpoint, type ChatMessage } from "../src/chat";
 import { contentKey, seal } from "../src/crypto";
 import { createAuthor } from "./support/chat";
@@ -47,6 +53,19 @@ test("only the author's consecutive messages make a batch", async () => {
     rejection(encodeBatch(alice.pair, content, [])),
     rejection(encodeBatch(alice.pair, content, [m1, m3])),
     rejection(encodeBatch(alice.pair, content, [theirs])),
+  ]);
+  for (const error of errors) expect(error).toBeInstanceOf(RangeError);
+});
+
+test("a batch is sealed only with a checkpoint at its last message, by its author", async () => {
+  const bobs = await bob.write({ kind: "text", text: "bob" });
+  const [atTwo, theirs] = await Promise.all([
+    signCheckpoint(alice.pair, m2),
+    signCheckpoint(bob.pair, bobs),
+  ]);
+  const errors = await Promise.all([
+    rejection(sealBatch(content, { messages: [m1, m2, m3], checkpoint: atTwo })),
+    rejection(sealBatch(content, { messages: [m1, m2], checkpoint: theirs })),
   ]);
   for (const error of errors) expect(error).toBeInstanceOf(RangeError);
 });

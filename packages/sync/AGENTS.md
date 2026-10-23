@@ -22,6 +22,10 @@ This package runs watch-together sessions: a local file streamed from one source
 | `src/chat-log.ts` | the chat log: shared order, gaps, version vectors, and edits, deletes and reactions applied |
 | `src/chat-batch.ts` | the chat batch: an author's queued messages and checkpoint, sealed as one object |
 | `src/chat-sender.ts` | sending this peer's chat: chaining each message, and batching whenever the stream is free |
+| `src/chat-receiver.ts` | receiving chat batches from tracks, repairs and this peer: into the log, the holdings and gap repair |
+| `src/chat-holdings.ts` | what a peer holds of each author's chat, one checkpoint per run, to answer repairs and version vectors |
+| `src/chat-repairs.ts` | asking for missing chat: one ask per author, moved to the next ranked peer on `gone` or a closed link |
+| `src/rank.ts` | ranking peers by hash, so every asker picks alike and different questions spread out |
 | `test/` | Bun tests; `test/support/` holds what they share |
 
 ## Rules
