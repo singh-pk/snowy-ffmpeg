@@ -19,7 +19,10 @@ export interface EngineOptions {
 }
 
 export interface Engine {
-  /** Opens `file` in place of the open one, stopping it, and resolves with what it holds. */
+  /**
+   * Opens `file` in place of the open one, stopping it and clearing the canvas to black, and
+   * resolves with what it holds.
+   */
   open(file: File): Promise<MediaInfo>;
   /**
    * Plays the open file's first video and first audio track from where it is, once the
@@ -415,6 +418,7 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
 
   async function open(file: File) {
     stop();
+    render.postMessage({ type: "clear" } satisfies ToRender);
     state.failure = undefined;
     state.opened = undefined;
     state.from = 0;

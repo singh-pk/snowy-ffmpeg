@@ -5,7 +5,7 @@
 // puts up exactly the frame due at its target, the one FFmpeg's timestamps say, and the clock
 // reads the target; a seek while playing plays on from there, with the frame due on screen;
 // and a scrub, fastSeek on every animation frame, shows frames on the way, never past it, and
-// plays on from where it is let go.
+// plays on from where it is let go. An open clears the canvas.
 // Each fixture takes SNOWY_SEEKS seeks (default 10) to the start, the end, frames' own times,
 // between frames and at random; the gate is `SNOWY_SEEKS=50 bun test test/seek.test.ts`.
 // Usage: bun run test.
@@ -321,6 +321,56 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
         // Back behind where it paused, exactly.
         expect(got.again).toBe(frameAt(v, Math.round(SCRUB_AGAIN * 1e6)));
         expect(got.nearAt, `at ${got.near} s`).toBe(frameAt(v, Math.round(got.near * 1e6)));
+      } finally {
+        await browser.close();
+      }
+    }, 60_000);
+
+    // Nothing of a file stays on screen once another opens.
+    test("clears the canvas when another file opens", async () => {
+      const browser = await type.launch(options);
+      const v = expected[SCRUBBED]?.video;
+      if (!v) throw new Error(`no video in ${SCRUBBED}`);
+
+      try {
+        const tab = await browser.newPage();
+        await tab.goto(server.url.href);
+        const got = await tab.evaluate(
+          async ({ entry, page, file, settle }) => {
+            const engine: typeof import("../src/index") = await import(entry);
+            const support: typeof import("./support/page") = await import(page);
+            const canvas = document.querySelector("canvas");
+            if (!canvas) throw new Error("no canvas");
+            const player = await engine.createEngine({ canvas });
+            const res = await fetch(`/test/fixtures/${file}`);
+            const blob = await res.blob();
+            await player.open(new File([blob], file));
+            await player.seek(1);
+            const shown = await support.watchScreen(player, canvas, settle);
+            await player.open(new File([blob], file));
+            // On each animation frame until the canvas reads black: the render worker says
+            // nothing when it has cleared. Without the clear, the test times out.
+            const reader = new OffscreenCanvas(canvas.width, canvas.height).getContext("2d");
+            if (!reader) throw new Error("no 2D context");
+            const brightest = { value: -1 };
+
+            while (brightest.value !== 0) {
+              await new Promise((resolve) => requestAnimationFrame(resolve));
+              reader.drawImage(canvas, 0, 0);
+              const { data } = reader.getImageData(0, 0, canvas.width, canvas.height);
+              brightest.value = data.reduce(
+                (max, c, i) => (i % 4 === 3 ? max : Math.max(max, c)),
+                0,
+              );
+            }
+
+            player.close();
+            return { shown: shown.at(-1)?.[1] };
+          },
+          { entry: ENTRY, page: PAGE, file: SCRUBBED, settle: SETTLE },
+        );
+
+        expect(got.shown).toBe(frameAt(v, 1e6));
       } finally {
         await browser.close();
       }

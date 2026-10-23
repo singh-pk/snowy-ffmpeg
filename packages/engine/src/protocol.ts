@@ -41,7 +41,9 @@ export type ToRender =
     }
   // The play `id`, paused, goes on to `to` (microseconds) by decoding on: a scrub forward.
   | { type: "scrub"; id: number; to: number }
-  | { type: "stop" };
+  | { type: "stop" }
+  // Stops what plays and clears the canvas: another file opens.
+  | { type: "clear" };
 
 export type FromRender =
   | { type: "ready" }
