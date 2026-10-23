@@ -461,14 +461,14 @@ An undo's operations are worked out when it is committed, from the document its 
 - **A keyframe the batch set** is removed if it was new, or set back to its earlier value and ease, if it still has the ones the batch gave it; **one it removed** is set again, if nothing has been set there since.
 - **A split** is undone with `clip.join`, which also takes back the connected items and keyframes the split moved, since both are anchored to source points. **A join** is undone with `clip.split` where the first piece ended, if the clip is as the join left it; the second piece then has a new id.
 - **A revert** isn't undone: reverting to the entry before it does that. Branch operations aren't undone either.
-- The batch's operations are undone last first, each against the document as the undo's operations so far leave it, so a leaf the batch set on an item it then removed is set back once the item is restored.
+- The batch's operations are undone last first, each against the document as the undo's operations so far leave it, compared with the batch's own document taken back the same way. A leaf the batch set on an item it then removed is set back once the item is restored, and a clip it cut in three is joined back whole.
 - What an undo leaves alone is reported per operation, with why. A batch is undone against the document as shown, pending batches included, so the author's latest edit can be undone before the sequencer has appended it.
 
 Undo is per author: undo takes back your edits, never someone else's that came after them.
 
 Reverting to an entry sets each record to its state at that entry. A record added after it is removed, keeping its state and id, so a later batch can restore it. Keyframes are those of that entry. A revert naming an entry the branch doesn't have under that hash, such as one a new term dropped, is skipped as stale. It redraws every sequence, and touches every item for telling concurrent entries.
 
-The history keeps the entries' document every `SNAPSHOT_EVERY` entries in memory, as the project folder does on disk, so going back to an entry or reverting to it applies fewer than that many entries. It also keeps the document after every entry that holds a revert, so the entries it applies never hold one. A revert to the last entry, part way through a batch, reverts to the document before that batch, as it did while the batch was pending. Since a pending revert's result depends on the entries the peer had, its entry always shows the pending batches again.
+The history keeps the entries' document every `SNAPSHOT_EVERY` entries in memory, as the project folder does on disk, so going back to an entry or reverting to it applies fewer than that many entries. It also keeps the document after every entry that holds a revert, so the entries it applies never hold one; memory grows with the number of reverts. A revert to the last entry, part way through a batch, reverts to the document before that batch, as it did while the batch was pending. Since a pending revert's result depends on the entries the peer had, its entry always shows the pending batches again.
 
 ## Branches
 

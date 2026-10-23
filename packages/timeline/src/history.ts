@@ -275,7 +275,9 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
       batch,
       skipped: skips[(entryOf.get(keyOf(batch)) ?? 0) - 1] ?? new Set<number>(),
     }));
-    const mine = [...appendedOwn, ...pendingOwn].toSorted((a, b) => b.batch.seq - a.batch.seq);
+    // Appended in seq order, since each follows the author's previous batch on the branch, and
+    // pending after them, in clock order, which is seq order for one author.
+    const mine = [...appendedOwn, ...pendingOwn].toReversed();
     const undone = new Set<string>();
     const isUndo = new Set<string>();
 

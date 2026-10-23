@@ -151,8 +151,9 @@ function undoOne(op: Operation, id: ItemId, docs: Documents): Operation[] | stri
 /**
  * The operations that undo `batch`, last operation first, from the documents just before and
  * just after it and the document now. `skipped` are the indexes of the operations it skipped.
- * Each operation is undone against the document as the undo's operations so far leave it, so
- * one that a later operation of the batch removed is undone once that removal is.
+ * Each operation is undone against the document as the undo's operations so far leave it, and
+ * compared with the batch's document as they leave it, so one that a later operation of the
+ * batch changed or removed is undone once that change is.
  */
 export function undoBatch(
   batch: Pick<Batch, "author" | "seq" | "ops">,
@@ -162,7 +163,10 @@ export function undoBatch(
   const ops: Operation[] = [];
   const left: Left[] = [];
   const now = createProject(docs.now.snapshot());
-  const progress = { ...docs, now };
+  const after = createProject(docs.after.snapshot());
+  const progress = { before: docs.before, after, now };
+  // The undo's own ids, which no batch has, so a split it makes in the copies takes no real id.
+  const undoing = { author: batch.author, seq: Number.MAX_SAFE_INTEGER };
 
   for (const [index, op] of [...batch.ops.entries()].toReversed()) {
     if (skipped.has(index)) continue;
@@ -174,7 +178,8 @@ export function undoBatch(
     }
 
     ops.push(...undo);
-    now.apply({ author: batch.author, seq: batch.seq, ops: undo });
+    now.apply({ ...undoing, ops: undo });
+    after.apply({ ...undoing, ops: undo });
   }
 
   return { ops, left };

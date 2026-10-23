@@ -330,3 +330,31 @@ test("reverts within reverts replay once, and keep the layout's indexes", async 
   expect(history.document().lanes(role)).toEqual(lanesThen);
   expect(history.at(entryRef(history.head().n - 2)).name()).toBe("r39");
 });
+
+test("an undo takes back a batch that changed one record twice", async () => {
+  const { a, history, edit, undo, first, sequence } = await setUp();
+  const opacity = { op: "item.set" as const, id: first, path: "video.opacity", value: 0.5 };
+  const adjusted = await edit(a, [{ op: "clip.split", id: first, at: SECOND }, opacity]);
+  const adjustUndo = await undo(a, refOf(adjusted));
+  expect(adjustUndo.left).toEqual([]);
+  expect(history.document().storyline(sequence).length).toBe(2);
+
+  const piece = `${a.key}.${adjusted.seq}.0`;
+  const restored = await edit(a, [
+    { op: "item.restore", id: piece },
+    { ...opacity, id: piece, value: 0.25 },
+  ]);
+  const restoreUndo = await undo(a, refOf(restored));
+  expect(restoreUndo.left).toEqual([]);
+  expect(history.document().item(piece)?.removed).toBe(true);
+
+  const cut = await edit(a, [
+    { op: "clip.split", id: first, at: SECOND / 2 },
+    { op: "clip.split", id: `${a.key}.${history.head().n + 1}.0`, at: SECOND },
+  ]);
+  expect(cut.skipped).toEqual([]);
+  expect(history.document().storyline(sequence).length).toBe(4);
+  const cutUndo = await undo(a, refOf(cut));
+  expect(cutUndo.left).toEqual([]);
+  expect(history.document().storyline(sequence).length).toBe(2);
+});
