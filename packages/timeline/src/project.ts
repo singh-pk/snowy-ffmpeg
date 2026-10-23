@@ -170,7 +170,7 @@ const keyframeKey = (param: string, at: number) => `${param} ${at}`;
 const pastSplit = (at: number, point: number, clip: Clip) =>
   clip.speed[0] > 0 ? at >= point : at <= point;
 
-// A clip's audio with one of its fades taken from `fades`, or none when it has no audio.
+// A clip with one of its fades set to `length`; a clip without audio has none.
 function withFade(clip: Clip, fade: "fadeIn" | "fadeOut", length: number) {
   return clip.audio === undefined ? clip : { ...clip, audio: { ...clip.audio, [fade]: length } };
 }
@@ -624,25 +624,51 @@ export function createProject() {
     return moved;
   }
 
+  // Whether a live storyline item shares the clip's position key after it: a piece can't be
+  // put between the two, since order within a key is by id.
+  function tiedAfter(id: ItemId, position: string, sequence: ItemId) {
+    const line = storylineOf(sequence);
+
+    for (let next = line.next(id); next !== undefined; next = line.next(next)) {
+      const state = items.get(next);
+      const record = state?.record;
+      if (record === undefined || record.kind === "transition" || !("storyline" in record.anchor))
+        break;
+      if (record.anchor.position !== position) break;
+      if (!state?.removed) return true;
+    }
+
+    return false;
+  }
+
   // Splits a clip at a timeline time: it keeps what is before, and a new clip, `piece`, takes
-  // what is after.
+  // what is after. Where the piece's anchor lands, rounded to its anchor's units and snapped to a
+  // frame, is where the split falls, so the two pieces always meet.
   function splitClip(id: ItemId, at: number, piece: ItemId) {
+    if (items.has(piece)) skip("stale", `${piece} exists`);
     const { state, clip } = liveClip(id);
     const { sequence } = state;
     const from = start(id);
-    const offset = from === undefined ? 0 : at - from;
-    if (offset <= 0 || offset >= clip.duration) skip("stale", "the clip doesn't cover the time");
-    const point = guarded(() => clip.in + flicksToSource(offset, timeBaseOf(clip), clip.speed));
-    const anchor = guarded(() => pieceAnchor(clip, offset, sequence));
-    if (!Number.isSafeInteger(point)) skip("malformed", "a source point out of range");
+    const wanted = from === undefined ? 0 : at - from;
+    if (wanted <= 0 || wanted >= clip.duration) skip("stale", "the clip doesn't cover the time");
+    const anchor = guarded(() => pieceAnchor(clip, wanted, sequence));
     if ("at" in anchor && !Number.isSafeInteger(anchor.at))
       skip("malformed", "a time out of range");
+
+    if ("storyline" in anchor && "storyline" in clip.anchor) {
+      if (tiedAfter(id, clip.anchor.position, sequence)) {
+        skip("structural", "another item shares the clip's position key after it");
+      }
+    }
+
+    const lands = "storyline" in anchor ? at : startOf(piece, { ...clip, anchor }, sequence);
+    const offset = lands === undefined || from === undefined ? 0 : lands - from;
+    if (offset <= 0 || offset >= clip.duration) skip("stale", "the clip doesn't cover the time");
+    const point = guarded(() => clip.in + flicksToSource(offset, timeBaseOf(clip), clip.speed));
+    if (!Number.isSafeInteger(point)) skip("malformed", "a source point out of range");
     const first = withFade({ ...clip, duration: offset }, "fadeOut", 0);
-    const second = withFade(
-      { ...clip, in: point, duration: clip.duration - offset, anchor },
-      "fadeIn",
-      0,
-    );
+    const rest = { ...clip, in: point, duration: clip.duration - offset, anchor };
+    const second = withFade(rest, "fadeIn", 0);
     if (inStoryline(clip)) storylineOf(sequence).setDuration(id, offset);
     if ("storyline" in anchor)
       storylineOf(sequence).insert(piece, anchor.position, second.duration);
@@ -654,21 +680,20 @@ export function createProject() {
   }
 
   // Whether `next` starts where `clip` ends, on the same anchor.
-  function meets(id: ItemId, clip: Clip, next: Clip) {
+  function meets(id: ItemId, clip: Clip, nextId: ItemId, next: Clip) {
     const a = clip.anchor;
     const b = next.anchor;
+    const end = (start(id) ?? 0) + clip.duration;
 
-    if ("storyline" in a && "storyline" in b) {
-      const end = (start(id) ?? 0) + clip.duration;
-      return storylineOf(a.storyline).at(end)?.id;
+    if ("storyline" in a || "storyline" in b) {
+      return (
+        "storyline" in a && "storyline" in b && storylineOf(a.storyline).at(end)?.id === nextId
+      );
     }
 
-    if ("origin" in a && "origin" in b)
-      return a.origin === b.origin && b.at === a.at + clip.duration;
-    if (!("clip" in a && "clip" in b) || a.clip !== b.clip) return false;
-    const parent = items.get(a.clip)?.record;
-    if (parent?.kind !== "clip") return false;
-    return b.at === a.at + flicksToSource(clip.duration, timeBaseOf(parent), parent.speed);
+    const sameAnchor =
+      "origin" in a ? "origin" in b && a.origin === b.origin : "clip" in b && a.clip === b.clip;
+    return sameAnchor && start(nextId) === end;
   }
 
   // Joins two pieces of one source that meet exactly, as a split left them, back into the first.
@@ -689,9 +714,18 @@ export function createProject() {
     const point = guarded(
       () => clip.in + flicksToSource(clip.duration, timeBaseOf(clip), clip.speed),
     );
-    const met = guarded(() => meets(id, clip, next));
-    if (next.in !== point || (met !== true && met !== nextId))
-      skip("stale", "the pieces don't meet");
+    if (next.in !== point || !meets(id, clip, nextId, next)) skip("stale", "the pieces don't meet");
+
+    if (live(dependents, id).some((each) => items.get(each)?.record.kind === "transition")) {
+      skip("structural", "a transition sits on the cut");
+    }
+
+    const own = keyframes.get(id);
+
+    for (const key of keyframes.get(nextId)?.keys() ?? []) {
+      if (own?.has(key) === true) skip("stale", "both pieces have a keyframe at one source point");
+    }
+
     const joined = { ...clip, duration: clip.duration + next.duration };
     const record =
       next.audio === undefined ? joined : withFade(joined, "fadeOut", next.audio.fadeOut);
@@ -714,9 +748,11 @@ export function createProject() {
     add(chains, record.clip, id);
   }
 
+  // A live effect of a live clip.
   function liveEffect(id: ItemId) {
     const state = effects.get(id);
     if (state === undefined || state.removed) skip("stale", `no effect ${id}`);
+    liveClip(state.record.clip);
     return state;
   }
 
@@ -733,7 +769,7 @@ export function createProject() {
     const effect = effects.get(target);
 
     if (effect !== undefined) {
-      if (effect.removed) skip("stale", `no effect ${target}`);
+      liveEffect(target);
       const old = effect.record.params[param];
       if (old === undefined) skip("stale", `no parameter ${param} in ${target}`);
       if (!sameType(old, value)) skip("malformed", `${param} takes another type`);

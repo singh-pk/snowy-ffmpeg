@@ -7,7 +7,19 @@
 // Usage: bun run test
 
 import { expect, test } from "../../../tooling/unit";
-import { at, clip, FRAME, id, SECOND, sequence, setUp, type Op } from "./support/project";
+import {
+  asset,
+  at,
+  audio,
+  author,
+  clip,
+  FRAME,
+  id,
+  SECOND,
+  sequence,
+  setUp,
+  type Op,
+} from "./support/project";
 
 const reasons = (result: { skipped: { index: number; reason: string }[] }) =>
   result.skipped.map(({ index, reason }) => [index, reason]);
@@ -267,5 +279,119 @@ test("reverting and branching are left to the history", () => {
   expect(reasons(result)).toEqual([
     [0, "unsupported"],
     [1, "unsupported"],
+  ]);
+});
+
+test("a split or a join redraws from the clip's start on", () => {
+  const { apply } = setUp();
+  apply(clip(), clip({ anchor: at("a1"), duration: 2 * SECOND }));
+  const split = apply({ op: "clip.split", id: id(2, 1), at: 2 * SECOND });
+  expect(split.ranges.get(sequence)).toEqual({ from: SECOND, to: Number.POSITIVE_INFINITY });
+  const join = apply({ op: "clip.join", id: id(2, 1), next: id(split.seq, 0) });
+  expect(join.ranges.get(sequence)).toEqual({ from: SECOND, to: Number.POSITIVE_INFINITY });
+});
+
+test("a clip that shares its position key with a later item doesn't split", () => {
+  const { project, apply } = setUp();
+  apply(clip(), clip());
+  const result = apply({ op: "clip.split", id: id(2, 0), at: SECOND / 2 });
+  expect(reasons(result)).toEqual([[0, "structural"]]);
+  expect(project.storyline(sequence).map((placed) => placed.duration)).toEqual([SECOND, SECOND]);
+  // The later one has nothing after it, so it splits.
+  expect(reasons(apply({ op: "clip.split", id: id(2, 1), at: (3 * SECOND) / 2 }))).toEqual([]);
+});
+
+test("a split whose new id is taken changes nothing", () => {
+  const { project, apply } = setUp();
+  apply(clip({ duration: 2 * SECOND }));
+  const ops: Op[] = [{ op: "clip.split", id: id(2, 0), at: SECOND / 2 }];
+  expect(reasons(project.apply({ author, seq: 3, ops }))).toEqual([]);
+  const again = project.apply({
+    author,
+    seq: 3,
+    ops: [{ op: "clip.split", id: id(3, 0), at: SECOND }],
+  });
+  expect(again.skipped.map(({ detail }) => detail)).toEqual([`${id(3, 0)} exists`]);
+  expect(project.storyline(sequence).map((placed) => placed.duration)).toEqual([
+    SECOND / 2,
+    (3 * SECOND) / 2,
+  ]);
+});
+
+test("pieces of a connected clip meet where the second's anchor lands", () => {
+  const { project, apply } = setUp();
+  apply(
+    clip({ duration: 10 * SECOND }),
+    clip({
+      anchor: { clip: id(2, 0), at: 24_000 },
+      source: { asset, stream: 1 },
+      role: audio,
+      duration: 4 * SECOND,
+    }),
+    clip({ anchor: { origin: sequence, at: SECOND }, duration: 2 * SECOND, lane: 1 }),
+  );
+  // 12,345 flicks is less than half a unit of the anchor clip's 1/24000 stream.
+  const sound = apply({ op: "clip.split", id: id(2, 1), at: 2 * SECOND + 12_345 });
+  const piece = id(sound.seq, 0);
+  expect(field(project.item(piece), "anchor")).toEqual({ clip: id(2, 0), at: 48_000 });
+  expect(project.start(piece)).toBe(2 * SECOND);
+  expect(project.item(id(2, 1))?.duration).toBe(SECOND);
+  expect(field(project.item(piece), "in")).toBe(48_000);
+  // A video clip's second piece snaps down to a frame, and the first ends there.
+  const picture = apply({ op: "clip.split", id: id(2, 2), at: 2 * SECOND + 1000 });
+  expect(project.start(id(picture.seq, 0))).toBe(2 * SECOND);
+  expect(project.item(id(2, 2))?.duration).toBe(SECOND);
+  const joins = apply(
+    { op: "clip.join", id: id(2, 1), next: piece },
+    { op: "clip.join", id: id(2, 2), next: id(picture.seq, 0) },
+  );
+  expect(reasons(joins)).toEqual([]);
+});
+
+test("a join with a transition on its cut is skipped", () => {
+  const { apply } = setUp();
+  apply(clip({ duration: 2 * SECOND }));
+  const { seq } = apply({ op: "clip.split", id: id(2, 0), at: SECOND });
+  apply({
+    op: "item.add",
+    item: { kind: "transition", cut: id(2, 0), duration: FRAME, effect: "dissolve", params: {} },
+  });
+  const result = apply({ op: "clip.join", id: id(2, 0), next: id(seq, 0) });
+  expect(reasons(result)).toEqual([[0, "structural"]]);
+});
+
+test("a join is skipped when both pieces have a keyframe at one source point", () => {
+  const { project, apply } = setUp();
+  apply(clip({ duration: 2 * SECOND }));
+  const { seq } = apply({ op: "clip.split", id: id(2, 0), at: SECOND });
+  const piece = id(seq, 0);
+  apply(keyframe(id(2, 0), "video.opacity", 0, 0.1), keyframe(piece, "video.opacity", 0, 0.9));
+  expect(reasons(apply({ op: "clip.join", id: id(2, 0), next: piece }))).toEqual([[0, "stale"]]);
+  expect(project.keyframes(piece).map((each) => each.value)).toEqual([0.9]);
+});
+
+test("a split leaves the clip's effects on the first piece", () => {
+  const { project, apply } = setUp();
+  apply(clip({ duration: 2 * SECOND }));
+  apply(effect(id(2, 0), "a0", { amount: 0.5 }));
+  const { seq } = apply({ op: "clip.split", id: id(2, 0), at: SECOND });
+  expect(project.effects(id(2, 0))).toHaveLength(1);
+  expect(project.effects(id(seq, 0))).toHaveLength(0);
+});
+
+test("a removed clip's effects can't be changed", () => {
+  const { apply } = setUp();
+  apply(clip());
+  const { seq } = apply(effect(id(2, 0), "a0", { amount: 0.5 }));
+  apply({ op: "item.remove", id: id(2, 0) });
+  const result = apply(
+    { op: "effect.set", id: id(seq, 0), path: "enabled", value: false },
+    keyframe(id(seq, 0), "amount", 0, 1),
+    { op: "effect.remove", id: id(seq, 0) },
+  );
+  expect(reasons(result)).toEqual([
+    [0, "stale"],
+    [1, "stale"],
+    [2, "stale"],
   ]);
 });

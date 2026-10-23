@@ -96,6 +96,11 @@ test("the key after a position skips items tied at it", () => {
   expect(storyline.keyAfter("a0")).toBe("a5");
   expect(storyline.keyAfter("a1")).toBe("a5");
   expect(storyline.keyAfter("a5")).toBeUndefined();
+  expect([storyline.next("x"), storyline.next("y"), storyline.next("z")]).toEqual([
+    "y",
+    "z",
+    undefined,
+  ]);
 });
 
 test("an id is in a storyline once, and only items in it can be changed", () => {
