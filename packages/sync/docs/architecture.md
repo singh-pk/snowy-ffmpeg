@@ -13,29 +13,30 @@ How @snowy-media/sync is built: one person plays a local media file to a group o
 7. [Track layout](#track-layout)
 8. [Objects](#objects)
 9. [Local store](#local-store)
-10. [Media at the source](#media-at-the-source)
-11. [Media delivery](#media-delivery)
-12. [Peer groups](#peer-groups)
-13. [Playback control](#playback-control)
-14. [Audio and subtitle choice](#audio-and-subtitle-choice)
-15. [Chat](#chat)
-16. [Presence and membership](#presence-and-membership)
-17. [Events](#events)
-18. [The relay](#the-relay)
-19. [Security](#security)
-20. [Session lifecycle](#session-lifecycle)
-21. [Requirements on @snowy-media/engine](#requirements-on-snowy-mediaengine)
-22. [Constants](#constants)
-23. [Limits](#limits)
+10. [Interests and retention](#interests-and-retention)
+11. [Media at the source](#media-at-the-source)
+12. [Media delivery](#media-delivery)
+13. [Peer groups](#peer-groups)
+14. [Playback control](#playback-control)
+15. [Audio and subtitle choice](#audio-and-subtitle-choice)
+16. [Chat](#chat)
+17. [Presence and membership](#presence-and-membership)
+18. [Events](#events)
+19. [The relay](#the-relay)
+20. [Security](#security)
+21. [Session lifecycle](#session-lifecycle)
+22. [Requirements on @snowy-media/engine](#requirements-on-snowy-mediaengine)
+23. [Constants](#constants)
+24. [Limits](#limits)
 
 ## Principles
 
 | Principle | Meaning |
 | --- | --- |
-| **Local-first** | Every peer keeps its own copy of everything it has received. The interface reads only from that copy, never from the network. Losing the network loses nothing that was already received. |
+| **Local-first** | Every peer keeps its own copy of what its interests cover; the source reads from its file. The interface reads only from local data, never from the network. Losing the network loses nothing that was already received. |
 | **One writer per object** | Each object has exactly one author: the source writes media, control and the catalog, and each peer writes its own chat and records. Two peers never write the same object, so nothing needs merging. |
 | **Event-driven** | Snowy's code has no timers and polls nothing. Every action responds to an event from the transport, the engine, the store or the user. The only clocks are the transports' keepalives and the engine's media clock, and both reach Snowy as events. |
-| **Each byte crosses each link once** | No peer receives the same object twice. The source pushes each chunk to the relay once. It sends a chunk again only to a peer that asks for one no forwarder holds. |
+| **Each byte crosses each link once** | No peer receives the same object twice. The source pushes each chunk to the relay once. It sends a chunk again only to a peer that asks for one no connected forwarder holds. |
 | **Metadata goes only to those who need it** | What a forwarder holds goes to its group, and a receiver's capability record goes to the source. Records are sent when they change, never repeated. |
 | **A stateless relay** | The relay forwards objects and forgets them. It stores nothing and runs no timers. Peers are the only storage. |
 | **One code path** | Every peer runs the same logic. Roles come from measured values and user settings, never from browser or device detection. |
@@ -59,7 +60,8 @@ The engine's baseline, plus:
 | WebTransport | The connection to the relay |
 | `RTCPeerConnection` and `RTCDataChannel` | Direct links inside a peer group |
 | Origin Private File System (OPFS) | Media chunks and logs in the local store |
-| IndexedDB | Non-extractable `CryptoKey`s in the local store |
+| IndexedDB | Non-extractable `CryptoKey`s and the source's file handle in the local store |
+| File System Access: a persisted `FileSystemFileHandle` | The source reading its file across reloads |
 | Web Crypto: Ed25519, AES-GCM, HKDF, SHA-256 | Signatures, encryption, deriving keys, content hashes |
 | `navigator.storage.persist()` | Keeping the local store from being evicted |
 
@@ -71,6 +73,8 @@ The engine's baseline, plus:
 - It uses `@snowy-media/engine` only through the engine's public exports.
 - The engine knows nothing about networks. It plays packets from whatever packet source it is given ([Requirements on @snowy-media/engine](#requirements-on-snowy-mediaengine)).
 - Both transports sit behind one `Link` interface. The scheduler, store and chat never refer to MoQ or WebRTC directly.
+- **Consumers** (the player, the editor) decide what is fetched and kept, through [interests](#interests-and-retention). The sync package applies no retention policy of its own.
+- **Export belongs to the consumer.** The sync package knows no container formats and never writes to the user's files. It exposes chunks in order through `sync.read(track, fromUs)`, an async iterator that waits for each chunk's `stored` event and ends after the last chunk (`catalog.chunkCount`). The editor remuxes them with `@snowy-media/ffmpeg` and writes the file itself.
 
 ```ts
 type Link = {
@@ -123,7 +127,7 @@ The source's token is a request signed by both the session key and the source's 
 
 | Role | Who | Uploads |
 | --- | --- | --- |
-| **Source** | The peer with the file. There is exactly one per session. | Every chunk once to the relay; control; the catalog; chunks asked for when no forwarder holds them |
+| **Source** | The peer with the file. There is exactly one per session. It reads chunks from its [file](#the-sources-file) and stores none. | Every chunk once to the relay; control; the catalog; chunks asked for when no forwarder holds them |
 | **Forwarder** | A peer that meets every rule for becoming a forwarder (below) | Chunks to the peers in its group |
 | **Receiver** | Every other peer | No media. Its own chat and records only. |
 
@@ -176,6 +180,7 @@ type Caps = {
   slots: number;               // 0 unless forwarder
   freeSlots: number;
   audio: number;               // selected audio track id
+  wants: "window" | "full";    // "full" while any of its interests is a background one
   rttToRelayMs: number;
   sig: string;                 // Ed25519 by the peer key
 };
@@ -184,7 +189,7 @@ type Caps = {
 A capability record is signed by the peer, so it can be passed on by others. It is published only when one of its fields changes. Where it goes depends on the role:
 
 - **The source and forwarders** publish on `peer/<self>/caps`, which every peer subscribes to, so receivers can find forwarders.
-- **Receivers** send theirs to the source only, on `inbox/<source PeerId>/<self>`. The source needs their `audio` selection.
+- **Receivers** send theirs to the source only, on `inbox/<source PeerId>/<self>`. The source needs their `audio` and `wants`.
 
 ## Track layout
 
@@ -287,21 +292,89 @@ OPFS  snowy/<SessionId>/
         chat/<author>      append-only log, one record per message
         peers/<PeerId>     newest caps record of each known peer
         counters           this peer's caps version and chat seq
+        meta               this session's onEnd
+        index/<track>      the source only: every signed chunk header it has cut, in index order
+        fingerprint        the source only: size, lastModified, SHA-256 of its file's first and last MiB
 IDB   snowy-keys / <SessionId>
         peer               this device's peer key pair (non-extractable)
+        content            the content key (non-extractable), so kept chunks stay readable after the session
         session            the session key pair (the source only, non-extractable)
+        file               the source's FileSystemFileHandle (the source only)
 ```
 
+- Every peer except the source keeps its chunks here, in OPFS, encrypted. The source keeps no chunks, only their signed headers.
 - `navigator.storage.persist()` is requested when a peer joins.
-- **Rolling window (default):** keep chunks from 2 minutes behind the playhead to 15 minutes ahead. A chunk is deleted when a playhead event leaves it outside the window.
-- **Full film (opt-in):** keep every chunk until the session is left.
-- The store emits `stored(key)` and `deleted(key)`, which drive the scheduler and what the peer advertises.
+- What is kept, and for how long, is decided by [interests](#interests-and-retention).
+- The store emits `stored(key)` and `evicted(key)`, which drive the scheduler, what the peer advertises and the consumer.
+
+## Interests and retention
+
+### Interests
+
+A consumer states what it wants as interests. The sync package fetches and keeps exactly what the interests cover:
+
+```ts
+type Interest = {
+  move(fromUs: number, toUs: number): void;   // e.g. on every `progress` event
+  release(): void;
+};
+
+sync.interest({
+  tracks: "selected" | "all",      // selected: video, the chosen audio, every subtitle track
+  fromUs: number,
+  toUs: number,
+  priority: "urgent" | "ahead" | "background",
+  keep: boolean,                   // keep the chunks after the interest moves away or is released
+}): Interest;
+```
+
+- A chunk is **fetched** while at least one interest covers it, in priority order: `urgent`, then `ahead`, then `background`.
+- A chunk is **evicted** when no interest covers it and it was never covered by an interest with `keep: true`.
+- `sync.drop(track, fromUs, toUs)` deletes chunks in a range, kept ones included. It is the only way to remove a kept chunk during a session.
+- `sync.create(...)` and `sync.join(...)` take `onEnd: "delete" | "keep"`, stored in the session's `meta` and applied when the session ends or the peer leaves.
+- With `onEnd: "keep"`, the content key stays in IndexedDB, so `sync.read` still decrypts the chunks after the session.
+
+### Feedback to the consumer
+
+| Event | Meaning |
+| --- | --- |
+| `stored(key)` | A chunk is stored |
+| `evicted(key)` | A chunk was deleted because no interest covers it |
+| `complete(track)` | Every chunk of a track is stored. Needs `catalog.chunkCount`. |
+| `storage-full` | A write failed with `QuotaExceededError`. The chunk isn't stored, and the scheduler fetches nothing more until an interest changes or a chunk is evicted or dropped. The consumer decides what to release, narrow or drop. |
+
+### Player and editor
+
+| | Player | Editor |
+| --- | --- | --- |
+| Interests | `ahead`, `selected`, from 2 min behind the playhead (but not before where the peer joined or last seeked) to 15 min ahead, moved on every `progress` event | `background`, `all`, the whole timeline, `keep: true` |
+| Urgent window | `urgent`, playhead to playhead + 30 s | The same |
+| Clean-up | As the window moves | None during the session |
+| `onEnd` | `delete` | `keep` |
+| Export | None | Remuxes from `sync.read` into a file the user picks with `showSaveFilePicker()`, writing each chunk in order as it is stored |
+
+Players and editors can be in the same session: interests belong to each peer.
+
+### Where a joiner starts
+
+- A joiner reads `control`, finds the chunk containing the current position, and places its interests there.
+- A player never fetches what was played before it joined, unless the viewer seeks back. Its window starts at the playhead and grows back to 2 min behind as playback goes on.
+- An editor fetches from the playhead onwards first, then fills the rest of the film at background priority: from the playhead to the end, then from the start.
 
 ## Media at the source
 
+### The source's file
+
+- The source picks its file with `showOpenFilePicker()` and keeps the `FileSystemFileHandle` in IndexedDB. It never copies the file.
+- **After a reload,** the source calls `queryPermission({ mode: "read" })` on the handle. If permission was dropped, the *Resume sharing* button calls `requestPermission()`, which needs that click.
+- Before resuming, the source checks the file against the `fingerprint` in its local store. If the size, `lastModified`, or either hash differs, the file has changed on disk, and the source refuses to resume. Resuming would sign different data under the same chunk indexes.
+- The source stores **no chunks**, only the signed header of every chunk it has cut (`index/<track>`). The headers survive a reload, so indexes and boundaries never change and nothing is signed twice.
+- **Cutting a past chunk again:** the source seeks the demuxer to the previous chunk's `startUs` (the file's start for index 0), demuxes forward, and keeps the packets whose pts falls in `[startUs, endUs)`. Seeking one chunk early catches audio and subtitle packets stored in the file before the video keyframe.
+- Before sending a chunk cut again, the source checks its body against `bodyHash` in the stored header. On a mismatch, it replies `gone` to the requester and reports `file-changed` to its consumer, never sending a chunk that wouldn't verify.
+
 ### Demuxing and cutting chunks
 
-1. The source opens the file with the engine's demuxer.
+1. The source opens the file from its handle with the engine's demuxer.
 2. **Video:** a chunk spans at least 2 seconds and closes at the first keyframe after that. Every video chunk starts on a keyframe. Its length is bounded only by the file's keyframe interval, because cutting inside a GOP would stop chunks from decoding on their own.
 3. **Leading pictures:** packets stay in decode order with the GOP they belong to. In an open GOP, pictures after the keyframe in decode order but with a pts before `startUs` (such as RASL pictures) stay in that chunk. A peer that starts decoding at a chunk discards every frame with a pts before `startUs`.
 4. **Audio and subtitles:** for every video chunk `[startUs, endUs)`, each audio and subtitle track gets a chunk with the same index containing every packet whose `ptsUs` falls in that range. The same index means the same time range in every track. A subtitle cue that starts in one chunk and ends in a later one stays in the chunk where it starts.
@@ -313,15 +386,17 @@ The source keeps a single priority queue. A chunk's priority, highest first:
 
 1. Chunks covering a **seek target**, from the target onwards
 2. Chunks a peer has **asked the source for** ([Media delivery](#media-delivery))
-3. Chunks **ahead of the playhead**, in time order. At each index: every subtitle track, then every audio track at least one peer has selected, then video.
+3. Chunks **ahead of the playhead**, in time order, up to the **push horizon** (15 min ahead of the playhead). At each index: every subtitle track, then every audio track at least one peer has selected, then video.
+4. **Background requests** from peers with `wants: "full"` ([Media delivery](#media-delivery)). These go only when nothing above is queued.
 
-The source sends the next chunk as soon as the relay stream will accept more data (when its writer's `ready` promise resolves). It doesn't wait for playback, so pushing runs as fast as the source's upload. Chunks outside every peer's storage window are never pushed.
+The source sends the next chunk as soon as the relay stream will accept more data (when its writer's `ready` promise resolves). It doesn't wait for playback, so pushing runs as fast as the source's upload. Nothing beyond the push horizon goes on `source/media/<track>`. Peers that want more ask for it, and those chunks go only to them, through `deliver`.
 
 ### Which tracks are pushed
 
 - **Video:** always.
 - **Subtitles:** every subtitle track, always. Switching subtitles is then local and immediate.
 - **Audio:** every audio track that appears in at least one peer's `caps.audio`. When a selection first appears, that track jumps in the queue from the current playhead. When the last peer stops selecting a track, its chunks stop being pushed.
+- Tracks nobody selected reach an editor (`tracks: "all"`) through its background requests, which may name any track.
 
 ## Media delivery
 
@@ -336,18 +411,22 @@ The source sends the next chunk as soon as the relay stream will accept more dat
 
 ### Choosing where each chunk comes from
 
-The scheduler runs on events (`progress`, `have`, `stored`, `close`, `busy`, `gone`) and nothing else. For every chunk the peer needs and doesn't yet hold:
+The scheduler runs on events (`progress`, `have`, `stored`, `close`, `busy`, `gone`, interest changes) and nothing else. For every chunk an interest covers that the peer doesn't yet hold, highest interest priority first:
 
 ```text
 covered by a live subscription?              → wait for it to arrive
-urgent? (inside the urgent window: playhead to playhead + 30 s)
+urgent
 ├─ a connected forwarder advertises it with a free slot
 │     → ask that forwarder, lowest RTT first
 └─ otherwise → ask the source, through inbox/<source>/<self>
-not urgent
+ahead
 ├─ a connected forwarder advertises it with a free slot
 │     → ask that forwarder, lowest RTT first
 └─ otherwise → wait for the next `have` or `progress` event
+background (only while no urgent or ahead request is waiting), in time order from the playhead to the end, then from the start
+├─ a connected forwarder advertises it with a free slot
+│     → ask that forwarder, lowest RTT first
+└─ otherwise → ask the source, through inbox/<source>/<self>, which answers at background priority
 ```
 
 - **One request per chunk at a time.** A chunk is asked from a second source only after one of these events about the first:
@@ -364,14 +443,14 @@ not urgent
 
 ### Requests to the source
 
-- The source answers through `inbox/<requester>/deliver/<source>`, ahead of everything else in its queue except seek targets.
+- The source answers through `inbox/<requester>/deliver/<source>`, ahead of everything else in its queue except seek targets. It cuts the chunk again from its file ([The source's file](#the-sources-file)).
 - **While the source is offline,** urgent chunks that no forwarder holds wait for a `have` event or the source's return. The peer pauses locally when its buffer runs out ([Playback control](#playback-control)).
-- A joiner without a forwarder gets its urgent window from the source this way. That is the only time the source sends a chunk more than once.
+- The source sends a chunk more than once only in answer to a request: a joiner's urgent window when no forwarder holds it, and an editor's background chunks that no connected forwarder holds.
 
 ### Have ranges
 
-- Forwarders receive chunks in order, so what they hold is normally one range per track: `{ track, ranges: [[start, end], …] }`.
-- On every `stored` and `deleted` event, the forwarder collects the change and publishes a new `have` when the stream will accept more data. Several stores in a burst therefore become one update.
+- What a forwarder holds is a list of index ranges per track: `{ track, ranges: [[start, end], …] }`. A player forwarder usually has one range; an editor may have several while it fills in.
+- On every `stored` and `evicted` event, the forwarder collects the change and publishes a new `have` when the stream will accept more data. Several stores in a burst therefore become one update.
 - Only the forwarder's group subscribes. `have` is not secret, so the relay doesn't restrict who may subscribe.
 
 ## Peer groups
@@ -458,7 +537,7 @@ On every engine `progress` event, a peer compares its playhead to where it shoul
   1. The peer updates `caps.audio`.
   2. It requests the new track's chunks from the playhead onwards, through the normal [choice of source](#choosing-where-each-chunk-comes-from).
   3. It switches the engine's audio track when the chunk at the playhead is stored.
-- **Subtitles:** every subtitle track is pushed to every peer within its storage window. Switching or turning them off is local and immediate, with nothing sent over the network.
+- **Subtitles:** every subtitle track is pushed to every peer within its interests. Switching or turning them off is local and immediate, with nothing sent over the network.
 - All tracks share one timeline, so each peer's choices line up with the control record.
 
 ## Chat
@@ -535,8 +614,11 @@ Every action in the system responds to one of these events:
 | `link open` / `link close` | WebTransport, WebRTC | Start or stop requesting through the link. Retry its requests elsewhere. |
 | `writable` | Writer `ready`, `bufferedamountlow` | Send the next queued object or batch |
 | `delivery done` | Link | Mark the request done. Update measured upload and RTT. |
-| `stored(key)` / `deleted(key)` | Store | Batch a `have` update. Resume playback after waiting. |
-| `progress(t)` | Engine media clock | Urgent window, storage window, drift correction |
+| `stored(key)` / `evicted(key)` | Store | Batch a `have` update. Resume playback after waiting. Tell the consumer. |
+| `storage-full` | Store | Stop fetching. Tell the consumer, which narrows, releases or drops. |
+| `file-changed` | Source, re-cutting a chunk | Reply `gone`. Tell the consumer. |
+| `interest` / `move` / `release` | Consumer | Replan requests. Evict chunks no interest covers. Update `caps.wants`. |
+| `progress(t)` | Engine media clock | The consumer moves its interests. Drift correction. |
 | `started` / `paused` | Engine | Confirm a scheduled command |
 | `control(record)` | `source/control` | Schedule play, pause or seek at `atUs` with the engine |
 | `catalog(version)` | `source/catalog` | Update the tracks and bitrates shown |
@@ -580,20 +662,21 @@ The relay checks the signatures once per connection.
 | A viewer controlling playback | Only the source can publish `source/*`, and control records are signed |
 | Script injection through chat | `textContent` only |
 | Keys being read out of the store | Private keys are non-extractable `CryptoKey`s |
-| Content left on devices | The session's store is deleted on [leave or end](#session-lifecycle), and on the next app start after a crash |
+| Content left on devices | With `onEnd: "delete"`, the session's store is deleted on [leave or end](#session-lifecycle), and on the next app start after a crash. With `onEnd: "keep"`, the consumer owns it. |
 
 ## Session lifecycle
 
 | Step | What happens |
 | --- | --- |
-| **Create** | The source picks a file, generates the session key, its peer key and the secret, signs a join grant, demuxes enough to write `catalog` and `init/*`, connects to the relay, and shows the invite link. |
-| **Join** | A peer opens the link, generates its peer key, connects with grant plus signed request, announces itself, gets state from the source or a peer, asks the user about Share my upload, assesses itself, publishes its capability record, measures its clock offset, joins groups, and starts filling its storage window. |
+| **Create** | The source picks a file, keeps its handle, generates the session key, its peer key and the secret, signs a join grant, fingerprints the file, demuxes enough to write `catalog` and `init/*`, connects to the relay, and shows the invite link. |
+| **Join** | A peer opens the link, generates its peer key, connects with grant plus signed request, announces itself, gets state from the source or a peer, asks the user about Share my upload, assesses itself, publishes its capability record, measures its clock offset, joins groups, and its consumer places its interests at the playhead. |
 | **Watch** | Driven entirely by the [events](#events) above |
 | **Source drops** | Peers play from their stores and pause locally on a missing chunk. Chat carries on. |
+| **Source resumes** | The source reopens its handle, asking permission again with a click if it was dropped, checks the fingerprint, reconnects and publishes a new control record. |
 | **Relay drops** | Playback continues from local stores. Chat queues locally. Everything resumes on reconnect. |
-| **Leave** | The peer closes its links. Its namespace is withdrawn. Its session store (OPFS directory and IndexedDB keys) is deleted. |
-| **End** | The source publishes control with `ended: true`. Every peer stops playback, closes its links and deletes its session store. |
-| **App start** | Every session store is deleted except the one whose invite link is being opened, which carries on where it left off. |
+| **Leave** | The peer closes its links. Its namespace is withdrawn. With `onEnd: "delete"`, its session store (OPFS directory and IndexedDB entries) is deleted. |
+| **End** | The source publishes control with `ended: true`. Every peer stops playback, closes its links and applies its `onEnd`. |
+| **App start** | Every session store with `onEnd: "delete"` is deleted, except the one whose invite link is being opened, which carries on where it left off. |
 
 ## Requirements on @snowy-media/engine
 
@@ -602,7 +685,7 @@ The sync package needs these engine capabilities through public exports:
 | Capability | Used for |
 | --- | --- |
 | **A pluggable packet source**: play from codec setup plus packet records supplied by the caller, not a `File` | Playing chunks from the store |
-| **Demuxer access at the source**: read packets and track info from a `File` | Cutting chunks |
+| **Demuxer access at the source**: read packets and track info from a `File`, and seek to a time | Cutting chunks, and cutting past chunks again |
 | **Choosing the audio track**, including while playing | Per-viewer audio |
 | **Subtitle rendering**: text (SRT, ASS) and bitmap (PGS), with the track chosen while playing | Per-viewer subtitles |
 | **Scheduled play, pause and seek** at a given wall-clock time, carried out by the media clock, with `started` and `paused` events | Commands that every peer applies at the same moment |
@@ -617,7 +700,9 @@ The sync package needs these engine capabilities through public exports:
 | --- | --- |
 | Minimum video chunk length | 2 s, closed at the next keyframe |
 | Urgent window | Playhead to playhead + 30 s |
-| Storage window (default) | 2 min behind to 15 min ahead |
+| Player interest | 2 min behind to 15 min ahead of the playhead |
+| Push horizon | 15 min ahead of the playhead |
+| File fingerprint | Size, `lastModified`, SHA-256 of the first and last MiB |
 | Command lead time (`atUs` ahead of now) | 500 ms |
 | Drift: ignore / adjust rate / seek | < 40 ms / 40–500 ms / > 500 ms |
 | Maximum rate adjustment | ±5% |
@@ -636,6 +721,7 @@ The sync package needs these engine capabilities through public exports:
 - **Networks that block UDP** can't join. WebTransport and WebRTC both need UDP, and there is no TURN.
 - **No transcoding.** Every peer must be able to decode the catalog's codecs. When a peer joins, it checks each track with `VideoDecoder.isConfigSupported` / `AudioDecoder.isConfigSupported` and refuses to join with an error naming the codec.
 - **One source per session.** If the source leaves for good, the session can't continue beyond what peers already hold.
+- **The source's file must stay unchanged.** If it is edited, moved or deleted, the source can't resume.
 - **The relay is on the live path.** While it's down, playback continues from local stores but nothing new arrives.
 - **Peer upload is opt-in.** Sessions where nobody forwards are served entirely through the relay.
 - **Join grants don't expire and can't be revoked.** Anyone holding the invite link can join for as long as the session runs.
