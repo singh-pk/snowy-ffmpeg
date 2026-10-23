@@ -71,7 +71,7 @@ const isSeq = (value: unknown) => isCount(value, 1);
 
 // Only the one spelling of each key: base64url can spell some keys two ways, which would give
 // one author two logs.
-function isKeyId(value: unknown): value is KeyId {
+export function isKeyId(value: unknown): value is KeyId {
   if (typeof value !== "string") return false;
 
   try {

@@ -26,8 +26,9 @@ type Batch = { key: string; bytes: Bytes };
 // been handed n batches, since a write that finds the stream writable seals one in the
 // background. `duringSeal` runs once, as the next batch starts to be sealed: sealing reads the
 // public key first, and only reads it again for the signature after its first await.
-function sender(last?: ChatMessage) {
+function sender(last?: ChatMessage, pending?: ChatMessage[]) {
   const batches: Batch[] = [];
+  const kept: ChatMessage[] = [];
   const waiting: Array<{ count: number; resolve: () => void }> = [];
   const hooks: { duringSeal?: (() => void) | undefined } = {};
   const options: ChatSenderOptions = {
@@ -42,7 +43,9 @@ function sender(last?: ChatMessage) {
     },
     content,
     clock: createClock(() => 1000),
+    keep: (message) => kept.push(message),
     last,
+    pending,
     publish(key, bytes) {
       batches.push({ key, bytes });
       for (const wait of waiting.filter((w) => batches.length >= w.count)) wait.resolve();
@@ -60,7 +63,7 @@ function sender(last?: ChatMessage) {
     return batches.map((b) => b.key);
   }
 
-  return { chat, options, hooks, batches, published };
+  return { chat, options, hooks, batches, kept, published };
 }
 
 const text = (t: string) => ({ kind: "text" as const, text: t });
@@ -186,6 +189,37 @@ test("a batch that fails to seal keeps its messages for the next writable event"
   await chat.writable();
   const sent = await messagesOf(batches);
   expect(sent).toEqual([message]);
+});
+
+test("a message is stored before it is queued, and one that can't be stored takes no seq", async () => {
+  const { chat, options, batches, kept, published } = sender();
+  await chat.writable();
+  const one = await chat.write(text("one"), 0);
+  expect(kept).toEqual([one]);
+  await published(1);
+
+  options.keep = () => Promise.reject(new Error("the disk is full"));
+  const error = await rejection(chat.write(text("lost"), 0));
+  expect(error).toBeInstanceOf(Error);
+  options.keep = (message) => kept.push(message);
+  const two = await chat.write(text("two"), 0);
+  expect(two.seq).toBe(2);
+  await chat.writable();
+  const sent = await messagesOf(batches);
+  expect(sent).toEqual([one, two]);
+});
+
+test("messages pending from before a reload go with the first batch", async () => {
+  const before = sender();
+  const one = await before.chat.write(text("one"), 0);
+  const two = await before.chat.write(text("two"), 0);
+  const after = sender(two, [one, two]);
+  const three = await after.chat.write(text("three"), 0);
+  await after.chat.writable();
+  const keys = await after.published(1);
+  expect(keys).toEqual([key(1, 3)]);
+  const sent = await messagesOf(after.batches);
+  expect(sent).toEqual([one, two, three]);
 });
 
 test("after a reload, the next message chains to the stored last one", async () => {

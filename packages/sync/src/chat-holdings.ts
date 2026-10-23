@@ -44,13 +44,18 @@ export function createChatHoldings() {
   const linked = ({ messages, hashes }: Author, seq: number) =>
     hashes.has(seq - 1) && messages.get(seq)?.prev === hashes.get(seq - 1);
 
+  // The first seq of the run of chained held seqs that contains `seq`.
+  function firstOf(held: Author, seq: number) {
+    let first = seq;
+    while (linked(held, first)) first--;
+    return first;
+  }
+
   // The run of chained held seqs that contains `seq`.
   function runOf(held: Author, seq: number): Run {
-    let first = seq;
     let last = seq;
-    while (linked(held, first)) first--;
     while (linked(held, last + 1)) last++;
-    return { first, last };
+    return { first: firstOf(held, seq), last };
   }
 
   /**
@@ -58,15 +63,34 @@ export function createChatHoldings() {
    * checkpoint is kept only if it names the message held at its seq. Then only the checkpoint
    * with the highest seq in each run is kept.
    */
-  function add(batch: ChatBatch) {
-    const next = store(added, batch);
+  const add = ({ messages, checkpoint }: ChatBatch) =>
+    queued(checkpoint.author, messages, [checkpoint]);
+
+  /**
+   * Restores what the local store kept of an author after a reload, as if its batches had been
+   * added again: the messages up to the newest checkpoint, and the checkpoints. Messages after
+   * it, this peer's own unsent ones, stay out, as they would until their batch came back.
+   */
+  function restore(author: KeyId, messages: ChatMessage[], checkpoints: Checkpoint[]) {
+    const newest = Math.max(0, ...checkpoints.map((cp) => cp.seq));
+    const proven = messages.filter((m) => m.seq <= newest);
+    return queued(author, proven, checkpoints);
+  }
+
+  function queued(author: KeyId, messages: ChatMessage[], checkpoints: Checkpoint[]) {
+    const next = hold(added, author, messages, checkpoints);
     added = next;
     return next;
   }
 
-  async function store(before: Promise<void>, { messages, checkpoint }: ChatBatch) {
+  async function hold(
+    before: Promise<void>,
+    author: KeyId,
+    messages: ChatMessage[],
+    checkpoints: Checkpoint[],
+  ) {
     await before;
-    const held = holding(checkpoint.author);
+    const held = holding(author);
     const fresh = messages.filter((m) => !held.messages.has(m.seq));
     const hashes = await Promise.all(fresh.map(messageHash));
 
@@ -75,20 +99,25 @@ export function createChatHoldings() {
       held.hashes.set(m.seq, hashes[i]!);
     }
 
-    held.newest = Math.max(held.newest, checkpoint.seq);
-
-    if (held.hashes.get(checkpoint.seq) === checkpoint.head) {
-      held.checkpoints.set(checkpoint.seq, checkpoint);
+    for (const checkpoint of checkpoints) {
+      held.newest = Math.max(held.newest, checkpoint.seq);
+      const proves = held.hashes.get(checkpoint.seq) === checkpoint.head;
+      if (proves) held.checkpoints.set(checkpoint.seq, checkpoint);
     }
 
-    const best = new Map<number, Checkpoint>();
+    // Highest first: a checkpoint below the start of the last kept one's run is in another run.
+    // Each run is walked once, so a restore with a checkpoint per batch stays linear.
+    const kept = new Map<number, Checkpoint>();
+    let floor = Infinity;
 
-    for (const cp of held.checkpoints.values()) {
-      const { first } = runOf(held, cp.seq);
-      if ((best.get(first)?.seq ?? 0) < cp.seq) best.set(first, cp);
+    for (const [seq, cp] of [...held.checkpoints].toSorted(([a], [b]) => b - a)) {
+      if (seq >= floor) continue;
+
+      kept.set(seq, cp);
+      floor = firstOf(held, seq);
     }
 
-    held.checkpoints = new Map([...best.values()].map((cp) => [cp.seq, cp]));
+    held.checkpoints = kept;
   }
 
   // The batch proving `from` and every later message in its run up to the run's checkpoint, or
@@ -147,5 +176,5 @@ export function createChatHoldings() {
   /** The highest seq held from an author, or 0. */
   const newest = (author: KeyId) => authors.get(author)?.newest ?? 0;
 
-  return { add, repair, after, checkpoints, newest };
+  return { add, restore, repair, after, checkpoints, newest };
 }

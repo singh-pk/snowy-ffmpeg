@@ -25,6 +25,8 @@ This package runs live sessions over one transport. In a watch session, a local 
 | `src/chat-receiver.ts` | receiving chat batches from tracks, repairs and this peer: into the log, the holdings and gap repair |
 | `src/chat-holdings.ts` | what a peer holds of each author's chat, one checkpoint per run, to answer repairs and version vectors |
 | `src/chat-repairs.ts` | asking for missing chat: one ask per author, moved to the next ranked peer on `gone` or a closed link |
+| `src/chat-store.ts` | chat in the local store: an append-only OPFS log per author, read back after a reload |
+| `src/opfs.d.ts` | types for OPFS sync access handles, which TypeScript's DOM library lacks |
 | `src/rank.ts` | ranking peers by hash, so every asker picks alike and different questions spread out |
 | `test/` | unit tests (`*.unit.ts`), run in Chromium by `unit.test.ts`; `test/support/` holds what they share |
 

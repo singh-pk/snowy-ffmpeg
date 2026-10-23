@@ -4,24 +4,35 @@
 // Receiving chat (src/chat-receiver.ts), in Chromium: two peers end to end. Batches from the
 // author's track reach the log and move the clock; a lost batch is noticed and asked for, and a
 // repair answered from the holdings of a third peer fills it; a batch that doesn't prove itself
-// changes nothing.
+// changes nothing. With a local store, a reload restores the log, the holdings and the clock,
+// and this peer's unsent messages go with its first batch.
 // Usage: bun run test
 
 import { expect, test } from "../../../tooling/unit";
 import { sealBatch } from "../src/chat-batch";
 import { createChatHoldings } from "../src/chat-holdings";
 import { createChatLog } from "../src/chat-log";
-import { createChatReceiver } from "../src/chat-receiver";
+import { createChatReceiver, type ChatReceiverOptions } from "../src/chat-receiver";
 import { createChatRepairs } from "../src/chat-repairs";
 import { createChatSender } from "../src/chat-sender";
+import { openChatStore, unsent } from "../src/chat-store";
 import { contentKey, generateKeyPair, keyId, type Bytes } from "../src/crypto";
 import { createClock } from "../src/hlc";
 import { rejection } from "./support/rejection";
 
 const content = await contentKey(crypto.getRandomValues(new Uint8Array(32)), "session");
 
+// A local store that keeps nothing, for tests that don't reload.
+const NO_STORE: ChatReceiverOptions["store"] = { append: () => undefined };
+
+// A session directory of its own: every test file shares the origin's OPFS.
+async function session() {
+  const root = await navigator.storage.getDirectory();
+  return root.getDirectoryHandle(`session-${crypto.randomUUID()}`, { create: true });
+}
+
 // A peer, known to others as `id`, with everything chat needs, asking `helpers` for repairs.
-function peerState(id: string, helpers: () => string[]) {
+function peerState(id: string, helpers: () => string[], store = NO_STORE) {
   const clock = createClock(() => 1000);
   const log = createChatLog();
   const holdings = createChatHoldings();
@@ -33,6 +44,7 @@ function peerState(id: string, helpers: () => string[]) {
     log,
     holdings,
     repairs,
+    store,
     candidates: helpers,
   });
   return { id, clock, log, holdings, asked, receiver };
@@ -47,6 +59,7 @@ async function author() {
     peer,
     content,
     clock: createClock(() => 5000),
+    keep: () => undefined,
     publish: (key, bytes) => published.push({ key, bytes }),
   });
 
@@ -125,6 +138,80 @@ test("a repair reply that doesn't prove itself, or doesn't reach the gap, asks t
   // A reply holding only what Bob has: nobody is left to ask.
   await bob.receiver.receive(one!.key, one!.bytes, second);
   expect(bob.asked).toHaveLength(2);
+});
+
+test("after a reload, the store restores the log, the holdings and the clock", async () => {
+  const alice = await author();
+  await alice.say("one", "two", "three");
+  const dir = await session();
+  const store = await openChatStore(dir);
+  const bob = peerState("bob", () => [], store);
+  for (const { key, bytes } of alice.published) await bob.receiver.receive(key, bytes);
+  await store.close();
+
+  const reopened = await openChatStore(dir);
+  const after = peerState("bob", () => [], reopened);
+  await after.receiver.restore(reopened.records);
+  expect(after.log.entries()).toEqual(bob.log.entries());
+  expect(after.log.versions()).toEqual({ [alice.id]: 3 });
+  expect(after.clock.value() >= bob.clock.value()).toBe(true);
+  expect(after.holdings.repair(alice.id, 1)?.messages).toEqual(
+    bob.holdings.repair(alice.id, 1)?.messages,
+  );
+  await reopened.close();
+});
+
+test("this peer's messages stored but never published go with its first batch after a reload", async () => {
+  const peer = await generateKeyPair();
+  const id = await keyId(peer.publicKey);
+  const dir = await session();
+  const store = await openChatStore(dir);
+  const before = createChatSender({
+    peer,
+    content,
+    clock: createClock(() => 5000),
+    keep: (message) => store.append(id, { messages: [message] }),
+    publish: () => undefined,
+  });
+  await before.write({ kind: "text", text: "never sent" }, 0);
+  await store.close();
+
+  const reopened = await openChatStore(dir);
+  const { last, pending } = unsent(reopened.records.get(id)!);
+  const published: string[] = [];
+  const after = createChatSender({
+    peer,
+    content,
+    clock: createClock(() => 6000),
+    keep: (message) => reopened.append(id, { messages: [message] }),
+    last,
+    pending,
+    publish: (key) => published.push(key),
+  });
+  await after.write({ kind: "text", text: "after" }, 0);
+  await after.writable();
+  expect(published).toEqual([`chat/${id}/1-2`]);
+  await reopened.close();
+});
+
+test("a batch the store fails to take changes nothing, and is taken whole when it comes again", async () => {
+  const alice = await author();
+  await alice.say("one");
+  const stored: number[] = [];
+  const store: ChatReceiverOptions["store"] = {
+    append: () => Promise.reject(new Error("the disk is full")),
+  };
+  const bob = peerState("bob", () => [], store);
+  const { key, bytes } = alice.published[0]!;
+  const error = await rejection(bob.receiver.receive(key, bytes));
+  expect(error).toBeInstanceOf(Error);
+  expect(bob.holdings.newest(alice.id)).toBe(0);
+  expect(bob.log.entries()).toEqual([]);
+
+  store.append = (_author, records) => stored.push(...(records.messages ?? []).map((m) => m.seq));
+  await bob.receiver.receive(key, bytes);
+  expect(stored).toEqual([1]);
+  expect(bob.holdings.newest(alice.id)).toBe(1);
 });
 
 test("a batch that doesn't prove itself changes nothing", async () => {
