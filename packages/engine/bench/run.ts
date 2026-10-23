@@ -21,7 +21,7 @@ const { values: args } = parseArgs({
 
 type Timings = Record<string, number>;
 
-// The 4K fixture a scrub goes through, and each of its frames' times, in seconds.
+// The 4K fixture a scrub goes through and play plays, and each of its frames' times, in seconds.
 const SCRUB_4K = "scrub-4k-h264-aac.mp4";
 const expected: Record<string, { video: { timeBase: string; pts: number[] } }> = await Bun.file(
   new URL("../test/fixtures/expected.json", import.meta.url),
@@ -226,6 +226,45 @@ const benchmarks: Record<string, (tab: Page) => Promise<Timings>> = {
       },
       { entry: ENTRY, page: PAGE, file: SCRUB_4K, times: due, speed: 2, to: 9 },
     ),
+  // The same 4K file played from its start for 8 s, the screen read on every animation frame:
+  // how late the frame on screen is for the time heard (engine.currentTime), past when the next
+  // frame was due (p50, p90, p99, max), the canvas's read-back included. The first read is left out:
+  // play prerolls video before the clock starts.
+  play: (tab) =>
+    tab.evaluate(
+      async ({ entry, page, file, times, seconds }) => {
+        const engine: typeof import("../src/index") = await import(entry);
+        const support: typeof import("../test/support/page") = await import(page);
+        const canvas = document.createElement("canvas");
+        [canvas.width, canvas.height] = [320, 180];
+        document.body.append(canvas);
+        const player = await engine.createEngine({ canvas });
+        const res = await fetch(`/test/fixtures/${file}`);
+        const blob = await res.blob();
+        const handle = await support.fileHandle(file, blob);
+        await player.open(handle);
+        await player.play();
+        const reads = await support.watchScreen(player, canvas, seconds * 1000);
+        await player.pause();
+        player.close();
+        canvas.remove();
+        const heard = reads.at(-1)?.[0] ?? 0;
+        if (heard < seconds - 1) throw new Error(`played to ${heard} s in ${seconds} s`);
+        const lateness = reads.slice(1).map(([time, id]) => {
+          if (times[id] === undefined) throw new Error(`frame ${id} read on screen`);
+          return Math.max(0, time - (times[id + 1] ?? Infinity)) * 1000;
+        });
+        const sorted = lateness.toSorted((a, b) => a - b);
+        const at = (p: number) => sorted[Math.floor(p * sorted.length)] ?? 0;
+        return {
+          "late p50": at(0.5),
+          "late p90": at(0.9),
+          "late p99": at(0.99),
+          "late max": sorted.at(-1) ?? 0,
+        };
+      },
+      { entry: ENTRY, page: PAGE, file: SCRUB_4K, times: due, seconds: 8 },
+    ),
 };
 
 const runs = Number(args.runs);
@@ -244,6 +283,8 @@ for (let i = 0; i < runs; i++) {
   const browser = await launch();
   const tab = await browser.newPage();
   await tab.goto(server.url.href);
+  // A user gesture, so audio may start for play.
+  await tab.mouse.click(1, 1);
 
   for (const [bench, measure] of Object.entries(benchmarks)) {
     const timings = await measure(tab);

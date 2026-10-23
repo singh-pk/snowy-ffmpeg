@@ -30,7 +30,7 @@ The tests and benchmarks build what they run, and need `@snowy-media/ffmpeg` bui
 | `src/video.worker.ts` | the video decode worker: decodes those codecs with the FFmpeg `video` and `video-ext` modules |
 | `src/frames.ts` | the frame queue, in presentation order and bounded by bytes |
 | `src/decoding.ts` | how far a video decoder has decoded, whatever order it emits frames in |
-| `src/compositor.ts` | the WebGPU compositor: a frame, turned by its display matrix, fitted into the canvas |
+| `src/compositor.ts` | the WebGPU compositor: a frame uploaded and converted from Y′CbCr as FFmpeg converts it, turned by its display matrix, fitted into the canvas |
 | `src/webgpu.d.ts` | the WebGPU flag constants TypeScript's libraries leave out |
 | `src/pcm.ts` | the PCM ring from the media worker to the AudioWorklet, and the clock |
 | `src/audio.ts` | the audio output on the main thread |

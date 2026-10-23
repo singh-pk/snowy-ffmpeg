@@ -8,7 +8,7 @@
 // second ahead of the media time, or the decoder has enough packets in hand, so neither memory nor the decoder's backlog grows.
 
 import { isRasl, makesFrame, type VideoParams, videoConfig } from "./codec";
-import type { createCompositor } from "./compositor";
+import type { createCompositor, Picture } from "./compositor";
 import { createDecodeTracker } from "./decoding";
 import { createFrameQueue } from "./frames";
 import { createConsumer, END, FAILED, KEY_FLAG, NO_TIMESTAMP } from "./ring";
@@ -25,6 +25,9 @@ const DECODE_AHEAD = 8;
 // far further ahead, and decoding all of them would hold hundreds of frames, far past the
 // frame budget and a hardware decoder's pool of frames.
 const TIME_AHEAD = 1_000_000;
+// How many frames are uploaded ahead of the one shown: two, so the next is up when due even
+// as the clock jumps a frame, as when audio starts.
+const AHEAD = 2;
 
 // A WebCodecs decoder of the stream with parameters `p`, configured by its first packet.
 function webCodecsDecoder(p: VideoParams, events: DecoderEvents): Decoder {
@@ -75,7 +78,7 @@ export function createVideoOutput(
   // Wakes the decode loop while it waits for room; replaced each time it waits.
   const wake = { room: () => {} };
   const state = {
-    shown: undefined as VideoFrame | undefined,
+    shown: undefined as Picture | undefined,
     ended: false,
     // Waiting for a packet, the ring being empty.
     waiting: false,
@@ -88,20 +91,94 @@ export function createVideoOutput(
     // lead it are left out.
     started: false,
     leading: false,
-    // Where it plays from, which a scrub moves on.
+    // Where it plays from, which a scrub moves on, and whether one has.
     from,
+    moved: false,
     closed: false,
   };
   const decoding = createDecodeTracker();
   const failed = Promise.withResolvers<never>();
+
+  // Pictures uploaded and not yet shown, in presentation order. They are bounded by AHEAD, not by
+  // bytes: `prepare` sends no more.
+  const pictures = createFrameQueue<Picture>(FRAME_BUDGET, () => 0);
+  // The frames uploading: their timestamps, in the order they finish in, which is presentation
+  // order; the latest of them; and the last upload's end.
+  const uploads = {
+    stamps: [] as number[],
+    latest: -Infinity,
+    done: Promise.resolve(),
+  };
+
+  async function upload(frame: VideoFrame) {
+    try {
+      const picture = await compositor.upload(frame, p.colorSpace);
+
+      if (state.closed) {
+        picture.close();
+        return;
+      }
+
+      uploads.stamps.shift();
+      pictures.push(picture);
+      changed();
+    } catch (e) {
+      failed.reject(e);
+    }
+  }
+
+  function send(frame: VideoFrame) {
+    uploads.stamps.push(frame.timestamp);
+    uploads.latest = frame.timestamp;
+    uploads.done = upload(frame);
+  }
+
+  /**
+   * Uploads the latest frame due at `time` (microseconds), then the next decoded frames until
+   * AHEAD (one in a scrub) are up or on their way, so they are up before they are due. Only the
+   * frames that go up are uploaded: copying a 4K frame off the GPU takes milliseconds, and a scrub decodes many it
+   * never shows. Resolves once uploaded.
+   */
+  function prepare(time: number) {
+    // From a seek, nothing goes up until the frame due at its target is decoded: the frames
+    // before it come first, and would flash by. Its end, as at a seek to the end, has them all.
+    const sought = state.shown || state.ended || decoding.decodedTo() >= state.from;
+    if (!sought) return uploads.done;
+    // Before the stream's first frame, as at a seek to the start of a file whose video starts
+    // later, that frame stands for the time before it.
+    const due = queue.take(Math.max(time, start));
+    if (due) send(due);
+
+    // A scrub holds the time at its target, where it moves on far past the frames after it:
+    // one ahead, not to hold up the upload of the frame due at the next target.
+    const ahead = time > state.from || !state.moved ? AHEAD : 1;
+
+    // Only frames decoded in order: one after a gap may yet have an earlier frame decoded before
+    // it.
+    while (pictures.count() + uploads.stamps.length < ahead) {
+      const next = queue.first();
+      if (!next || next.timestamp > decoding.decodedTo()) break;
+      queue.next();
+      send(next);
+    }
+
+    // Taken out of the queue, frames leave room for decoding.
+    wake.room();
+    return uploads.done;
+  }
+
   const events: DecoderEvents = {
     output(frame) {
       decoding.out(frame.timestamp);
       if (state.first === -Infinity) state.first = frame.timestamp;
-      // Out after a later frame went up, it could only take video back.
-      if (state.shown && frame.timestamp <= state.shown.timestamp) frame.close();
+      // Out after a later frame went up, or on its way, it could only take video back.
+      if (frame.timestamp <= uploads.latest) frame.close();
       else queue.push(frame);
       if (frame.timestamp < state.from) queue.drop(state.from);
+      // Decoded up to the time shown, or a scrub's target, the frame due then is known: it goes
+      // up at once, not on the next animation frame.
+      const at = Math.max(state.at, state.from);
+      if (decoding.decodedTo() >= at) void prepare(at);
       changed();
     },
     dequeue() {
@@ -195,43 +272,49 @@ export function createVideoOutput(
   const done = Promise.race([finish(), failed.promise]);
 
   /**
-   * Shows the latest frame due at media time `time` (microseconds), if it is not already on
-   * screen, and closes the frame it replaces. Whether a new frame went up.
+   * Shows the latest picture due at media time `time` (microseconds), if it is not already on
+   * screen, and closes the one it replaces; then prepares the next. Whether a new frame went
+   * up: one due but still uploading goes up on a later call.
    */
   function present(time: number) {
     state.at = time;
-    // From a seek, nothing goes up until the frame due at its target is decoded: the frames
-    // before it come first, and would flash by. Its end, as at a seek to the end, has them all.
-    const sought = state.shown || state.ended || decoding.decodedTo() >= state.from;
-    // Before the stream's first frame, as at a seek to the start of a file whose video starts
-    // later, that frame stands for the time before it.
-    const frame = sought ? queue.take(Math.max(time, start)) : undefined;
+    const picture = pictures.take(Math.max(time, start));
     // Waiting for the media time, only its nearing lets decoding on.
-    if (state.far ? !far() : frame) wake.room();
-    if (!frame) return false;
-    const replaced = state.shown;
-    // Owned before drawing, so a draw that throws leaves it for close.
-    state.shown = frame;
+    if (state.far ? !far() : picture) wake.room();
 
-    try {
-      compositor.draw(frame, p.matrix);
-    } finally {
-      replaced?.close();
+    if (picture) {
+      const replaced = state.shown;
+      // Owned before drawing, so a draw that throws leaves it for close.
+      state.shown = picture;
+
+      try {
+        compositor.draw(picture, p.matrix);
+      } finally {
+        replaced?.close();
+      }
     }
 
-    return true;
+    // Then the frames to go up next.
+    void prepare(time);
+    return picture !== undefined;
   }
 
   // Goes on to `to` (microseconds), later than where it plays from: the frames before it are
   // dropped as from a seek, and the latest due up to it goes up as it is decoded.
   function moveTo(to: number) {
     state.from = to;
+    state.moved = true;
     queue.drop(to);
+    // Decoded already, the frame due goes up at once, not on the next animation frame.
+    if (decoding.decodedTo() >= to) void prepare(to);
   }
 
   /** Whether the frame due at `time` (microseconds) is the one on screen. */
   function reached(time: number) {
-    return state.shown !== undefined && (state.ended || decoding.decodedTo() >= time);
+    // A frame due by then, still on its way up, is not on screen yet.
+    const coming = Math.min(pictures.first()?.timestamp ?? Infinity, uploads.stamps[0] ?? Infinity);
+    const decoded = state.ended || decoding.decodedTo() >= time;
+    return state.shown !== undefined && decoded && coming > time;
   }
 
   /** Stops decoding and closes every frame. */
@@ -242,6 +325,8 @@ export function createVideoOutput(
     queue.clear();
     state.shown?.close();
     state.shown = undefined;
+    pictures.clear();
+    uploads.stamps.length = 0;
     wake.room();
   }
 
@@ -255,6 +340,7 @@ export function createVideoOutput(
     decodedTo: decoding.decodedTo,
     /** Whether the decoder has decoded every packet. */
     ended: () => state.ended,
+    prepare,
     /** Whether the frame queue is full or far enough ahead, so decoding waits for the media time. */
     full: () => queue.full() || far(),
     /** Whether it waits for packets with nothing left to decode. */

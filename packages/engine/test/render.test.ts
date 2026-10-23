@@ -30,10 +30,13 @@ const expected: Record<string, { video: Video }> = await Bun.file(
 // Frames shown one by one, then a jump to a later one.
 const STEPS = 20;
 const JUMP = 59;
-// How closely a frame's brightness grid follows FFmpeg's (a correlation). The levels differ:
-// for an untagged stream Chromium and FFmpeg assume their own YUV matrix, and Chromium
-// converts the transfer too. A frame turned or mirrored the wrong way falls far below.
+// How closely a frame's brightness grid follows FFmpeg's (a correlation). A frame turned or
+// mirrored the wrong way falls far below.
 const MIN_CORRELATION = 0.9;
+// How far its cells may be from FFmpeg's on average, in 8-bit levels: the compositor converts
+// Y′CbCr as FFmpeg does, which leaves rounding, scaling to the canvas, and Chromium's own
+// conversion of a frame whose planes cannot be read (a 10-bit frame from the GPU decoder).
+const MAX_LEVEL_DIFFERENCE = 2;
 const server = await serveEngine("<!doctype html><title>test</title>");
 
 afterAll(() => server.stop(true));
@@ -120,6 +123,11 @@ for (const [file, { video }] of Object.entries(expected)) {
       if (!turned) expect(ids).toEqual(frames);
       const r = correlation(got.grid, video.grid);
       expect(r, `${file} grid ${JSON.stringify(got.grid)}`).toBeGreaterThan(MIN_CORRELATION);
+      const differences = got.grid.map((g, i) => Math.abs(g - (video.grid[i] ?? 0)));
+      const difference = differences.reduce((sum, d) => sum + d, 0) / differences.length;
+      expect(difference, `${file} grid ${JSON.stringify(got.grid)}`).toBeLessThan(
+        MAX_LEVEL_DIFFERENCE,
+      );
     } finally {
       await browser.close();
     }

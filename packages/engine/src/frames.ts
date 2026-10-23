@@ -72,6 +72,19 @@ export function createFrameQueue<F extends QueuedFrame>(
     return frame;
   }
 
+  /** The earliest frame, still the queue's, or undefined if there is none. */
+  const first = (): F | undefined => frames[0];
+
+  /** How many frames it holds. */
+  const count = () => frames.length;
+
+  /** The earliest frame, which the caller then owns, or undefined if there is none. */
+  function next() {
+    const frame = frames[0];
+    if (frame) shift(1);
+    return frame;
+  }
+
   /** Whether the queue holds `budget` bytes or more, so decoding should wait. */
   function full() {
     return bytes >= budget;
@@ -85,5 +98,5 @@ export function createFrameQueue<F extends QueuedFrame>(
     bytes = 0;
   }
 
-  return { push, drop, take, full, clear };
+  return { push, drop, take, next, first, count, full, clear };
 }
