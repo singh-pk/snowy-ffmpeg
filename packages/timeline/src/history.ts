@@ -162,6 +162,8 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
   const skips: Array<ReadonlySet<number>> = [];
   // The entry that appended each batch, by author and seq.
   const entryOf = new Map<string, number>();
+  // Each author's appended batches, in the order appended.
+  const byAuthor = new Map<KeyId, Batch[]>();
   // Batches by hash: an author who signs two batches with one seq has both held until an entry
   // picks one.
   const held = new Map<string, Held>();
@@ -204,13 +206,16 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
     return each.batch;
   }
 
-  // The entries' document at an entry, from the snapshot at or before it and the entries after
-  // that; undefined for an entry this history doesn't have under that hash.
+  // The entries' document at an entry, from the nearest snapshot at or before it and the entries
+  // after that; undefined for an entry this history doesn't have under that hash. An entry
+  // holding a revert has a snapshot of its own, so the entries replayed never hold one, and going
+  // back never recurses.
   function atEntry(ref: EntryRef): Snapshot | undefined {
     if (ref.n > appended.length || ref.hash !== (ref.n === 0 ? "" : hashes[ref.n - 1]))
       return undefined;
     if (ref.n === appended.length) return entered.snapshot();
-    const from = ref.n - (ref.n % SNAPSHOT_EVERY);
+    let from = ref.n;
+    while (!snapshots.has(from)) from -= 1;
     const project = createProject(snapshots.get(from));
     for (let n = from + 1; n <= ref.n; n += 1) project.apply(batchOf(n), atEntry);
     return project.snapshot();
@@ -261,30 +266,51 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
   // An author's batches on the branch, appended or pending, newest first, with the keys of those
   // a live undo has taken back. An undo is newer than what it undoes, so it is seen first.
   function undoState(author: KeyId) {
-    const own = [
-      ...appended.map((entry, i) => (entry.batch.author === author ? batchOf(i + 1) : undefined)),
-      ...shown.map(({ held: each }) => each.batch),
-    ]
-      .filter((batch) => batch?.author === author)
-      .flatMap((batch) => (batch === undefined ? [] : [batch]))
-      .toSorted((a, b) => b.seq - a.seq);
+    const pendingOwn = shown.flatMap(({ held: each, applied }) =>
+      each.batch.author === author
+        ? [{ batch: each.batch, skipped: new Set(applied.skipped.map(({ index }) => index)) }]
+        : [],
+    );
+    const appendedOwn = (byAuthor.get(author) ?? []).map((batch) => ({
+      batch,
+      skipped: skips[(entryOf.get(keyOf(batch)) ?? 0) - 1] ?? new Set<number>(),
+    }));
+    const mine = [...appendedOwn, ...pendingOwn].toSorted((a, b) => b.batch.seq - a.batch.seq);
     const undone = new Set<string>();
     const isUndo = new Set<string>();
 
-    for (const batch of own) {
+    for (const { batch } of mine) {
       if (batch.undoes === undefined) continue;
       isUndo.add(keyOf(batch));
       if (!undone.has(keyOf(batch))) undone.add(keyOf(batch.undoes));
     }
 
-    return { own, undone, isUndo };
+    return { mine, undone, isUndo };
   }
 
-  /** The author's latest batch on the branch that isn't an undo and isn't undone: what undo takes back. */
+  // Each author's appended batches, made on first use.
+  function own(author: KeyId) {
+    const batches = byAuthor.get(author) ?? [];
+    byAuthor.set(author, batches);
+    return batches;
+  }
+
+  /**
+   * The author's latest batch on the branch that isn't an undo, isn't undone, and applied an
+   * operation undo can take back: what undo takes back. A batch of only reverts and branch
+   * operations is passed over; reverting to the entry before it takes it back.
+   */
   function undoable(author: KeyId): BatchRef | undefined {
-    const { own, undone } = undoState(author);
-    const found = own.find((batch) => batch.undoes === undefined && !undone.has(keyOf(batch)));
-    return found === undefined ? undefined : { author, seq: found.seq };
+    const { mine, undone } = undoState(author);
+    const found = mine.find(
+      ({ batch, skipped }) =>
+        batch.undoes === undefined &&
+        !undone.has(keyOf(batch)) &&
+        batch.ops.some(
+          (op, i) => !skipped.has(i) && !op.op.startsWith("branch.") && op.op !== "revert",
+        ),
+    );
+    return found === undefined ? undefined : { author, seq: found.batch.seq };
   }
 
   /**
@@ -292,9 +318,9 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
    * redo takes back. A redo is an undo of an undo, so it is never redone itself.
    */
   function redoable(author: KeyId): BatchRef | undefined {
-    const { own, undone, isUndo } = undoState(author);
+    const { mine, undone, isUndo } = undoState(author);
 
-    for (const batch of own) {
+    for (const { batch } of mine) {
       if (undone.has(keyOf(batch))) continue;
       if (batch.undoes === undefined) return undefined;
       if (!isUndo.has(keyOf(batch.undoes))) return { author, seq: batch.seq };
@@ -345,7 +371,14 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
     if (each === undefined || !follows(entry))
       throw new RangeError(`entry ${entry.n} can't follow`);
     const key = keyOf(each.batch);
-    const applied = entered.apply(each.batch, atEntry);
+    // A revert to the last entry means the document before this batch, not the entries'
+    // document part way through applying it.
+    const reverts = each.batch.ops.some(({ op }) => op === "revert");
+    const prior = reverts ? entered.snapshot() : undefined;
+    const ahead = head();
+    const applied = entered.apply(each.batch, (ref) =>
+      prior !== undefined && ref.n === ahead.n && ref.hash === ahead.hash ? prior : atEntry(ref),
+    );
     const skipped = new Set(applied.skipped.map((skip) => skip.index));
     const mine = new Set(each.batch.ops.filter((_, i) => !skipped.has(i)).flatMap(touches));
     const isConcurrent = concurrent(entry, each.batch, mine);
@@ -354,7 +387,8 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
     touched.push({ author: each.batch.author, touches: mine });
     skips.push(skipped);
     entryOf.set(key, entry.n);
-    if (entry.n % SNAPSHOT_EVERY === 0) snapshots.set(entry.n, entered.snapshot());
+    own(each.batch.author).push(each.batch);
+    if (entry.n % SNAPSHOT_EVERY === 0 || reverts) snapshots.set(entry.n, entered.snapshot());
     settled.add(key);
     change.entered.push({ entry, skipped: applied.skipped, concurrent: isConcurrent });
     // Another batch the author signed with the same seq can never be appended now.
@@ -367,8 +401,10 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
       others ||= other !== each.hash;
     }
 
-    // The entry orders its batch as the shown document had it first: nothing shown changes.
-    if (shown[0]?.held === each && !others) {
+    // The entry orders its batch as the shown document had it first: nothing shown changes. A
+    // revert is the exception, since what it reverts to depends on the entries this peer had
+    // when it showed the batch.
+    if (shown[0]?.held === each && !others && !reverts) {
       shown.shift();
       return;
     }

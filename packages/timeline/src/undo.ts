@@ -8,7 +8,7 @@
 
 import type { Batch } from "./batch";
 import { itemId, type ItemId } from "./ids";
-import { leafOf, type Document } from "./project";
+import { createProject, leafOf, type Document } from "./project";
 
 type Operation = Batch["ops"][number];
 
@@ -20,7 +20,16 @@ export type Undo = { ops: Operation[]; left: Left[] };
 
 type Documents = { before: Document; after: Document; now: Document };
 
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+// A value with every object's keys in code-unit order, so records built by different paths compare
+// equal when their fields are.
+function sorted(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sorted);
+  if (typeof value !== "object" || value === null) return value;
+  const keys = Object.keys(value).toSorted();
+  return Object.fromEntries(keys.map((key) => [key, sorted(Reflect.get(value, key))]));
+}
+
+const same = (a: unknown, b: unknown) => JSON.stringify(sorted(a)) === JSON.stringify(sorted(b));
 
 const keyframeAt = (document: Document, target: ItemId, param: string, at: number) =>
   document.keyframes(target).find((keyframe) => keyframe.param === param && keyframe.at === at);
@@ -83,10 +92,17 @@ function undoOne(op: Operation, id: ItemId, docs: Documents): Operation[] | stri
     case "item.move": {
       const was = before.item(op.id);
       if (was === undefined) return [];
-      if (was.kind === "transition") return "not placed by an anchor";
-      return stands(docs, op.id, false)
-        ? [{ op: "item.move", id: op.id, anchor: was.anchor }]
-        : "changed since";
+      const given = after.item(op.id);
+      const current = now.item(op.id);
+      if (
+        was.kind === "transition" ||
+        given?.kind === "transition" ||
+        current?.kind === "transition"
+      )
+        return "not placed by an anchor";
+      if (current === undefined || current.removed) return "removed since";
+      if (!same(current.anchor, given?.anchor)) return "changed since";
+      return [{ op: "item.move", id: op.id, anchor: was.anchor }];
     }
     case "clip.split":
       if (!stands(docs, op.id, false) || !stands(docs, id, false)) return "changed since";
@@ -104,6 +120,8 @@ function undoOne(op: Operation, id: ItemId, docs: Documents): Operation[] | stri
       const current = keyframeAt(now, target, param, at);
       if (!same(current, keyframeAt(after, target, param, at))) return "changed since";
       const old = keyframeAt(before, target, param, at);
+      // A keyframe the same batch went on to remove: nothing to take back.
+      if (old === undefined && current === undefined) return [];
       return [
         old === undefined
           ? { op: "keyframe.remove", target, param, at }
@@ -112,8 +130,9 @@ function undoOne(op: Operation, id: ItemId, docs: Documents): Operation[] | stri
     }
     case "keyframe.remove": {
       const old = keyframeAt(before, op.target, op.param, op.at);
-      if (old === undefined || keyframeAt(now, op.target, op.param, op.at) !== undefined)
-        return "changed since";
+      // A keyframe the same batch set first: undoing that setting takes it back.
+      if (old === undefined) return [];
+      if (keyframeAt(now, op.target, op.param, op.at) !== undefined) return "set since";
       return [{ op: "keyframe.set", keyframe: old }];
     }
     case "revert":
@@ -132,6 +151,8 @@ function undoOne(op: Operation, id: ItemId, docs: Documents): Operation[] | stri
 /**
  * The operations that undo `batch`, last operation first, from the documents just before and
  * just after it and the document now. `skipped` are the indexes of the operations it skipped.
+ * Each operation is undone against the document as the undo's operations so far leave it, so
+ * one that a later operation of the batch removed is undone once that removal is.
  */
 export function undoBatch(
   batch: Pick<Batch, "author" | "seq" | "ops">,
@@ -140,12 +161,20 @@ export function undoBatch(
 ): Undo {
   const ops: Operation[] = [];
   const left: Left[] = [];
+  const now = createProject(docs.now.snapshot());
+  const progress = { ...docs, now };
 
   for (const [index, op] of [...batch.ops.entries()].toReversed()) {
     if (skipped.has(index)) continue;
-    const undo = undoOne(op, itemId(batch.author, batch.seq, index), docs);
-    if (typeof undo === "string") left.push({ index, reason: undo });
-    else ops.push(...undo);
+    const undo = undoOne(op, itemId(batch.author, batch.seq, index), progress);
+
+    if (typeof undo === "string") {
+      left.push({ index, reason: undo });
+      continue;
+    }
+
+    ops.push(...undo);
+    now.apply({ author: batch.author, seq: batch.seq, ops: undo });
   }
 
   return { ops, left };

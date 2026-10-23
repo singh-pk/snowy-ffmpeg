@@ -7,12 +7,29 @@
 // Usage: bun run test
 
 import { expect, test } from "../../../tooling/unit";
-import { SNAPSHOT_EVERY } from "../src/history";
+import type { Batch } from "../src/batch";
+import { createHistory, SNAPSHOT_EVERY } from "../src/history";
 import { leafOf } from "../src/project";
 import { author, fail, rename, sequenceAdd, sequencedBy } from "./support/history";
 import type { Op } from "./support/project";
 
 const SECOND = 705_600_000;
+
+// Adds a connected video clip of `role`, two seconds long, anchored to `clip`.
+const connected = (role: string, clip: string, at: number): Op => ({
+  op: "item.add",
+  item: {
+    kind: "clip",
+    source: { generator: "solid", params: { color: "#ffffff" } },
+    in: 0,
+    duration: 2 * SECOND,
+    speed: [1, 1],
+    anchor: { clip, at },
+    role,
+    lane: 1,
+    enabled: true,
+  },
+});
 
 const refOf = ({ author: by, seq }: { author: string; seq: number }) => ({ author: by, seq });
 
@@ -25,6 +42,8 @@ async function setUp() {
   const sequence = `${a.key}.1.0`;
   const role = `${a.key}.1.1`;
   let clock = 0;
+  // Every batch committed, to hand another peer.
+  const batches: Array<{ batch: Batch; hash: string }> = [];
 
   const clip = (position: string, duration = 2 * SECOND): Op => ({
     op: "item.add",
@@ -50,18 +69,19 @@ async function setUp() {
     clock += 1;
     const hlc = clock.toString(16).padStart(16, "0");
     const { batch, hash } = await by.commit(ops, hlc, history.head(), options.undoes);
+    batches.push({ batch, hash });
     await history.pend(batch, hash);
-    const ref = { author: batch.author, seq: batch.seq };
-    if (options.pending === true) return { ...ref, skipped: [] };
+    const made = { author: batch.author, seq: batch.seq };
+    if (options.pending === true) return { ...made, skipped: [] };
     const { change } = await history.sequence(a.peer);
-    return { ...ref, skipped: change.entered.at(-1)?.skipped ?? [] };
+    return { ...made, skipped: change.entered.at(-1)?.skipped ?? [] };
   }
 
   // Undoes a batch, committing its undo as `by`.
-  async function undo(by: typeof a, ref: { author: string; seq: number }, pending = false) {
-    const { ops, left } = history.undo(refOf(ref));
+  async function undo(by: typeof a, target: { author: string; seq: number }, pending = false) {
+    const { ops, left } = history.undo(refOf(target));
     if (ops.length === 0) return { ops, left, made: undefined };
-    const made = await edit(by, ops, { pending, undoes: refOf(ref) });
+    const made = await edit(by, ops, { pending, undoes: refOf(target) });
     return { ops, left, made: refOf(made) };
   }
 
@@ -72,7 +92,13 @@ async function setUp() {
   await edit(a, [sequenceAdd, roleAdd, clip("a0"), clip("a1")]);
   const first = `${a.key}.1.2`;
   const second = `${a.key}.1.3`;
-  return { a, b, history, edit, undo, clip, sequence, first, second };
+
+  // An entry as an `EntryRef` names it: its hash is the next entry's prev, or the head's.
+  function entryRef(n: number) {
+    return n === history.head().n ? history.head() : { n, hash: history.entries()[n]?.prev ?? "" };
+  }
+
+  return { a, b, history, edit, undo, clip, sequence, role, first, second, batches, entryRef };
 }
 
 test("an undo sets a leaf back unless someone changed it since, and leaves other leaves alone", async () => {
@@ -167,8 +193,8 @@ test("undo takes back the author's latest edit not undone, redo the latest undo,
   expect(history.redoable(a.key)).toEqual(undid.made);
   expect(history.undoable(a.key)).toEqual(one);
 
-  await undo(a, one);
-  expect(history.redoable(a.key) === undefined).toBe(false);
+  const undoneAgain = await undo(a, one);
+  expect(history.redoable(a.key)).toEqual(undoneAgain.made);
   await edit(a, [rename("three")]);
   expect(history.redoable(a.key)).toBeUndefined();
 });
@@ -218,4 +244,89 @@ test("going back shows the document at any entry, through the snapshots", async 
   expect(at(SNAPSHOT_EVERY + 2).name()).toBe(`n${SNAPSHOT_EVERY + 1}`);
   expect(() => history.at({ n: 2, hash: "Q".repeat(43) })).toThrow(RangeError);
   expect(() => history.at({ n: SNAPSHOT_EVERY + 4, hash: "Q".repeat(43) })).toThrow(RangeError);
+});
+
+test("an undo restores what the batch removed before setting back what it set on it", async () => {
+  const { a, history, edit, undo, first } = await setUp();
+  const batch = await edit(a, [
+    { op: "item.set", id: first, path: "video.opacity", value: 0.5 },
+    { op: "item.move", id: first, anchor: { storyline: `${a.key}.1.0`, position: "a5" } },
+    { op: "item.remove", id: first },
+  ]);
+  const { ops, left } = await undo(a, refOf(batch));
+  expect(left).toEqual([]);
+  expect(ops).toEqual([
+    { op: "item.restore", id: first },
+    { op: "item.move", id: first, anchor: { storyline: `${a.key}.1.0`, position: "a0" } },
+    { op: "item.set", id: first, path: "video.opacity", value: 1 },
+  ]);
+  const clip = history.document().record(first);
+  expect(clip?.removed).toBe(false);
+  expect(leafOf(clip?.record ?? {}, "video.opacity")).toBe(1);
+});
+
+test("a keyframe set and removed by one batch leaves nothing to undo", async () => {
+  const { a, edit, undo, first } = await setUp();
+  const keyframe = {
+    target: first,
+    param: "video.opacity",
+    at: 0,
+    value: 0.5,
+    ease: "linear" as const,
+  };
+  const batch = await edit(a, [
+    { op: "keyframe.set", keyframe },
+    { op: "keyframe.remove", target: first, param: "video.opacity", at: 0 },
+    rename("x"),
+  ]);
+  const { ops, left } = await undo(a, refOf(batch));
+  expect(ops).toEqual([{ op: "project.set", name: "" }]);
+  expect(left).toEqual([]);
+});
+
+test("undo passes over a batch that only reverts", async () => {
+  const { a, history, edit } = await setUp();
+  const named = await edit(a, [rename("x")]);
+  await edit(a, [{ op: "revert", to: history.head() }]);
+  expect(history.undoable(a.key)).toEqual(refOf(named));
+});
+
+test("a revert part way through a batch reverts to the entry before it, pending or appended", async () => {
+  const { a, history, edit, batches, sequence, entryRef } = await setUp();
+  await edit(a, [rename("x")]);
+  const before = history.head();
+  await edit(a, [rename("z"), { op: "revert", to: before }], { pending: true });
+  expect(history.document().name()).toBe("x");
+  await history.sequence(a.peer);
+  expect(history.document().name()).toBe("x");
+  expect(history.at(entryRef(history.head().n - 1)).name()).toBe("x");
+
+  // Another peer, given only the batches and entries, reaches the same document.
+  const other = createHistory({ branch: "main", sequencer: a.key });
+  for (const { batch, hash } of batches) await other.pend(batch, hash);
+  for (const entry of history.entries()) await other.append(entry);
+  expect(other.document().snapshot()).toEqual(history.document().snapshot());
+  expect(other.document().storyline(sequence)).toEqual(history.document().storyline(sequence));
+});
+
+test("reverts within reverts replay once, and keep the layout's indexes", async () => {
+  const { a, history, edit, clip, sequence, role, first, entryRef } = await setUp();
+  await edit(a, [connected(role, first, SECOND / 2)]);
+  const connectedId = `${a.key}.2.0`;
+  const placed = history.head();
+  const startThen = history.document().start(connectedId);
+  const lanesThen = history.document().lanes(role);
+  await edit(a, [{ op: "item.move", id: connectedId, anchor: { origin: sequence, at: 0 } }]);
+  await edit(a, [clip("a2")]);
+
+  // Each revert goes back to the entry before the last, which holds the revert before it.
+  for (let i = 0; i < 40; i += 1) {
+    await edit(a, [rename(`r${i}`)]);
+    await edit(a, [{ op: "revert", to: entryRef(history.head().n - 1) }]);
+  }
+
+  await edit(a, [{ op: "revert", to: placed }]);
+  expect(history.document().start(connectedId)).toBe(startThen);
+  expect(history.document().lanes(role)).toEqual(lanesThen);
+  expect(history.at(entryRef(history.head().n - 2)).name()).toBe("r39");
 });
