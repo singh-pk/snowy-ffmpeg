@@ -2,15 +2,14 @@
 // SPDX-License-Identifier: MIT
 //
 // How far a video decoder has decoded, whatever order it emits frames in: every frame up to a
-// time has come out of it. Firefox, told to optimize for latency, emits decode order; the
-// others presentation order. A packet that makes no frame (a VP8 alt-ref frame) is not waited
+// time has come out of it. A packet that makes no frame (a VP8 alt-ref frame) is not waited
 // for, and nor is one whose frame a decoder never emits, once a frame fed far enough after it
 // has come out (docs/architecture.md#video-output).
 
 /**
  * How many packets, in decode order, a frame may be fed after one whose frame comes out after
  * it. How long a decoder holds frames delays them all alike, so this is how far the stream
- * reorders: in decode order, in Firefox, nothing comes out ahead. Twice the 16 frames of an
+ * reorders. Twice the 16 frames of an
  * H.264 or HEVC decoded picture buffer, as a margin; a stream that reorders further, or
  * stores a field a packet, may count a frame decoded before it comes, which then shows late
  * or is dropped, but never holds play.

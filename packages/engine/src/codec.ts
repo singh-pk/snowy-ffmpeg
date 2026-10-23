@@ -339,7 +339,7 @@ export function videoConfig(p: VideoParams, keyframe: Uint8Array): VideoDecoderC
     num > 0 && den > 0 && num !== den
       ? { displayAspectWidth: p.width * num, displayAspectHeight: p.height * den }
       : {};
-  // With each frame out as soon as the stream allows. Without it, Chromium and Firefox hold more
+  // With each frame out as soon as the stream allows. Without it, Chromium holds more
   // frames than the stream reorders, and in sparse video those wait seconds for the packets
   // that let them out. Decoding 4K is about as fast with it
   // (docs/architecture.md#video-decoder-configs).

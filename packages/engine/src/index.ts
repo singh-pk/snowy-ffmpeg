@@ -70,7 +70,7 @@ const NO_VIDEO_RING = 64;
 const PREROLL = 0.25;
 // The output timestamp has settled once this many in a row, each newer than the last, map
 // context time to performance time within SETTLED_MS of the one before. The first ones
-// after output starts are estimates: Chromium's move by 35 ms, Firefox's by 10 ms. Coarse
+// after output starts are estimates: Chromium moves them by up to 35 ms. Coarse
 // timers may never agree, so it settles anyway after SETTLED_LIMIT newer ones.
 const SETTLED_COUNT = 2;
 const SETTLED_MS = 2;
@@ -322,8 +322,7 @@ function createPlayer(render: Worker, media: ReturnType<typeof createMedia>): En
     const output = { offset: Number.NaN, at: 0, agreed: 0, newer: 0, settled: false };
 
     // The output timestamp, for the render worker (src/pcm.ts), on every animation frame and
-    // as the context stops. It runs once it has settled, and stays so until the context stops:
-    // Firefox's then wanders by a few milliseconds, which is no reason to stop the clock.
+    // as the context stops. It runs once it has settled, and stays so until the context stops.
     function publish() {
       const { contextTime = 0, performanceTime = 0 } = context.getOutputTimestamp();
       const offset = contextTime * 1000 - performanceTime;
