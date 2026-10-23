@@ -75,8 +75,7 @@ test("a link carries messages and objects, and closes when its peer leaves", asy
     ]),
     objects: [{ text: "batch" }],
     fromBob: [true],
-    // Bob's own link closes with its connection, then Alice's as Bob is withdrawn.
-    closed: ["bob", "alice"],
+    closed: ["alice", "bob"],
     peers: { alice: true, bob: true },
   });
 }, 60_000);

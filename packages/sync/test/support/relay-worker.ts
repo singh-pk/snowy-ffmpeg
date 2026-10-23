@@ -123,7 +123,8 @@ async function links(config: RelayConfig) {
     heard,
     objects,
     fromBob: objects.map((o) => o.key === `chat/${bob.id}/1-1`),
-    closed,
+    // In no particular order: Bob's link closes with its connection, Alice's as Bob is withdrawn.
+    closed: closed.toSorted(),
     peers: { alice: opened.bob!.peer === alice.id, bob: opened.alice!.peer === bob.id },
   };
 }
