@@ -1,6 +1,11 @@
 # Architecture
 
-How @snowy-media/sync is built: one person plays a local media file to a group of viewers, everyone shares a chat, and each viewer picks their own audio and subtitle tracks. For using it, start with the [README](../README.md).
+How @snowy-media/sync is built. It runs two kinds of session over one transport:
+
+- **Watch sessions:** one person plays a local media file to a group of viewers, everyone shares a chat, and each viewer picks their own audio and subtitle tracks.
+- **Edit sessions:** people and agents edit one `@snowy-media/timeline` project together. Each person's media stays on their own disk, and it is streamed from there to the others ([Edit sessions](#edit-sessions)).
+
+Everything up to [Edit sessions](#edit-sessions) describes watch sessions. Edit sessions reuse it, and that section says what differs. For using the package, start with the [README](../README.md).
 
 ## Contents
 
@@ -21,21 +26,22 @@ How @snowy-media/sync is built: one person plays a local media file to a group o
 15. [Audio and subtitle choice](#audio-and-subtitle-choice)
 16. [Chat](#chat)
 17. [Presence and membership](#presence-and-membership)
-18. [Events](#events)
-19. [The relay](#the-relay)
-20. [Security](#security)
-21. [Session lifecycle](#session-lifecycle)
-22. [Requirements on @snowy-media/engine](#requirements-on-snowy-mediaengine)
-23. [Constants](#constants)
-24. [Limits](#limits)
-25. [Testing](#testing)
+18. [Edit sessions](#edit-sessions)
+19. [Events](#events)
+20. [The relay](#the-relay)
+21. [Security](#security)
+22. [Session lifecycle](#session-lifecycle)
+23. [Requirements on @snowy-media/engine](#requirements-on-snowy-mediaengine)
+24. [Constants](#constants)
+25. [Limits](#limits)
+26. [Testing](#testing)
 
 ## Principles
 
 | Principle | Meaning |
 | --- | --- |
 | **Local-first** | Every peer keeps its own copy of what its interests cover; the source reads from its file. The interface reads only from local data, never from the network. Losing the network loses nothing that was already received. |
-| **One writer per object** | Each object has exactly one author: the source writes media, control and the catalog, and each peer writes its own chat and records. Two peers never write the same object, so nothing needs merging. |
+| **One writer per object** | Each object has exactly one author: the source writes media, control and the catalog, and each peer writes its own chat and records. In an edit session, each asset's source writes that asset's media, each author writes their own timeline batches, and the active sequencer writes a branch's history. Two peers never write the same object, so nothing needs merging. |
 | **Event-driven** | Snowy's code has no timers and polls nothing. Every action responds to an event from the transport, the engine, the store or the user. The only clocks are the transports' keepalives and the engine's media clock, and both reach Snowy as events. |
 | **Each byte crosses each link once** | No peer receives the same object twice. The source pushes each chunk to the relay once. It sends a chunk again only to a peer that asks for one no connected forwarder holds. |
 | **Metadata goes only to those who need it** | What a forwarder holds goes to its group, and a receiver's capability record goes to the source. Records are sent when they change, never repeated. |
@@ -75,6 +81,7 @@ The engine's baseline, plus:
 - The engine knows nothing about networks. It plays packets from whatever packet source it is given ([Requirements on @snowy-media/engine](#requirements-on-snowy-mediaengine)).
 - Both transports sit behind one `Link` interface. The scheduler, store and chat never refer to MoQ or WebRTC directly.
 - **Consumers** (the player, the editor) decide what is fetched and kept, through [interests](#interests-and-retention). The sync package applies no retention policy of its own.
+- **Timeline content is opaque.** In an edit session, sync carries `@snowy-media/timeline`'s batches, entries and terms as bytes, with the few fields it needs to order and repair them, given by the consumer. It never parses or applies them, and it doesn't depend on the timeline package ([Edit sessions](#edit-sessions)).
 - **Export belongs to the consumer.** The sync package knows no container formats and never writes to the user's files. It exposes chunks in order through `sync.read(track, fromUs)`, an async iterator that waits for each chunk's `stored` event and ends after the last chunk (`catalog.chunkCount`). The editor remuxes them with `@snowy-media/ffmpeg` and writes the file itself.
 
 ```ts
@@ -94,7 +101,7 @@ type Link = {
 | Key | Type | Held by | Purpose |
 | --- | --- | --- | --- |
 | **Peer key** | Ed25519 key pair, one per device per session | Every peer, the source included | Identifies the peer and signs its capability records, chat checkpoints and relay requests. `PeerId` is the base64url public key. |
-| **Session key** | Ed25519 key pair | The source | Signs the catalog, chunk headers, control records and join grants, and authenticates the source to the relay. `SessionId` is the base64url public key. |
+| **Session key** | Ed25519 key pair | The source | Signs the catalog, chunk headers, control records and join grants, and authenticates the source to the relay. `SessionId` is the base64url public key. In an edit session it is the project key, held by the owner, and signs only grants and the project record ([Edit sessions](#edit-sessions)). |
 | **Session secret** | 32 random bytes | Everyone with the invite | HKDF derives the content encryption key from it |
 
 Private keys are generated non-extractable and kept in IndexedDB ([Local store](#local-store)).
@@ -128,7 +135,7 @@ The source's token is a request signed by both the session key and the source's 
 
 | Role | Who | Uploads |
 | --- | --- | --- |
-| **Source** | The peer with the file. There is exactly one per session. It reads chunks from its [file](#the-sources-file) and stores none. | Every chunk once to the relay; control; the catalog; chunks asked for when no forwarder holds them |
+| **Source** | The peer with the file. A watch session has exactly one; in an edit session, each asset has one ([Asset sources](#asset-sources)). It reads chunks from its [file](#the-sources-file) and stores none. | Every chunk once to the relay; control; the catalog; chunks asked for when no forwarder holds them |
 | **Forwarder** | A peer that meets every rule for becoming a forwarder (below) | Chunks to the peers in its group |
 | **Receiver** | Every other peer | No media. Its own chat and records only. |
 
@@ -232,7 +239,7 @@ Every object is encrypted.
 
 ### Encryption
 
-- **Content key:** `HKDF-SHA256(sessionSecret, salt = SessionId, info = "snowy content v1")`, used as an AES-256-GCM key.
+- **Content key:** `HKDF-SHA256(sessionSecret, salt = SessionId, info = "snowy content v1")`, used as an AES-256-GCM key. An edit session derives one per publisher instead ([Encryption in an edit session](#encryption-in-an-edit-session)).
 - **Nonce:** 96 random bits from `crypto.getRandomValues` for every encryption, sent in front of the ciphertext. The nonce never depends on the object key, so a replaced object, a re-sent batch or a lost counter can't reuse one. At the session's scale, random 96-bit nonces stay far below the AES-GCM limit of 2³² encryptions per key.
 - **Associated data:** the object key, so ciphertext can't be moved to a different key.
 - Peers store and forward the **encrypted bytes unchanged**. They decrypt only to read.
@@ -261,14 +268,17 @@ type Catalog = {
 
 ```text
 ChunkHeader (signed, plaintext inside the encrypted object)
+  version      u8      1 in a watch session, 2 in an edit session
   session      SessionId
+  asset        [32]    version 2 only: the AssetId
+  signer       PeerId  version 2 only: the source that cut the chunk
   track        u16
   index        u32
   startUs      i64     inclusive, the pts of the chunk's keyframe
   endUs        i64     exclusive, the startUs of the next chunk
   count        u32     packets
   bodyHash     SHA-256 of the body
-  sig          Ed25519 by the session key over every field above
+  sig          Ed25519 over every field above: by the session key (version 1), or by `signer` (version 2)
 Body
   count × PacketRecord, in decode order
     ptsUs       i64
@@ -280,6 +290,7 @@ Body
 ```
 
 - Timestamps are in microseconds for every track, so every track shares one timeline.
+- A version 2 header names the project, the asset and the source, so a chunk can't be replayed into another project, asset or source. A peer stores one only if `signer` is the source named in the chunk's namespace and holds `edit`.
 - A peer stores a chunk only once the signature and `bodyHash` both check out. It throws away anything that fails without storing it.
 
 ## Local store
@@ -497,7 +508,8 @@ type Control = {
   mediaUs: number;         // position at `atUs`
   atUs: number;            // source clock, microseconds
   ended: boolean;
-  sig: string;
+  sequence?: string;       // edit sessions: the sequence it plays, whose time `mediaUs` is
+  sig: string;             // by the session key, or in an edit session by the publisher's peer key
 };
 ```
 
@@ -551,7 +563,7 @@ type ChatMessage = {
   seq: number;              // 1, 2, 3, … per author, kept in the local store
   prev: string;             // SHA-256 of the author's previous message, or "" for seq 1
   hlc: string;              // hybrid logical clock: 16 hex digits, wall ms (48 bits) then counter (16 bits)
-  mediaUs: number;          // the sender's playhead when sending
+  mediaUs: number;          // the sender's playhead when sending; in an edit session, on the sequence it has open
   kind: "text" | "edit" | "delete" | "react";
   target?: { author: PeerId; seq: number };   // the message an edit, delete or reaction applies to
   text?: string;            // text and edit
@@ -618,13 +630,131 @@ Message text is rendered with `textContent` only.
 - **Leaving:** the namespace's withdrawal, or the link's `close` event, marks a peer offline. There are no heartbeats.
 - **Getting current state on join** (the relay holds none): the joiner asks for `catalog`, `control`, `init/*` and the forwarders' capability records from the source if it's online. Otherwise it asks the online peer with the lowest `SHA-256(peer ‖ "state")`, and the next one on `gone` or `close`. Every record is signed, so it can come from any peer.
 
+## Edit sessions
+
+An edit session is a live connection to one `@snowy-media/timeline` project. A project outlives its sessions: peers join and leave, and the project goes on in every editor's project folder. Everything above applies, with these differences.
+
+| | Watch session | Edit session |
+| --- | --- | --- |
+| Session key | Made by the source | The project key, held by the project's owner. `SessionId` is the `ProjectId`. |
+| What the session key signs | The catalog, chunk headers, control records and join grants | Grants and the project record only. Everything else is signed by the peer key of whoever publishes it. |
+| Media | One file, from the source | Every asset in the project, each from any editor that has its file |
+| Media delivery | Pushed ahead, through forwarders and peer groups | Asked for, through the relay ([Asset sources](#asset-sources)) |
+| Rights | `viewer` | `view`, `propose`, `edit` ([Rights and grants](#rights-and-grants)) |
+| Playback | The source controls everyone's playhead | Each peer has its own playhead, and may follow another's ([Following a playhead](#following-a-playhead)) |
+| Shared state | Chat | Chat, grants, asset catalogs, timeline batches, branch histories and presence |
+| `onEnd` | Either | `keep` only; `delete` is refused |
+| Ends | When the source ends it | Never as a whole: peers leave, and the project stays |
+
+### Rights and grants
+
+```ts
+type Grant = {
+  session: SessionId;
+  rights: Array<"view" | "propose" | "edit">;
+  to?: PeerId;                // one key; absent only in an invite
+  by: string;                 // the key that signed: the project key, or a PeerId
+  chain?: Grant;              // when `by` is a peer: the grant that gave it these rights
+  sig: string;                // Ed25519 by `by`
+};
+```
+
+- **An invite** is a grant without `to`, signed by the project key, in the invite link's fragment as in a watch session: `https://<app>/edit#v=1&relay=…&s=…&k=…&g=…`. Whoever holds it has its rights.
+- **The owner** gives its own peer key a grant with every right, signed by the project key, so the owner's edits are checked like anyone's.
+- **A grant to an agent** is signed by the peer that connects it, names the agent's key in `to`, and carries in `chain` the grant that peer holds.
+- **Checking a grant:** its signature covers `snowy grant v1\n` followed by its canonical JSON without `sig`, fields in the order above. It is valid if:
+  1. it is signed by the project key and names this session; or
+  2. it is signed by a peer, has a `to`, names this session, its `rights` are a subset of its `chain`'s, and its `chain` is valid and either names the signer in `to` or is an invite.
+  A chain is at most 2 grants long: from the project key to a person, or an invite, then to an agent.
+- **Grants travel with their holders.** Each peer publishes its own grant, and the grants of the agents it carries, on `peer/<self>/grants`, a record that changes only when an agent is connected or disconnected. A peer checks every batch and asset catalog against its author's grant, so a relay that lets something through still can't make anyone accept it.
+- **Who sequences isn't a grant.** The timeline's signed project record names it, and sync never checks it ([Timeline batches and histories](#timeline-batches-and-histories)).
+
+### Asset sources
+
+- **Any peer with `edit` whose file matches an asset is a source of it.** It reads the asset from its own `FileSystemFileHandle`, cuts chunks exactly as [Media at the source](#media-at-the-source) describes, and serves them under its own namespace: `asset/<source PeerId>/<AssetId>`. The relay keeps no state, so it can't remember who published an asset first; with the source in the name, the relay can enforce who publishes from the token alone, and two sources of one asset never write the same object.
+- An asset's `catalog`, `init/<track>` and `media/<track>` objects have the formats of a watch session's, **signed by the source's peer key** instead of the session key. A chunk header in an edit session is version 2 ([Media chunk](#media-chunk)).
+- Chunks from two sources of one asset are kept apart: a peer fetches a range of an asset from one source, preferring a source it already holds chunks of that asset from, then the lowest RTT. When that source goes, the next one's chunks are fetched for what is still missing.
+- **Delivery is by request only, through the relay** (`deliver`). There is no shared playhead to push ahead of, so nothing is pushed, nobody subscribes live to `media`, and forwarders, peer groups and `caps.audio` don't apply. The source answers requests in priority order: `urgent`, then `ahead`, then `background`.
+- An asset with no source online can still be edited: the timeline refers to it by its id. Its media plays only from chunks a peer already holds.
+
+### Media keys
+
+Every media object key and store path in an edit session starts with `<source>/<AssetId>/`: `media/<source>/<AssetId>/<track>/<index>`. Because the object key is the encryption's associated data, ciphertext can't be moved from one asset or source to another. The calls and events that name a track (`sync.read`, `sync.drop`, `stored`, `evicted`, `complete`, have ranges) name an asset and source as well.
+
+### Interests in an edit session
+
+An interest names an asset as well as tracks and a range: `sync.interest({ asset, tracks, fromUs, toUs, priority, keep })`. The editor places them from the timeline's render plan:
+
+| Interest | Covers | Priority |
+| --- | --- | --- |
+| Playing | The ranges of each asset the plan uses from the playhead to 30 s ahead | `urgent` |
+| The edit | Every range of every asset the timeline uses | `background`, `keep: true` |
+| The rest | The rest of each asset, so clips can be extended | `background`, `keep: true`, after the edit's ranges |
+
+The editor moves the first on every `progress` event, and replaces the others on every timeline `changed` event that changes which ranges are used. An asset whose file the peer has needs no interest: it plays from its own file.
+
+### Timeline batches and histories
+
+| Namespace / track | Publisher | Subscribers | Content |
+| --- | --- | --- | --- |
+| `source` / `project` | The owner | All | The timeline's signed project record |
+| `peer/<PeerId>` / `grants` | That peer | All | Its grant, and the grants of agents it carries |
+| `peer/<PeerId>` / `batches` | That peer | All | Timeline batches by that peer, and by agents it carries |
+| `peer/<PeerId>` / `history/<BranchId>` | That peer, while it or an agent it carries sequences the branch | All | The branch's entries, refusals and terms |
+| `peer/<PeerId>` / `presence` | That peer | All | Selection, playhead, the tool in use, a drag in progress, and the agents it carries |
+| `peer/<PeerId>` / `control` | That peer | Peers following it | Its playhead, as a [control record](#control-record) |
+| `asset/<PeerId>` / `<AssetId>/…` | That peer, a source of the asset | Peers that ask | The asset's catalog, codec setups and chunks |
+
+- **Sync never reads timeline content.** For every timeline object it receives, it calls the consumer's `verify(bytes)`, which `@snowy-media/timeline` provides. It returns a batch's `{ author, seq }`, a history object's `{ branch, term, n, hash }`, or invalid. Sync orders, detects gaps and repairs by those fields alone. An invalid object, live or repaired, is dropped and not passed on; a repaired one counts as `gone`, and the next candidate is asked. Which sequencer to accept, and whether an author's rights allow a batch, are the consumer's to decide.
+- **Batches** are sent like chat: queued while the stream is busy, and sent as one object when it frees up, keyed `batches/<author>/<firstSeq>-<lastSeq>`. Every batch carries its author's signature, so no checkpoint is needed.
+- **History objects** are keyed by term: `history/<branch>/<term>/<firstN>-<lastN>`. A sequencer publishes on its own track, so two sequencers never write one object, even two that start the same term.
+- **Refusals** go on the sequencer's history track with its entries, so every peer drops a refused batch, not only its author.
+- **Repair** works as for chat ([Gaps and repair](#gaps-and-repair)), with two version vectors, exchanged once on reconnect: `{ author: seq }` for batches, and `{ branch: { term, n, hash } }` for histories. A peer that holds the named entry replies with every history object after it. One that doesn't, because one of the two is on a dropped tail, replies with its terms since that term and every entry after each term's `after`, which is enough for the consumer to drop the dropped tail.
+- **The consumer stores timeline objects.** Sync hands every object it receives to the consumer, which writes it to the project folder, and never writes it itself. To answer a repair, sync reads through a store the consumer passes.
+
+### Agents a tab carries
+
+An agent connected in a tab has its own peer key and grant, but no relay connection: the tab that connected it, named in its grant's `by`, is its **carrier**.
+
+- The carrier publishes the agent's batches on its own `batches` track, its grant on `grants`, and, while the agent sequences a proposal branch, that branch's history on its own `history/<BranchId>` track, signed by the agent's key.
+- **The agent is online while its carrier is,** and the carrier's presence lists it. When the carrier's namespace is announced or withdrawn, the consumer hears of the agent too.
+- **Messages to the agent** go to the carrier's inbox, naming the agent.
+- **Repair candidates** for the agent's objects are its carrier and the carrier's group, as for the carrier's own.
+- An agent that runs headless connects itself, with the same grant, and is a peer like any other.
+
+### Presence
+
+- Presence is the newest state only: a subscriber keeps the latest object, and **nothing stores presence**, sync's store included.
+- A peer publishes presence when it changes and the stream will accept more. Many changes while the stream is busy, such as a drag, become one object, so presence follows network speed, not a clock.
+- **A newcomer gets everyone's presence** because each peer publishes its presence and control once more when it sees a new peer's namespace announced.
+- A drag in progress is shown to others as a preview, which disappears when the batch it becomes arrives, or when the drag is cancelled.
+
+### Following a playhead
+
+- Nobody controls anyone else's playback in an edit session. A peer publishes its playhead as control records on `peer/<self>/control` when it plays, pauses or seeks, signed by its own peer key and naming the sequence it plays (`sequence`), with `mediaUs` the time on that sequence.
+- Following someone means subscribing to their `control` and applying it as in [Playback control](#playback-control). The follower first measures its clock offset to that peer, with the same exchanges as to a watch session's source. Drift correction and command lead time are the same.
+- A follower that seeks or plays on its own stops following.
+
+### Getting current state
+
+- **On join,** besides what a watch session's joiner asks for, a peer asks one online peer for every signed record it holds: `source/project`, every peer's grants, and every asset's catalog and codec setups from each source. Every record is signed, so it can come from any peer. Then it exchanges both version vectors.
+- **After a relay restart,** every peer republishes its grants, presence and control, and every source its asset catalogs; the owner republishes `source/project`.
+
+### Encryption in an edit session
+
+One content key would last the project's whole life, across every presence update and batch, so in an edit session each publisher seals with its own: `HKDF-SHA256(sessionSecret, salt = SessionId, info = "snowy content v1 " + PeerId)`. Everyone with the secret derives every publisher's key. Each key's random nonces then stay below the AES-GCM limit of 2³² encryptions unless one peer publishes more than 4 billion objects in a project.
+
+### Sequencer changes
+
+`@snowy-media/timeline` chooses its sequencer from who is online. Sync reports every `announce` and `unannounce`, and the agents each carrier's presence lists, to the consumer for this, so the choice needs no timer.
+
 ## Events
 
 Every action in the system responds to one of these events:
 
 | Event | Source | Reaction |
 | --- | --- | --- |
-| `announce(peer)` / `unannounce(peer)` | Relay | Update presence. Plan or drop links. |
+| `announce(peer)` / `unannounce(peer)` | Relay | Update presence. Plan or drop links. In an edit session, tell the consumer, which may change sequencer. |
 | `link open` / `link close` | WebTransport, WebRTC | Start or stop requesting through the link. Retry its requests elsewhere. |
 | `writable` | Writer `ready`, `bufferedamountlow` | Send the next queued object or batch |
 | `delivery done` | Link | Mark the request done. Update measured upload and RTT. |
@@ -640,6 +770,12 @@ Every action in the system responds to one of these events:
 | `have(ranges)` | `peer/*/have`, `ctl` | Plan chunk requests |
 | `request` / `cancel` / `busy` / `gone` | `inbox`, `ctl` | Serve, stop, or try the next source |
 | `chat(batch)` | `peer/*/chat` | Store, sort, detect gaps |
+| `batches(object)` | `peer/*/batches` | Verify, hand to the consumer, detect gaps |
+| `history(object)` | `peer/*/history/*` | Verify, hand to the consumer, detect gaps |
+| `presence(state)` | `peer/*/presence` | Hand to the consumer. Never store. |
+| `project(record)` | `source/project` | Hand to the consumer: the sequencer list |
+| `grants(record)` | `peer/*/grants` | Check the chain. Hand to the consumer. |
+| `commit(batch)` / `sequenced(objects)` | Consumer | Queue on `batches` or `history/<branch>`, sent when the stream is writable |
 | `probe received` | `peer/<self>/probe` | Set measured upload. Re-check whether to forward. |
 | `visibilitychange` | Document | Re-check whether to forward |
 | `setting change` | User | Re-check whether to forward, probing first if sharing was turned on. Audio choice. Subtitle choice. |
@@ -661,6 +797,9 @@ The transports' keepalives and idle timeouts (QUIC's idle timeout, WebRTC's conn
 | --- | --- | --- |
 | Source `S` (token signed by the session key and `S`'s peer key) | `source/*`, plus everything peer `S` may publish | Everything |
 | Peer `P` (join grant plus a request signed by `P`) | `peer/P/*`, `inbox/*/P`, `inbox/*/deliver/P` | `source/*`, `peer/*/caps`, `peer/*/chat`, `peer/*/have`, `peer/P/probe`, `inbox/P/*` |
+| Edit session: owner `O` (token signed by the project key and `O`'s peer key) | `source/*`, plus everything peer `O` may publish | Everything |
+| Edit session: peer `P` with `view` | `peer/P/*` except `batches` and `history/*`, `inbox/*/P`, `inbox/*/deliver/P` | `source/*`, `asset/*`, `peer/*/chat`, `peer/*/grants`, `peer/*/batches`, `peer/*/history/*`, `peer/*/presence`, `peer/*/control`, `inbox/P/*` |
+| Edit session: peer `P` with `propose` or `edit` | The same, plus `peer/P/batches`, `peer/P/history/*` and, with `edit`, `asset/P/*` | The same |
 
 The relay checks the signatures once per connection.
 
@@ -675,6 +814,10 @@ The relay checks the signatures once per connection.
 | A peer posting as someone else | Relay authorization: only `P` can publish `peer/P/*` |
 | A viewer controlling playback | Only the source can publish `source/*`, and control records are signed |
 | Script injection through chat | `textContent` only |
+| A peer forging an edit or another's asset | Timeline batches are signed by their author and checked against the author's grant; asset chunk headers are signed by the source named in the namespace |
+| A peer forging history | Entries are signed by the sequencer; the consumer accepts them only from the sequencer the signed project record and the latest term name |
+| A leaked edit invite | Nothing: grants never expire and the session secret lasts the project's life, so whoever holds a leaked invite can read and edit for good. The only remedy is a new project. |
+| An agent exceeding its person's rights | A grant can only pass on rights the granting key holds, and peers check the chain |
 | Keys being read out of the store | Private keys are non-extractable `CryptoKey`s |
 | Content left on devices | With `onEnd: "delete"`, the session's store is deleted on [leave or end](#session-lifecycle), and on the next app start after a crash. With `onEnd: "keep"`, the consumer owns it. |
 
@@ -691,6 +834,17 @@ The relay checks the signatures once per connection.
 | **Leave** | The peer closes its links. Its namespace is withdrawn. With `onEnd: "delete"`, its session store (OPFS directory and IndexedDB entries) is deleted. |
 | **End** | The source publishes control with `ended: true`. Every peer stops playback, closes its links and applies its `onEnd`. |
 | **App start** | Every session store with `onEnd: "delete"` is deleted, except the one whose invite link is being opened, which carries on where it left off. |
+
+An edit session differs in these steps:
+
+| Step | What happens |
+| --- | --- |
+| **Create** | The owner opens a project, whose project key becomes the session key, gives its own peer key a grant with every right, signs an invite, connects, publishes `source/project` and its grants, and publishes a catalog for each asset whose file it has. |
+| **Join** | As for a watch session, without the upload question and forwarding. The peer then gets current state ([Getting current state](#getting-current-state)), exchanges version vectors, and publishes its grants and a catalog for each asset whose file it has. Its interests come from the render plan. |
+| **Edit** | Driven by the [events](#events), with the timeline's commits and sequenced entries among them |
+| **A source leaves** | Its assets play from chunks peers hold. Editing goes on. |
+| **The sequencer leaves** | `@snowy-media/timeline` chooses the next one from the `unannounce` event; until then, batches stay pending. |
+| **Leave** | As for a watch session. Edit sessions use `onEnd: "keep"`, so chunks of other people's assets stay for the next session. |
 
 ## Requirements on @snowy-media/engine
 
@@ -735,7 +889,9 @@ The sync package needs these engine capabilities through public exports:
 
 - **Networks that block UDP** can't join. WebTransport and WebRTC both need UDP, and there is no TURN.
 - **No transcoding.** Every peer must be able to decode the catalog's codecs. When a peer joins, it checks each track with `VideoDecoder.isConfigSupported` / `AudioDecoder.isConfigSupported` and refuses to join with an error naming the codec.
-- **One source per session.** If the source leaves for good, the session can't continue beyond what peers already hold.
+- **One source per session.** If a watch session's source leaves for good, the session can't continue beyond what peers already hold. In an edit session the same holds for an asset once no editor with its file remains.
+- **Edit sessions fetch media through the relay only.** Forwarders and peer groups serve watch sessions; in an edit session every chunk comes from its source through the relay, once per peer that asks.
+- **Grants in an edit session don't expire and can't be revoked,** and the session secret lasts the project's life. A leaked edit invite gives lasting access; the only remedy is a new project.
 - **The source's file must stay unchanged.** If it is edited, moved or deleted, the source can't resume.
 - **The relay is on the live path.** While it's down, playback continues from local stores but nothing new arrives.
 - **Peer upload is opt-in.** Sessions where nobody forwards are served entirely through the relay.
