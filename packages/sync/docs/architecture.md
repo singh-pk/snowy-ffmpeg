@@ -239,10 +239,10 @@ Every object is encrypted.
 
 ### Encryption
 
-- **Content key:** `HKDF-SHA256(sessionSecret, salt = SessionId, info = "snowy content v1")`, used as an AES-256-GCM key. An edit session derives one per publisher instead ([Encryption in an edit session](#encryption-in-an-edit-session)).
+- **Content key:** `HKDF-SHA256(sessionSecret, salt = SessionId, info = "snowy content v1")`, used as an AES-256-GCM key. An edit session derives one per sealing peer instead ([Encryption in an edit session](#encryption-in-an-edit-session)).
 - **Nonce:** 96 random bits from `crypto.getRandomValues` for every encryption, sent in front of the ciphertext. The nonce never depends on the object key, so a replaced object, a re-sent batch or a lost counter can't reuse one. At the session's scale, random 96-bit nonces stay far below the AES-GCM limit of 2³² encryptions per key.
 - **Associated data:** the object key, so ciphertext can't be moved to a different key.
-- Peers store and forward the **encrypted bytes unchanged**. They decrypt only to read.
+- In a watch session, peers store and forward the **encrypted bytes unchanged**, and decrypt only to read. One key seals everything, so bytes forwarded unchanged open under it whoever sent them. An object a peer builds from what it holds, such as a chat repair reply, it seals itself.
 - The relay sees only encrypted data, plus the track names and sizes.
 
 ### Catalog
@@ -310,6 +310,7 @@ OPFS  snowy/<SessionId>/
 IDB   snowy-keys / <SessionId>
         peer               this device's peer key pair (non-extractable)
         content            the content key (non-extractable), so kept chunks stay readable after the session
+        content/<PeerId>   edit sessions: the key of each source whose chunks it keeps, instead (non-extractable)
         session            the session key pair (the source only, non-extractable)
         file               the source's FileSystemFileHandle (the source only)
 ```
@@ -344,7 +345,7 @@ sync.interest({
 - A chunk is **evicted** when no interest covers it and it was never covered by an interest with `keep: true`.
 - `sync.drop(track, fromUs, toUs)` deletes chunks in a range, kept ones included. It is the only way to remove a kept chunk during a session.
 - `sync.create(...)` and `sync.join(...)` take `onEnd: "delete" | "keep"`, stored in the session's `meta` and applied when the session ends or the peer leaves.
-- With `onEnd: "keep"`, the content key stays in IndexedDB, so `sync.read` still decrypts the chunks after the session.
+- With `onEnd: "keep"`, the content key stays in IndexedDB (in an edit session, each source's key whose chunks the peer keeps), so `sync.read` still decrypts the chunks after the session.
 
 ### Feedback to the consumer
 
@@ -710,7 +711,7 @@ The editor moves the first on every `progress` event, and replaces the others on
 - **History objects** are keyed by term: `history/<branch>/<term>/<firstN>-<lastN>`. A sequencer publishes on its own track, so two sequencers never write one object, even two that start the same term.
 - **Refusals** go on the sequencer's history track with its entries, so every peer drops a refused batch, not only its author.
 - **Repair** works as for chat ([Gaps and repair](#gaps-and-repair)), with two version vectors, exchanged once on reconnect: `{ author: seq }` for batches, and `{ branch: { term, n, hash } }` for histories. A peer that holds the named entry replies with every history object after it. One that doesn't, because one of the two is on a dropped tail, replies with its terms since that term and every entry after each term's `after`, which is enough for the consumer to drop the dropped tail.
-- **The consumer stores timeline objects.** Sync hands every object it receives to the consumer, which writes it to the project folder, and never writes it itself. To answer a repair, sync reads through a store the consumer passes.
+- **The consumer stores timeline objects.** Sync opens every object it receives and hands it to the consumer as plaintext, which the consumer writes to the project folder; sync never writes it itself. To answer a repair, sync reads the plaintext through a store the consumer passes and seals the reply with its own key, as it does for chat.
 
 ### Agents a tab carries
 
@@ -719,7 +720,7 @@ An agent connected in a tab has its own peer key and grant, but no relay connect
 - The carrier publishes the agent's batches on its own `batches` track, its grant on `grants`, and, while the agent sequences a proposal branch, that branch's history on its own `history/<BranchId>` track, signed by the agent's key.
 - **The agent is online while its carrier is,** and the carrier's presence lists it. When the carrier's namespace is announced or withdrawn, the consumer hears of the agent too.
 - **Messages to the agent** go to the carrier's inbox, naming the agent.
-- **Repair candidates** for the agent's objects are its carrier and the carrier's group, as for the carrier's own.
+- **Repair candidates** for the agent's objects are the same as for its carrier's own.
 - An agent that runs headless connects itself, with the same grant, and is a peer like any other.
 
 ### Presence
@@ -742,7 +743,19 @@ An agent connected in a tab has its own peer key and grant, but no relay connect
 
 ### Encryption in an edit session
 
-One content key would last the project's whole life, across every presence update and batch, so in an edit session each publisher seals with its own: `HKDF-SHA256(sessionSecret, salt = SessionId, info = "snowy content v1 " + PeerId)`. Everyone with the secret derives every publisher's key. Each key's random nonces then stay below the AES-GCM limit of 2³² encryptions unless one peer publishes more than 4 billion objects in a project.
+One content key would last the project's whole life, across every presence update, batch and repair, so in an edit session each peer seals with its own: `HKDF-SHA256(sessionSecret, salt = SessionId, info = "snowy content v1 " + PeerId)`.
+
+- **An object is sealed with the key of the peer that seals it,** never with its author's key or the key of the peer whose track it belongs to. The AES-GCM limit of 2³² encryptions with random nonces is a limit on whoever draws the nonces, so each peer spends only its own key's budget. It stays below the limit unless one peer seals more than 4 billion objects in a project.
+- **In an edit session, a peer seals everything it sends,** and never forwards bytes another peer sealed. The peer that sent an object is therefore the one whose key opens it, and the receiver always knows which peer that is:
+
+  | Object | Sealed by |
+  | --- | --- |
+  | On a peer's own track, including the batches of agents it carries | That peer |
+  | A repair reply, on `inbox/<requester>/deliver/<responder>` | The responder, which the track names |
+  | A chunk delivered on request | The source |
+  | A chunk read back from the store | The source its path names |
+
+- **A key proves nothing about who sealed an object.** Everyone with the secret derives every peer's key, so any member can seal under any key. Authenticity comes only from signatures and checkpoints, as for chat ([Sending](#sending)).
 
 ### Sequencer changes
 
