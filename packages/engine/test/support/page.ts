@@ -402,8 +402,21 @@ export async function render(
 }
 
 /**
+ * The number of the frame on `canvas`, whose control an engine has, read by drawing it into
+ * `reader`, a 2D context of its size.
+ */
+export function frameOnScreen(
+  canvas: HTMLCanvasElement,
+  reader: OffscreenCanvasRenderingContext2D,
+) {
+  reader.drawImage(canvas, 0, 0);
+  const { data } = reader.getImageData(0, 0, canvas.width, CELL);
+  return readFrameId(data, canvas.width * 4, 4);
+}
+
+/**
  * On each animation frame for `ms` milliseconds, the media time of engine `player` and the
- * number of the frame on `canvas`, whose control it has: the page draws the canvas to read it.
+ * number of the frame on `canvas` (frameOnScreen).
  */
 export async function watchScreen(
   player: { readonly currentTime: number },
@@ -417,9 +430,7 @@ export async function watchScreen(
 
   while (performance.now() < until) {
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    reader.drawImage(canvas, 0, 0);
-    const { data } = reader.getImageData(0, 0, canvas.width, CELL);
-    seen.push([player.currentTime, readFrameId(data, canvas.width * 4, 4)]);
+    seen.push([player.currentTime, frameOnScreen(canvas, reader)]);
   }
 
   return seen;

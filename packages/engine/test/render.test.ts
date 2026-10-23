@@ -4,8 +4,9 @@
 // The video output (src/video.ts) in Chromium, Firefox and WebKit: for every fixture its
 // browser decodes, frames decoded from the packet ring go up on the canvas at their own
 // timestamps, stay up until the next one is due, and are skipped when the time jumps past
-// them; and the first frame, drawn through the compositor at the size it is shown at, has the
-// layout of native FFmpeg's, display matrix included (test/fixtures/expected.json).
+// them; and the first frame, drawn through the compositor at the size it is shown at (over its
+// scale, for a fixture whose frame numbers are scaled up), has the layout of native FFmpeg's,
+// display matrix included (test/fixtures/expected.json).
 // Usage: bun run test.
 
 import { afterAll, describe, expect, test } from "bun:test";
@@ -21,6 +22,7 @@ interface Video {
   pts: number[];
   shown: [number, number];
   grid: number[];
+  scale?: number;
 }
 
 const expected: Record<string, { video: Video }> = await Bun.file(
@@ -105,9 +107,10 @@ for (const [name, [type, options]] of Object.entries(browsers)) {
       test(`shows ${file} at its timestamps, as FFmpeg shows it`, async () => {
         const browser = await type.launch(options);
         const { frames, times, drawn } = plan(video);
-        // At the size it is shown at, as the grid is.
-        const [width, height] = video.shown;
-        const turned = width !== video.width;
+        // At the size it is shown at, as the grid is, over the size of its frame numbers.
+        const scale = video.scale ?? 1;
+        const [width, height] = [video.shown[0] / scale, video.shown[1] / scale];
+        const turned = video.shown[0] !== video.width;
 
         try {
           const tab = await browser.newPage();

@@ -22,6 +22,16 @@ const { values: args } = parseArgs({
 
 type Timings = Record<string, number>;
 
+// The 4K fixture a scrub goes through, and each of its frames' times, in seconds.
+const SCRUB_4K = "scrub-4k-h264-aac.mp4";
+const expected: Record<string, { video: { timeBase: string; pts: number[] } }> = await Bun.file(
+  new URL("../test/fixtures/expected.json", import.meta.url),
+).json();
+const scrubbed = expected[SCRUB_4K];
+if (!scrubbed) throw new Error(`no ${SCRUB_4K} in expected.json`);
+const [num = 1, den = 1] = scrubbed.video.timeBase.split("/").map(Number);
+const due = scrubbed.video.pts.map((pts) => (pts * num) / den);
+
 // name -> what it measures, run in a fresh page with the engine at ENTRY.
 const benchmarks: Record<string, (tab: Page) => Promise<Timings>> = {
   // createEngine until it resolves: the platform check, the render worker and a GPU device.
@@ -170,6 +180,51 @@ const benchmarks: Record<string, (tab: Page) => Promise<Timings>> = {
         return { "10 min at 48 kHz": native, "10 min at 44.1 kHz": resampled };
       },
       { page: PAGE, worker: MEDIA_WORKER },
+    ),
+  // A drag through a 4K file from its start to 9 s, with no keyframe on the way, at 2 s of it a
+  // second whatever the display's refresh: engine.fastSeek on every animation frame, the screen
+  // read on each. How far, in media time, the frame on screen is behind where the drag was on
+  // the frame before (p50, p90), the canvas's read-back included; and from the last fastSeek
+  // until it resolves, with the frame due at 9 s up.
+  scrub: (tab) =>
+    tab.evaluate(
+      async ({ entry, page, file, times, speed, to }) => {
+        const engine: typeof import("../src/index") = await import(entry);
+        const support: typeof import("../test/support/page") = await import(page);
+        const canvas = document.createElement("canvas");
+        [canvas.width, canvas.height] = [320, 180];
+        document.body.append(canvas);
+        const player = await engine.createEngine({ canvas });
+        const res = await fetch(`/test/fixtures/${file}`);
+        const blob = await res.blob();
+        await player.open(new File([blob], file));
+        await player.seek(0);
+        const reader = new OffscreenCanvas(canvas.width, canvas.height).getContext("2d");
+        if (!reader) throw new Error("no 2D context");
+        const drag = { at: 0, scrub: Promise.resolve(), sent: 0 };
+        const lags: number[] = [];
+        const start = performance.now();
+
+        while (drag.at < to) {
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          const id = support.frameOnScreen(canvas, reader);
+          const shown = times[id];
+          if (shown === undefined) throw new Error(`frame ${id} read on screen`);
+          if (drag.at > 0) lags.push((drag.at - shown) * 1000);
+          drag.at = Math.min(to, ((performance.now() - start) / 1000) * speed);
+          drag.scrub = player.fastSeek(drag.at);
+          drag.sent = performance.now();
+        }
+
+        await drag.scrub;
+        const settle = performance.now() - drag.sent;
+        player.close();
+        canvas.remove();
+        const sorted = lags.toSorted((a, b) => a - b);
+        const at = (p: number) => sorted[Math.floor(p * sorted.length)] ?? 0;
+        return { "lag p50": at(0.5), "lag p90": at(0.9), settle };
+      },
+      { entry: ENTRY, page: PAGE, file: SCRUB_4K, times: due, speed: 2, to: 9 },
     ),
 };
 
