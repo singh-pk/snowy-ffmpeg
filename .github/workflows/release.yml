@@ -1,21 +1,23 @@
 # SPDX-FileCopyrightText: 2026 The Snowy Authors
 # SPDX-License-Identifier: MIT
 #
-# A tag @snowy-media/ffmpeg@X.Y.Z on main publishes that version (CONTRIBUTING.md#releasing). The
-# modules are rebuilt from scratch, without any cache a pull request could have written, and
-# must be byte-identical to dist.sha256, the build CI tested.
+# A tag @snowy-media/<name>@X.Y.Z on main publishes that version of the package
+# (CONTRIBUTING.md#releasing). The ffmpeg modules are rebuilt from scratch, without any cache a
+# pull request could have written, and must be byte-identical to dist.sha256, the build CI
+# tested.
 name: release
 
 on:
   push:
-    tags: ["@snowy-media/ffmpeg@*"]
+    tags: ["@snowy-media/ffmpeg@*", "@snowy-media/engine@*"]
 
 permissions:
   contents: read
 
 jobs:
-  release:
-    name: npm and GitHub release
+  ffmpeg:
+    name: ffmpeg npm and GitHub release
+    if: startsWith(github.ref_name, '@snowy-media/ffmpeg@')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -67,6 +69,51 @@ jobs:
       - run: npm publish ./release/*.tgz
       # Releases are immutable once published, so the release stays a draft until npm has the
       # package; a failed publish leaves a draft that can be deleted and re-run.
+      - name: Publish the GitHub release
+        run: gh release edit "$TAG" --draft=false
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+
+  engine:
+    name: engine npm and GitHub release
+    if: startsWith(github.ref_name, '@snowy-media/engine@')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/engine
+    permissions:
+      contents: write # the GitHub release
+      id-token: write # npm trusted publishing and provenance
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the history of main, for the check below
+      - name: The tag is on main
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+          no-cache: true
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: Release notes and npm package
+        run: bun scripts/release.ts "$TAG"
+        env:
+          TAG: ${{ github.ref_name }}
+      # A pre-release, as npm has it on the next dist-tag (below).
+      - name: GitHub release
+        run: gh release create "$TAG" --draft --prerelease --verify-tag --title "$TAG" --notes-file release/notes.md release/*.tgz
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      # On next, not latest, while the API settles; npm ignores publishConfig.tag in a tarball.
+      - run: npm publish --tag next ./release/*.tgz
       - name: Publish the GitHub release
         run: gh release edit "$TAG" --draft=false
         env:

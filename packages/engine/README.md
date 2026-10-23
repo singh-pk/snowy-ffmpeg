@@ -11,11 +11,13 @@
 The playback pipeline of [Snowy](https://github.com/singh-pk/snowy-media): it reads a local file, demuxes and decodes it with [`@snowy-media/ffmpeg`](../ffmpeg) and WebCodecs, keeps audio and video in sync, and draws into a canvas with WebGPU, all in workers. It has no user interface; the Snowy player and editor build on it.
 
 > [!NOTE]
-> In development and not yet published. So far it checks that the browser can run it and reads what a file holds.
+> In development, and published on npm's `next` dist-tag while its API settles: `bun add @snowy-media/engine@next`. It plays a file's first video and audio track (a file without audio does not play yet), and seeks and scrubs frame-exactly; see the [changelog](CHANGELOG.md) for what is there so far.
 
 ## Requirements
 
 A page served with cross-origin isolation (`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`) in desktop Chromium (Chrome, Edge), which has all it needs: WebAssembly SIMD and threads, AudioWorklet, WebGPU on an `OffscreenCanvas` in a worker, and WebCodecs. There is no fallback: where something is missing, `createEngine` says what.
+
+The engine starts its workers and its AudioWorklet from the URLs of its own files (`import.meta.url`), and they load `@snowy-media/ffmpeg` the same way, so a bundler must leave both packages' files side by side. With Vite, add `optimizeDeps: { exclude: ["@snowy-media/engine", "@snowy-media/ffmpeg"] }` and `worker: { format: "es" }`.
 
 ```ts
 import { createEngine, UnsupportedPlatformError } from "@snowy-media/engine";

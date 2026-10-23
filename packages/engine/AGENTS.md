@@ -8,7 +8,7 @@ This package is the playback pipeline of Snowy, without any user interface: it r
 
 | Task | Command |
 | --- | --- |
-| Bundle `src/` into `dist/` | `bun run build` |
+| Build the package into `dist/`: the bundles and the declarations of the public API (`tsconfig.dts.json`) | `bun run build` |
 | Browser tests (Chromium) | `bun run test` |
 | Benchmarks | `bun run bench --runs 5` |
 | Regenerate the fixtures (needs native FFmpeg 9.0.2) | `bun run fixtures` |
@@ -36,6 +36,7 @@ The tests and benchmarks build what they run, and need `@snowy-media/ffmpeg` bui
 | `src/render.worker.ts` | the render worker: the platform check, then video on its animation frames |
 | `src/protocol.ts` | the messages between threads |
 | `scripts/build.ts` | bundles each thread's entry point into `dist/`, or for the tests into `test/dist/` |
+| `scripts/release.ts` | packs and checks the npm package for a release tag (CONTRIBUTING.md#releasing) |
 | `scripts/gen-fixtures.ts` | builds `test/fixtures` and `expected.json` from native FFmpeg |
 | `test/` | Playwright tests; `test/support/` is shared with `bench/`, and `serve.ts` builds and serves the engine for both, and `page.ts` is the code their pages import |
 | `bench/` | benchmarks ([README](bench/README.md)) |
