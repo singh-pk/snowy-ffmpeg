@@ -5,7 +5,7 @@
 // each fixture into the PCM ring, and the engine's AudioWorklet plays it into an
 // OfflineAudioContext (test/support/page.ts). What plays equals native `ffmpeg -ar -ac`
 // (test/fixtures/expected.json), the clock keeps to it without a gap and stops after its last
-// frame, and over ten minutes every click still starts on its second. test/pcm.test.ts
+// frame, and over ten minutes every click still starts on its second. test/pcm.unit.ts
 // covers underruns. Usage: bun run test.
 
 import { afterAll, expect, test } from "bun:test";

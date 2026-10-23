@@ -1,13 +1,13 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// The media chunk (src/chunk.ts), in Bun: a chunk round-trips with its packets; a field that
+// The media chunk (src/chunk.ts), in Chromium: a chunk round-trips with its packets; a field that
 // wouldn't read back as itself is refused before signing; and a chunk that is truncated,
 // altered, signed by or naming another session, or sent for another slot is rejected, as is a
 // correctly signed header whose packet records don't match its body.
-// Usage: bun test test/chunk.test.ts
+// Usage: bun run test
 
-import { expect, test } from "bun:test";
+import { expect, test } from "../../../tooling/unit";
 import {
   decodeChunk,
   encodeChunk,

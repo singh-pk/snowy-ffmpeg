@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// The PCM ring and its clock, in Bun, one render quantum at a time as the AudioWorklet reads
+// The PCM ring and its clock, in Chromium, one render quantum at a time as the AudioWorklet reads
 // it: samples arrive intact across the ring's end and from a producer thread that blocks for
 // room, the clock stops on an underrun and resumes with the audio, and closing the ring stops
-// the producer, also while it waits. Usage: bun test test/pcm.test.ts
+// the producer, also while it waits. Usage: bun run test
 
-import { expect, test } from "bun:test";
+import { expect, test } from "../../../tooling/unit";
 import { createPcmConsumer, createPcmControl, createPcmProducer, createPcmRing } from "../src/pcm";
 
 const RATE = 1000;
@@ -49,7 +49,9 @@ test("frames arrive intact and in order across the end of the ring", () => {
 });
 
 function startProducer(ring: SharedArrayBuffer, count: number) {
-  const worker = new Worker(new URL("support/pcm-producer.ts", import.meta.url));
+  const worker = new Worker(new URL("support/pcm-producer.js", import.meta.url), {
+    type: "module",
+  });
   const blocked = Promise.withResolvers<void>();
   const written = Promise.withResolvers<number>();
   // Wakes a wait for frames, on each message from the producer.

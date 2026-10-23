@@ -46,7 +46,7 @@ The media worker demuxes ahead of playback into a ring in a `SharedArrayBuffer` 
 - **Ending and closing.** A record with stream `END` follows the last packet, and one with stream `FAILED` ends the packets when the producer fails, so the consumer never waits for packets that will not come; the error itself goes to whoever started the producer. The consumer closes the ring to stop the producer, whose next write returns false; a closed ring holds no packets.
 - **Capacity: 8 MiB.** That holds seconds of the highest bitrates a browser plays (4K HEVC at 100 Mbit/s is 12.5 MB a second) and any single packet. Moving packets through the ring takes far less time than decoding them: under 0.5 µs per packet, and over 20 GB/s for large packets. A wake-up takes under 0.1 ms at the 99th percentile (`bench/run.ts`, the `ring` benchmark).
 
-The tests check the ring between two threads in Bun, and check in Chromium that the packets of every fixture pass through a 64 KiB ring exactly as native `ffprobe` lists them.
+The tests check the ring between two workers, and that the packets of every fixture pass through a 64 KiB ring exactly as native `ffprobe` lists them.
 
 ## Audio and clock
 
@@ -64,7 +64,7 @@ The media worker decodes the audio itself, with FFmpeg, as it demuxes, and `sny_
 
 Decoding and resampling are far from the bottleneck: ten minutes of AAC takes about 0.2 s, or 0.5 s resampled from 48 to 44.1 kHz (`bench/run.ts`, the `audio` benchmark).
 
-The tests play every fixture through the worklet into an `OfflineAudioContext`. They check that what plays equals native `ffmpeg -ar -ac` within 10⁻⁶; that while it plays, the clock is at the media time of what plays, without a gap; that it stops after the last frame, which is native FFmpeg's last; and that over ten minutes every click still starts on its whole second, so the clock has not drifted. Underruns, and a producer thread that waits for room, are tested in Bun against the ring itself.
+The tests play every fixture through the worklet into an `OfflineAudioContext`. They check that what plays equals native `ffmpeg -ar -ac` within 10⁻⁶; that while it plays, the clock is at the media time of what plays, without a gap; that it stops after the last frame, which is native FFmpeg's last; and that over ten minutes every click still starts on its whole second, so the clock has not drifted. Underruns, and a producer thread that waits for room, are tested against the ring itself, in Chromium workers (`test/pcm.unit.ts`).
 
 ## Video decoder configs
 
@@ -76,7 +76,7 @@ WebCodecs decodes H.264, HEVC, VP8, VP9 and AV1, given a `VideoDecoderConfig` (`
 - **Frames come out as soon as the stream allows** (`optimizeForLatency`). Without it, Chromium holds more frames than the stream reorders, and in sparse video, a frame every two seconds, a frame was seconds late, until enough packets came to let it out. Decoding is about as fast with it: on an Apple M5, the median of five runs decoding 150 4K frames of H.264, VP9 and AV1 is within 4 % of the time without it in every codec, which is as far as runs differ.
 - **The config leaves out rotation and flip.** They are the display matrix's, applied where frames are drawn, the same for every decoder.
 
-The tests check every fixture. The decoder takes the config and decodes the first packet to frame 0. The codec string equals the one native FFmpeg writes, where it writes one (H.264 and AV1). The same holds for each stream converted to how a container without a record carries it: Annex B, its parameter sets in band. Bun unit tests cover the spec's HEVC example, VP9 profile 2, and AV1 sequence headers with timing and decoder model information, a high tier, and 10- and 12-bit depths.
+The tests check every fixture. The decoder takes the config and decodes the first packet to frame 0. The codec string equals the one native FFmpeg writes, where it writes one (H.264 and AV1). The same holds for each stream converted to how a container without a record carries it: Annex B, its parameter sets in band. Unit tests (`test/codec.unit.ts`) cover the spec's HEVC example, VP9 profile 2, and AV1 sequence headers with timing and decoder model information, a high tier, and 10- and 12-bit depths.
 
 ## Video output
 

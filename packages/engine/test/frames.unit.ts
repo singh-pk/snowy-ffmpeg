@@ -1,13 +1,13 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// The frame queue (src/frames.ts) and the compositor's fit (src/compositor.ts), in Bun: the
+// The frame queue (src/frames.ts) and the compositor's fit (src/compositor.ts), in Chromium: the
 // queue keeps frames in presentation order, hands out the latest one due and closes those it
 // skips, and counts bytes, not frames; a frame of another shape than the canvas is centred
 // with black bars. test/render.test.ts covers both in the browsers.
-// Usage: bun test test/frames.test.ts
+// Usage: bun run test
 
-import { expect, test } from "bun:test";
+import { expect, test } from "../../../tooling/unit";
 import { viewMap } from "../src/compositor";
 import { createFrameQueue } from "../src/frames";
 

@@ -1,14 +1,14 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// Sending chat (src/chat-sender.ts), in Bun: messages chain at once and in call order; nothing
+// Sending chat (src/chat-sender.ts), in Chromium: messages chain at once and in call order; nothing
 // goes until the stream is writable, then everything queued goes as one batch, and what is
 // written while the stream is busy or closed, even mid-seal, waits for the next writable event.
 // A refused message takes no seq, a batch that fails to seal loses nothing, and a reload chains
 // on from the stored last message.
-// Usage: bun test test/chat-sender.test.ts
+// Usage: bun run test
 
-import { expect, test } from "bun:test";
+import { expect, test } from "../../../tooling/unit";
 import { decodeBatch } from "../src/chat-batch";
 import { InvalidMessageError, messageHash, type ChatMessage } from "../src/chat";
 import { createChatSender, type ChatSenderOptions } from "../src/chat-sender";

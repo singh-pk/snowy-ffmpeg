@@ -33,6 +33,7 @@ Run `bun run check` before every commit; the hook runs it anyway.
 | --- | --- |
 | `packages/<name>/` | one npm package: its code, tests, README, `docs/`, CHANGELOG and package-specific AGENTS.md |
 | `tooling/oxlint-rules/` | repository lint rules (see rule 7) |
+| `tooling/test-server.ts`, `tooling/run-unit.ts`, `tooling/unit.ts`, `tooling/unit-worker.ts` | serving a package to Chromium for its tests and benchmarks, and running unit tests there (rule 2) |
 | `scripts/` | repository scripts, such as `settings.ts`, which applies `.github/settings.yml` |
 | `.agents/skills/` | task playbooks, also linked into `.claude/skills` |
 | `brand/` | the logo, avatar and social preview, and the rules for using them |
@@ -43,7 +44,7 @@ Shared configuration lives once, at the root: `tsconfig.base.json`, `.oxlintrc.j
 ## Rules
 
 1. **Packages are isolated.** A package uses another only through its published name and public exports (`@snowy-media/<name>`), never by relative path into another package. Each package builds, tests and documents itself.
-2. **Desktop Chromium only.** Snowy runs in current stable Chromium on desktop (Chrome, Edge), because it opens files only through the File System Access API (rule 3), which Firefox, Safari and Chromium on Android lack. Packages are built, tested, benchmarked and documented for Chromium alone: no code, test, benchmark, CI job or document carries a branch, allowance, workaround or note for another browser engine.
+2. **Desktop Chromium only.** Snowy runs in current stable Chromium on desktop (Chrome, Edge), because it opens files only through the File System Access API (rule 3), which Firefox, Safari and Chromium on Android lack. Packages are built, tested, benchmarked and documented for Chromium alone: no code, test, benchmark, CI job or document carries a branch, allowance, workaround or note for another browser engine. Every test runs its code in Chromium, in the build the pinned Playwright version installs (`bunx playwright install chromium`), never in a system browser or a channel and never in Bun: Bun only builds, serves and drives the browser. A test that needs no page is a unit test, `test/**/*.unit.ts`, which `tooling/run-unit.ts` runs in a module worker of a Chromium page, through the package's `test/unit.test.ts`; it imports `test` and `expect` from `tooling/unit.ts`, not `bun:test`, and lint keeps code under test out of a `*.test.ts` file.
 3. **Files are persisted handles.** A file the user opens is a `FileSystemFileHandle`, from `showOpenFilePicker` or a dropped item's `getAsFileSystemHandle`, which an app keeps in IndexedDB to open again on a later visit. A public API that opens a user's file takes that handle, never a `File`, `Blob`, URL or `<input type="file">`.
 4. **No fallbacks.** One platform baseline (cross-origin isolation, WebAssembly SIMD and threads, WebCodecs, WebGPU, AudioWorklet, File System Access) and one code path. Do not add feature detection, browser-specific branches or main-thread variants.
 5. **Performance is measured.** Never claim a speed-up you have not measured; include before and after numbers from the same machine.

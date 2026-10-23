@@ -14,7 +14,8 @@
         "bench/*.worker.ts",
         "test/support/page.ts",
         "test/support/ring-producer.ts",
-        "test/support/pcm-producer.ts"
+        "test/support/pcm-producer.ts",
+        "test/*.unit.ts"
       ],
       "project": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts", "bench/**/*.ts"],
       "ignoreBinaries": ["ffmpeg", "ffprobe"]
@@ -39,6 +40,9 @@
       "ignoreBinaries": ["ffmpeg", "ffprobe"],
       "ignoreDependencies": ["libav.js", "mediabunny"],
       "ignoreUnresolved": ["^/dist/"]
+    },
+    "packages/sync": {
+      "entry": ["test/*.unit.ts"]
     }
   }
 }

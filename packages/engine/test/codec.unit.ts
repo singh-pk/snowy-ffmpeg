@@ -1,14 +1,14 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// Codec strings from bitstream fields, in Bun, for what the fixtures do not cover: the HEVC
+// Codec strings from bitstream fields, in Chromium, for what the fixtures do not cover: the HEVC
 // example of ISO/IEC 14496-15 Annex E, a VP9 profile 2 keyframe, AV1 sequence headers with
 // the fields the fixtures leave out, non-square pixels, and a codec WebCodecs does not
 // decode, and HEVC RASL pictures in both packet formats. test/video.test.ts checks every
 // fixture in the browsers.
-// Usage: bun test test/codec.test.ts
+// Usage: bun run test
 
-import { expect, test } from "bun:test";
+import { expect, test } from "../../../tooling/unit";
 import {
   hevcCodec,
   isRasl,

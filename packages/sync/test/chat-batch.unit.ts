@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// The chat batch (src/chat-batch.ts), in Bun: a batch round-trips with its checkpoint, proves
+// The chat batch (src/chat-batch.ts), in Chromium: a batch round-trips with its checkpoint, proves
 // itself, and is rejected when it doesn't open, is moved to another key, or holds messages its
 // key or checkpoint doesn't name.
-// Usage: bun test test/chat-batch.test.ts
+// Usage: bun run test
 
-import { expect, test } from "bun:test";
+import { expect, test } from "../../../tooling/unit";
 import {
   batchKey,
   decodeBatch,

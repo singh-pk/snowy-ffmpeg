@@ -917,5 +917,5 @@ The sync package needs these engine capabilities through public exports:
 
 ## Testing
 
-- **Bun tests** (`bun run test`) cover the modules that use only what Bun and desktop Chromium both implement the same way: Web Crypto (Ed25519, AES-GCM, HKDF, SHA-256), `DataView`, and `Uint8Array` base64. They run in CI's `sync test` job on every change to the package.
-- **Browser tests** run in Chromium with Playwright, as the engine's do, for every module that touches an API Bun lacks: OPFS, IndexedDB, File System Access, WebTransport, WebRTC, and the engine itself. The first such module adds them, and CI's `sync test` job then installs Chromium.
+- **Unit tests** (`test/*.unit.ts`, `bun run test`) run in Chromium, each file in a module worker of its own page (`tooling/run-unit.ts`), as every package's tests do: never in Bun, so Web Crypto, `DataView` and base64 are tested in the browser that ships them. They run in CI's `sync test` job on every change to the package.
+- **Browser tests** drive a page with Playwright, as the engine's do, for the modules that need one: OPFS, IndexedDB, File System Access, WebTransport, WebRTC, and the engine itself. The first such module adds them.
