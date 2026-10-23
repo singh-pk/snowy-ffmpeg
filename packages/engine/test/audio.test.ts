@@ -9,7 +9,7 @@
 // covers underruns. Usage: bun run test.
 
 import { afterAll, expect, test } from "bun:test";
-import { PCM_RATE } from "./support/audio";
+import { PCM_RATE, SAMPLE_FRAMES } from "./support/audio";
 import { launch } from "./support/browsers";
 import { AUDIO_WORKLET, MEDIA_WORKER, PAGE, serveEngine } from "./support/serve";
 
@@ -68,6 +68,9 @@ function checkClock(name: string, played: Played, { clicks, resampled: { frames 
   const { start } = played;
   // Constant while it plays: a gap, such as an underrun, would shift it.
   const shift = played.offsets.map((o) => Math.abs(o - start));
+  // Sampled all the while it played: once every SAMPLE_FRAMES, give or take the ends.
+  const samples = Math.floor(frames / SAMPLE_FRAMES) - 1;
+  expect(played.offsets.length, `${name} clock samples`).toBeGreaterThanOrEqual(samples);
   expect(Math.max(0, ...shift), `${name} clock shift`).toBeLessThan(1e-9);
   expect(played.end.playing, `${name} stopped at the end`).toBe(false);
   expect((played.end.pts - start) * PCM_RATE, `${name} frames played`).toBeCloseTo(frames, 6);

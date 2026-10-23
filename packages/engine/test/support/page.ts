@@ -15,7 +15,7 @@ import { createPcmControl, createPcmRing } from "../../src/pcm";
 import type { FromMedia, ToMedia } from "../../src/protocol";
 import { createConsumer, createRing, END, FAILED, RING_CAPACITY } from "../../src/ring";
 import { createVideoOutput } from "../../src/video";
-import { PCM_CHANNELS, PCM_RATE, probe } from "./audio";
+import { PCM_CHANNELS, PCM_RATE, probe, SAMPLE_FRAMES } from "./audio";
 import { brightnessGrid, CELL, readFrameId } from "./frame-id";
 
 export { createAudioOutput } from "../../src/audio";
@@ -82,14 +82,12 @@ export async function hashRing(ring: SharedArrayBuffer, wake: MessagePort, dts: 
   return hashes;
 }
 
-const tick = () => new Promise((resolve) => setTimeout(resolve, 1));
-
 /**
  * Plays audio stream `stream` of the file open in `media` through the engine's worklet (at
  * `worklet`) into an OfflineAudioContext of `seconds`, resampled to `channels` channels. The
  * ring holds `frames` frames, room for all of the audio, which is decoded before rendering
  * starts, so it underruns only at the end. Returns the media time of the first frame; the
- * clock's media time less its context time, at each poll while it runs; the clock at the
+ * clock's media time less its context time, every SAMPLE_FRAMES frames while it runs; the clock at the
  * end; when channel 0 clicks, in context time; and, in stereo, the probe of what played
  * (test/support/audio.ts).
  */
@@ -120,23 +118,22 @@ export async function play(
   const audio = { stream, pcm, preroll: 0 };
   await media.request({ type: "demux", ring, wake: port1, streams: [], from: 0, audio }, [port1]);
   const offsets: number[] = [];
-  const rendering = { done: false };
 
-  // Samples the clock, which only the audio thread moves; it waits for nothing. Not every
-  // browser gives an event between quanta when rendering offline: Firefox has no
-  // OfflineAudioContext.suspend.
-  async function poll() {
-    while (!rendering.done) {
-      const clock = control.read();
-      if (clock.playing) offsets.push(clock.pts - clock.time);
-      await tick();
-    }
+  // Samples the clock, which only the audio thread moves, with rendering suspended at
+  // `frame`; the next suspend is set before it resumes.
+  async function sample(frame: number) {
+    if (frame >= length) return;
+    await context.suspend(frame / PCM_RATE);
+    const clock = control.read();
+    if (clock.playing) offsets.push(clock.pts - clock.time);
+    const next = sample(frame + SAMPLE_FRAMES);
+    await context.resume();
+    await next;
   }
 
-  const polling = poll();
+  const sampling = sample(SAMPLE_FRAMES);
   const buffer = await context.startRendering();
-  rendering.done = true;
-  await polling;
+  await sampling;
   const { pts, playing } = control.read();
   const left = buffer.getChannelData(0);
   const clicks: number[] = [];
