@@ -12,7 +12,7 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 
 ### Changed
 
-- Video colour now matches native FFmpeg's whatever decoded it. The engine converts Y′CbCr to RGB itself, from the colour the stream states, where Chromium converted it differently for hardware and software decoders. A stream that states no matrix shows as BT.601, as FFmpeg shows it. Chromium still converts a 10-bit frame from a GPU decoder.
+- Video colour now matches native FFmpeg's whatever decoded it. The engine converts Y′CbCr to RGB itself, from the colour the stream states, where Chromium converted it differently for hardware and software decoders. A stream that states no matrix shows as BT.601, as FFmpeg shows it. HDR from a software decoder shows its signal, as FFmpeg shows it, not tone-mapped as Chromium did. Chromium still converts a 10-bit frame from a GPU decoder.
 
 ### Fixed
 

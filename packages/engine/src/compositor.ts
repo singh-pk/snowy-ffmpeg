@@ -152,7 +152,8 @@ export function viewMap(
  * Writes into `out` the column-major 4×4 matrix that takes a pixel's `depth`-bit plane values
  * (Y, Cb, Cr, 1) to R′G′B′, by the colour space `space` states. A stream that states no
  * matrix is BT.601, and one that states no range limited, as FFmpeg takes them. For RGB
- * (the planes G, B, R), the planes are R′G′B′ already, scaled by the range.
+ * (the planes G, B, R), the planes are R′G′B′ already, scaled by the range: full unless it
+ * states limited.
  */
 export function yuvMatrix(out: Float32Array, space: VideoColorSpaceInit, depth: number) {
   const max = 2 ** depth - 1;
@@ -165,10 +166,12 @@ export function yuvMatrix(out: Float32Array, space: VideoColorSpaceInit, depth: 
   out[15] = 1;
 
   if (space.matrix === "rgb") {
-    out.set([0, ys, 0], 0);
-    out.set([0, 0, ys], 4);
-    out.set([ys, 0, 0], 8);
-    out.set([yo, yo, yo], 12);
+    // RGB is full range unless it states otherwise, as FFmpeg takes it.
+    const [s, o] = space.fullRange === false ? [ys, yo] : [1 / max, 0];
+    out.set([0, s, 0], 0);
+    out.set([0, 0, s], 4);
+    out.set([s, 0, 0], 8);
+    out.set([o, o, o], 12);
     return;
   }
 
@@ -248,13 +251,15 @@ interface Slot extends Picture {
   readonly key: string;
   readonly textures: GPUTexture[];
   readonly colour: GPUBuffer | undefined;
+  // The view of a picture Chromium converts into, made once.
+  readonly imported: GPUTextureView | undefined;
+  // Where each plane is written, made once.
+  readonly destinations: { texture: GPUTexture }[];
 }
 
 // The size of the part of `frame` that is shown.
-const visible = (frame: VideoFrame) => ({
-  width: frame.visibleRect?.width ?? frame.codedWidth,
-  height: frame.visibleRect?.height ?? frame.codedHeight,
-});
+const visibleWidth = (frame: VideoFrame) => frame.visibleRect?.width ?? frame.codedWidth;
+const visibleHeight = (frame: VideoFrame) => frame.visibleRect?.height ?? frame.codedHeight;
 
 /** A compositor drawing with `device` into `context`, configured for it with `format`. */
 export function createCompositor(
@@ -291,6 +296,31 @@ export function createCompositor(
   // next waits for, as they share `staging`.
   const free = new Map<string, Slot[]>();
   const uploads = { last: Promise.resolve() };
+  // The kind and size of the frames uploaded last, and what follows from them, worked out
+  // again only when they change, so a frame allocates none of it.
+  const shape = {
+    kind: "",
+    width: 0,
+    height: 0,
+    key: "",
+    planes: undefined as ReturnType<typeof planesOf> | undefined,
+  };
+  // What `colour` was last worked out for, so it is worked out again only when that changes.
+  const converted = { space: undefined as VideoColorSpaceInit | undefined, depth: 0, pixels: "" };
+  // Where a plane is read from in `staging`, filled in for each.
+  const source = { offset: 0, bytesPerRow: 0 };
+
+  function keyOf(kind: string, width: number, height: number) {
+    if (kind === shape.kind && width === shape.width && height === shape.height) return shape.key;
+    Object.assign(shape, {
+      kind,
+      width,
+      height,
+      key: `${kind}:${width}x${height}`,
+      planes: undefined,
+    });
+    return shape.key;
+  }
 
   // A picture of `key` from those closed, or `make`'s. Those of another key are destroyed:
   // a stream's frames keep one size and format, so they are of a stream before.
@@ -314,11 +344,14 @@ export function createCompositor(
     textures: GPUTexture[],
     bindGroup: GPUBindGroup,
     colourBuffer?: GPUBuffer,
+    imported?: GPUTextureView,
   ): Slot {
     const picture: Slot = {
       key,
       textures,
+      destinations: textures.map((t) => ({ texture: t })),
       colour: colourBuffer,
+      imported,
       bindGroup,
       yuv: colourBuffer !== undefined,
       timestamp: 0,
@@ -343,12 +376,14 @@ export function createCompositor(
     pixels: VideoPixelFormat,
     stated: VideoColorSpaceInit,
   ) {
-    const { width, height } = visible(frame);
+    const width = visibleWidth(frame);
+    const height = visibleHeight(frame);
     const size = frame.allocationSize();
     if (size > staging.buffer.byteLength) staging.buffer = new ArrayBuffer(size);
     const layout = await frame.copyTo(staging.buffer);
-    const { yuv, depth, planes } = planesOf(pixels, width, height);
-    const key = `${pixels}:${width}x${height}`;
+    const key = keyOf(pixels, width, height);
+    shape.planes ??= planesOf(pixels, width, height);
+    const { yuv, depth, planes } = shape.planes;
     const usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST;
 
     const picture = acquire(key, () => {
@@ -389,16 +424,23 @@ export function createCompositor(
       return makeSlot(key, textures, bindGroup, colourBuffer);
     });
 
-    for (const [i, t] of picture.textures.entries()) {
+    // Indexed: an iterator would allocate on every frame.
+    for (let i = 0; i < picture.destinations.length; i++) {
       const plane = layout[i];
-      if (!plane) throw new Error(`${pixels}: no plane ${i}`);
-      const { offset, stride: bytesPerRow } = plane;
-      device.queue.writeTexture({ texture: t }, staging.buffer, { offset, bytesPerRow }, t);
+      const destination = picture.destinations[i];
+      if (!plane || !destination) throw new Error(`${pixels}: no plane ${i}`);
+      source.offset = plane.offset;
+      source.bytesPerRow = plane.stride;
+      device.queue.writeTexture(destination, staging.buffer, source, destination.texture);
     }
 
     if (picture.colour) {
-      yuvMatrix(colour, stated, depth);
-      colourWords[16] = pixels === "NV12" ? 1 : 0;
+      if (stated !== converted.space || depth !== converted.depth || pixels !== converted.pixels) {
+        yuvMatrix(colour, stated, depth);
+        colourWords[16] = pixels === "NV12" ? 1 : 0;
+        Object.assign(converted, { space: stated, depth, pixels });
+      }
+
       device.queue.writeBuffer(picture.colour, 0, colour);
     }
 
@@ -407,24 +449,26 @@ export function createCompositor(
 
   // Converts `frame`, whose planes cannot be read, into a picture with Chromium's conversion.
   function uploadImported(frame: VideoFrame) {
-    const { width, height } = visible(frame);
-    const key = `${IMPORTED}:${width}x${height}`;
+    const width = visibleWidth(frame);
+    const height = visibleHeight(frame);
+    const key = keyOf(IMPORTED, width, height);
     const usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT;
 
     const picture = acquire(key, () => {
       const picked = texture(IMPORTED, width, height, usage);
+      const imported = picked.createView();
       const bindGroup = device.createBindGroup({
         layout: rgbPipeline.getBindGroupLayout(0),
         entries: [
           { binding: 0, resource: { buffer: viewBuffer } },
-          { binding: 1, resource: picked.createView() },
+          { binding: 1, resource: imported },
           { binding: 2, resource: sampler },
         ],
       });
-      return makeSlot(key, [picked], bindGroup);
+      return makeSlot(key, [picked], bindGroup, undefined, imported);
     });
 
-    const [into] = picture.textures;
+    const into = picture.imported;
     if (!into) throw new Error("no picture texture");
     // An external texture lasts one task, so it needs a bind group of its own.
     const bindGroup = device.createBindGroup({
@@ -436,7 +480,7 @@ export function createCompositor(
     });
     const encoder = device.createCommandEncoder();
     const pass = encoder.beginRenderPass({
-      colorAttachments: [{ view: into.createView(), loadOp: "clear", storeOp: "store" }],
+      colorAttachments: [{ view: into, loadOp: "clear", storeOp: "store" }],
     });
     pass.setPipeline(importPipeline);
     pass.setBindGroup(0, bindGroup);

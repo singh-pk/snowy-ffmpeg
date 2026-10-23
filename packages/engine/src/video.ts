@@ -91,32 +91,30 @@ export function createVideoOutput(
     // lead it are left out.
     started: false,
     leading: false,
-    // Where it plays from, which a scrub moves on.
+    // Where it plays from, which a scrub moves on, and whether one has.
     from,
+    moved: false,
     closed: false,
   };
   const decoding = createDecodeTracker();
   const failed = Promise.withResolvers<never>();
 
-  // Pictures uploaded and not yet shown, in presentation order.
+  // Pictures uploaded and not yet shown, in presentation order. They are bounded by AHEAD, not by
+  // bytes: `prepare` sends no more.
   const pictures = createFrameQueue<Picture>(FRAME_BUDGET, () => 0);
   // The frames uploading: their timestamps, in the order they finish in, which is presentation
-  // order; the latest of them; the last upload's end; and how many times uploads were dropped,
-  // when the output closed.
+  // order; the latest of them; and the last upload's end.
   const uploads = {
     stamps: [] as number[],
     latest: -Infinity,
     done: Promise.resolve(),
-    dropped: 0,
   };
 
   async function upload(frame: VideoFrame) {
-    const { dropped } = uploads;
-
     try {
       const picture = await compositor.upload(frame, p.colorSpace);
 
-      if (state.closed || dropped !== uploads.dropped) {
+      if (state.closed) {
         picture.close();
         return;
       }
@@ -136,9 +134,9 @@ export function createVideoOutput(
   }
 
   /**
-   * Uploads the latest frame due at `time` (microseconds), then the next frames until AHEAD
-   * (one in a scrub) are up or on their way, so they are up before they are due. Only the frames that go up are
-   * uploaded: copying a 4K frame off the GPU takes milliseconds, and a scrub decodes many it
+   * Uploads the latest frame due at `time` (microseconds), then the next decoded frames until
+   * AHEAD (one in a scrub) are up or on their way, so they are up before they are due. Only the
+   * frames that go up are uploaded: copying a 4K frame off the GPU takes milliseconds, and a scrub decodes many it
    * never shows. Resolves once uploaded.
    */
   function prepare(time: number) {
@@ -153,11 +151,14 @@ export function createVideoOutput(
 
     // A scrub holds the time at its target, where it moves on far past the frames after it:
     // one ahead, not to hold up the upload of the frame due at the next target.
-    const ahead = time > state.from ? AHEAD : 1;
+    const ahead = time > state.from || !state.moved ? AHEAD : 1;
 
+    // Only frames decoded in order: one after a gap may yet have an earlier frame decoded before
+    // it.
     while (pictures.count() + uploads.stamps.length < ahead) {
-      const next = queue.next();
-      if (!next) break;
+      const next = queue.first();
+      if (!next || next.timestamp > decoding.decodedTo()) break;
+      queue.next();
       send(next);
     }
 
@@ -302,6 +303,7 @@ export function createVideoOutput(
   // dropped as from a seek, and the latest due up to it goes up as it is decoded.
   function moveTo(to: number) {
     state.from = to;
+    state.moved = true;
     queue.drop(to);
     // Decoded already, the frame due goes up at once, not on the next animation frame.
     if (decoding.decodedTo() >= to) void prepare(to);
@@ -325,7 +327,6 @@ export function createVideoOutput(
     state.shown = undefined;
     pictures.clear();
     uploads.stamps.length = 0;
-    uploads.dropped++;
     wake.room();
   }
 

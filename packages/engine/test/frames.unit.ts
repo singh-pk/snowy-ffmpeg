@@ -94,6 +94,7 @@ test("Y′CbCr that states no colour converts as FFmpeg's: limited range, BT.601
   expect(convert({}, 8, [16, 128, 128])).toEqual([0, 0, 0]);
 });
 
+// Not from FFmpeg: worked out from the matrices and ranges of H.273.
 test("the stated matrix, range and bit depth change the conversion", () => {
   expect(convert({ matrix: "bt709" }, 8, [145, 56, 33])).toEqual([0, 216, 0]);
   expect(convert({ fullRange: true }, 8, [255, 128, 128])).toEqual([255, 255, 255]);
@@ -101,6 +102,9 @@ test("the stated matrix, range and bit depth change the conversion", () => {
   expect(convert({ matrix: "bt709" }, 10, [64, 512, 512])).toEqual([0, 0, 0]);
   // Planar RGB is G, B, R.
   expect(convert({ matrix: "rgb", fullRange: true }, 8, [255, 0, 128])).toEqual([128, 255, 0]);
+  // RGB that states no range is full, as FFmpeg takes it.
+  expect(convert({ matrix: "rgb" }, 8, [255, 0, 128])).toEqual([128, 255, 0]);
+  expect(convert({ matrix: "rgb", fullRange: false }, 8, [235, 16, 16])).toEqual([0, 255, 0]);
 });
 
 test("next hands out the earliest frame, due or not", () => {
