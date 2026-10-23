@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// The chat log (src/chat-log.ts), in Bun: every peer shows the same order whatever order
+// The chat log (src/chat-log.ts), in Chromium: every peer shows the same order whatever order
 // messages arrive in; a late message is marked; gaps and version vectors follow the seqs held;
 // and edits, deletes and reactions follow the rules in docs/architecture.md#edits-deletes-and-reactions.
-// Usage: bun test test/chat-log.test.ts
+// Usage: bun run test
 
-import { expect, test } from "bun:test";
+import { expect, test } from "../../../tooling/unit";
 import { createChatLog } from "../src/chat-log";
 import { createClock } from "../src/hlc";
 import { createAuthor } from "./support/chat";

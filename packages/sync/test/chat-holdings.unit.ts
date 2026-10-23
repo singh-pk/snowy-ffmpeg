@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// Chat holdings (src/chat-holdings.ts), in Bun: one checkpoint is kept per run of consecutive
+// Chat holdings (src/chat-holdings.ts), in Chromium: one checkpoint is kept per run of consecutive
 // chained seqs, the lower one goes when a gap fills, a forked chain stays proven, and every repair or version-vector reply is a
 // batch that seals and decodes, so it proves itself to the asker.
-// Usage: bun test test/chat-holdings.test.ts
+// Usage: bun run test
 
-import { expect, test } from "bun:test";
+import { expect, test } from "../../../tooling/unit";
 import { decodeBatch, sealBatch, type ChatBatch } from "../src/chat-batch";
 import { messageHash, signCheckpoint, type ChatMessage } from "../src/chat";
 import { createChatHoldings } from "../src/chat-holdings";

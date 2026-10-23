@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// How far a decoder has decoded (src/decoding.ts), in Bun: frames out in presentation or in
+// How far a decoder has decoded (src/decoding.ts), in Chromium: frames out in presentation or in
 // decode order, a packet that makes no frame, a frame that never comes, and the end. The
 // browser tests cover it with every fixture, decoded for real.
-// Usage: bun test test/decoding.test.ts
+// Usage: bun run test
 
-import { expect, test } from "bun:test";
+import { expect, test } from "../../../tooling/unit";
 import { createDecodeTracker } from "../src/decoding";
 
 // A group of pictures in decode order, as [pts, dts]: I0 P3 B1 B2.

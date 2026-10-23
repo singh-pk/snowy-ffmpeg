@@ -1,13 +1,13 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// Ranking peers (src/rank.ts) and asking for missing chat (src/chat-repairs.ts), in Bun: every
+// Ranking peers (src/rank.ts) and asking for missing chat (src/chat-repairs.ts), in Chromium: every
 // asker ranks alike, different questions spread over peers, and an ask moves to the next
 // candidate on `gone`, a reply that falls short or fails, or a closed link, stops when filled,
 // and gives up when nobody is left until the candidates change or one reconnects.
-// Usage: bun test test/chat-repairs.test.ts
+// Usage: bun run test
 
-import { expect, test } from "bun:test";
+import { expect, test } from "../../../tooling/unit";
 import { createChatRepairs } from "../src/chat-repairs";
 import { generateKeyPair, keyId } from "../src/crypto";
 import { rank } from "../src/rank";

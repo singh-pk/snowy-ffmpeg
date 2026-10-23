@@ -35,7 +35,7 @@ How @snowy-media/timeline is built: the document a Snowy edit is, the operations
 | **Nothing is lost** | Logs and histories are append-only, with one exception: entries a vanished sequencer appended that its successor never received are replaced ([Changing sequencer](#changing-sequencer)), and their batches are appended again. A removed item keeps its state, so it can be restored with everything done to it. Undo and revert are new entries, never rewrites. |
 | **Non-destructive** | The timeline refers to media; it never changes a user's media file. |
 | **Event-driven** | No timers and no polling. Everything happens on a call from the caller ([Calls and events](#calls-and-events)). |
-| **Pure** | No DOM, no network, no storage and no media. The package takes bytes and calls and returns state and events, so it runs and is tested in Bun, and an agent can use it without a browser. |
+| **Pure** | No DOM, no network, no storage and no media. The package takes bytes and calls and returns state and events, so an agent can use it without a browser; its tests run in Chromium, as every package's do. |
 
 ## Package boundaries
 

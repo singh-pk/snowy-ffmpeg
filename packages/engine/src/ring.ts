@@ -39,7 +39,7 @@ export const END = -1;
 export const FAILED = -2;
 /**
  * FFmpeg's values the records carry, AV_PKT_FLAG_KEY and AV_NOPTS_VALUE, here so a consumer
- * need not load FFmpeg for them (test/ring.test.ts checks them).
+ * need not load FFmpeg for them (test/ring.unit.ts checks them).
  */
 export const KEY_FLAG = 1;
 export const NO_TIMESTAMP = -(2n ** 63n);

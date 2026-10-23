@@ -1,13 +1,13 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// Receiving chat (src/chat-receiver.ts), in Bun: two peers end to end. Batches from the
+// Receiving chat (src/chat-receiver.ts), in Chromium: two peers end to end. Batches from the
 // author's track reach the log and move the clock; a lost batch is noticed and asked for, and a
 // repair answered from the holdings of a third peer fills it; a batch that doesn't prove itself
 // changes nothing.
-// Usage: bun test test/chat-receiver.test.ts
+// Usage: bun run test
 
-import { expect, test } from "bun:test";
+import { expect, test } from "../../../tooling/unit";
 import { sealBatch } from "../src/chat-batch";
 import { createChatHoldings } from "../src/chat-holdings";
 import { createChatLog } from "../src/chat-log";

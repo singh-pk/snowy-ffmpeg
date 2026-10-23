@@ -1,15 +1,14 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// A Bun worker that writes `count` packets into a ring (test/ring.test.ts): packet i has
-// size(i) bytes, byte j of it is (i + j) & 255, and its pts is i. Posts how many it wrote
-// once it ends the ring or the consumer closes it.
+// A worker that writes `count` packets into a ring (test/ring.unit.ts): packet i has size(i)
+// bytes (test/support/ring-packets.ts), byte j of it is (i + j) & 255, and its pts is i. Posts
+// how many it wrote once it ends the ring or the consumer closes it.
 
 import { createProducer } from "../../src/ring";
+import { size } from "./ring-packets";
 
 declare const self: Worker;
-
-export const size = (i: number) => (i * 7919) % 3001;
 
 self.addEventListener(
   "message",

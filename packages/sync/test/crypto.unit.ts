@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// Keys, signatures and encryption (src/crypto.ts), in Bun: key ids round-trip, signatures check
+// Keys, signatures and encryption (src/crypto.ts), in Chromium: key ids round-trip, signatures check
 // only against their key and data, and sealed objects open only under the same content key and
 // object key, each with a fresh nonce.
-// Usage: bun test test/crypto.test.ts
+// Usage: bun run test
 
-import { expect, test } from "bun:test";
+import { expect, test } from "../../../tooling/unit";
 import {
   contentKey,
   generateKeyPair,

@@ -8,7 +8,7 @@ This package runs watch-together sessions: a local file streamed from one source
 
 | Task | Command |
 | --- | --- |
-| Tests (Bun) | `bun run test` |
+| Tests (Chromium) | `bun run test` |
 | Typecheck | `bun run typecheck` |
 
 ## Map
@@ -26,7 +26,7 @@ This package runs watch-together sessions: a local file streamed from one source
 | `src/chat-holdings.ts` | what a peer holds of each author's chat, one checkpoint per run, to answer repairs and version vectors |
 | `src/chat-repairs.ts` | asking for missing chat: one ask per author, moved to the next ranked peer on `gone` or a closed link |
 | `src/rank.ts` | ranking peers by hash, so every asker picks alike and different questions spread out |
-| `test/` | Bun tests; `test/support/` holds what they share |
+| `test/` | unit tests (`*.unit.ts`), run in Chromium by `unit.test.ts`; `test/support/` holds what they share |
 
 ## Rules
 

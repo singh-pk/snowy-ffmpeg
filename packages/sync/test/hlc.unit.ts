@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// The hybrid logical clock (src/hlc.ts), in Bun: it never goes back, a received value moves it
+// The hybrid logical clock (src/hlc.ts), in Chromium: it never goes back, a received value moves it
 // past that value, its counter carries into the wall clock, it survives a reload, and a value
 // too far ahead is ignored.
-// Usage: bun test test/hlc.test.ts
+// Usage: bun run test
 
-import { expect, test } from "bun:test";
+import { expect, test } from "../../../tooling/unit";
 import { createClock, isHlc, MAX_AHEAD_MS } from "../src/hlc";
 
 // A wall clock the test sets.
