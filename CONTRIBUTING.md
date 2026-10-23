@@ -66,7 +66,7 @@ Maintainers release a package from `main`, in a pull request and then a tag. For
 2. for ffmpeg, rebuilds the modules without a cache and checks them against `dist.sha256`; for the engine, builds it;
 3. packs the npm tarball and checks it holds exactly the files it should (the package's `scripts/release.ts`: [ffmpeg](packages/ffmpeg/scripts/release.ts), [engine](packages/engine/scripts/release.ts)). The engine's also checks that `@snowy-media/ffmpeg` as it is in the repository, which the engine was tested against, is released: release ffmpeg first when it has unreleased changes;
 4. creates a draft GitHub release with the changelog section and the tarball, plus for ffmpeg the source archive;
-5. publishes that tarball to npm with provenance, the engine on the `next` dist-tag and as a GitHub pre-release while its API settles, through [trusted publishing](https://docs.npmjs.com/trusted-publishers), so no npm token exists anywhere;
+5. publishes that tarball to npm with provenance through [trusted publishing](https://docs.npmjs.com/trusted-publishers), so no npm token exists anywhere;
 6. publishes the GitHub release. Releases are immutable once published, which is why this comes last.
 
 If a run fails, nothing has reached npm and the GitHub release is still a draft: fix the cause, delete the draft, and re-run the workflow. If the fix changes the repository, merge it and move the tag to the new commit on `main` instead.
@@ -75,7 +75,7 @@ If a run fails, nothing has reached npm and the GitHub release is still a draft:
 
 npm only lets a package that already exists trust a workflow, so a new package starts with a placeholder. The maintainer, signed in with `npm login`:
 
-1. Publishes a placeholder holding only `package.json` (name, version `0.0.0`, licence, repository with `directory`) and a short README: `npm stage publish --access public` in its directory, then `npm stage approve <id>` with 2FA.
+1. Publishes a placeholder holding only `package.json` (name, version `0.0.0`, licence, repository with `directory`) and a short README, in a new directory of its own: the package's own would pack its build, and its `publishConfig` asks for provenance, which npm generates only in CI. There, `npm stage publish --access public`, then `npm stage approve <id>` with 2FA.
 2. Creates the trusted publisher: `npm trust github @snowy-media/<name> --file release.yml --repo singh-pk/snowy-media --allow-publish`. Without `--allow-publish`, npm accepts only staged publishes from CI. Check it with `npm trust list @snowy-media/<name>`.
 3. Under the package's settings on npmjs.com, sets publishing access to "Require two-factor authentication and disallow bypass 2fa tokens".
 4. Pushes the first real release tag within 48 hours of step 2, as above, once `release.yml` has a job for the package.
