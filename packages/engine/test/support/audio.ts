@@ -7,7 +7,7 @@
 
 export const PCM_RATE = 44_100;
 export const PCM_CHANNELS = 2;
-// How often a test play samples the clock: every 32 render quanta, 93 ms.
+// How often a test play samples the clock: every 32 render quanta, about 93 ms.
 export const SAMPLE_FRAMES = 128 * 32;
 const PROBE_STRIDE = 509;
 const PROBE_SECONDS = 2;

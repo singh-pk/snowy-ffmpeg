@@ -87,9 +87,9 @@ export async function hashRing(ring: SharedArrayBuffer, wake: MessagePort, dts: 
  * `worklet`) into an OfflineAudioContext of `seconds`, resampled to `channels` channels. The
  * ring holds `frames` frames, room for all of the audio, which is decoded before rendering
  * starts, so it underruns only at the end. Returns the media time of the first frame; the
- * clock's media time less its context time, every SAMPLE_FRAMES frames while it runs; the clock at the
- * end; when channel 0 clicks, in context time; and, in stereo, the probe of what played
- * (test/support/audio.ts).
+ * clock's media time less its context time, every SAMPLE_FRAMES frames while it runs; the
+ * clock at the end; when channel 0 clicks, in context time; and, in stereo, the probe of what
+ * played (test/support/audio.ts).
  */
 export async function play(
   media: ReturnType<typeof startMedia>,
