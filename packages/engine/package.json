@@ -1,6 +1,6 @@
 {
   "name": "@snowy-media/engine",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "The playback pipeline of Snowy: demuxing, decoding, an audio clock and WebGPU rendering in workers",
   "keywords": [
     "audio",

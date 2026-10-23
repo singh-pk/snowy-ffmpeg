@@ -6,6 +6,8 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-24
+
 ### Added
 
 - `createEngine({ canvas })`, which checks the platform once and rejects with an `UnsupportedPlatformError` naming the first missing feature: cross-origin isolation, WebAssembly SIMD or threads, AudioWorklet, OffscreenCanvas, WebGPU in a worker, WebCodecs, or importing a `VideoFrame` as a WebGPU texture.
@@ -17,3 +19,6 @@ All notable changes are recorded here. The format follows [Keep a Changelog](htt
 ### Changed
 
 - Supported and tested in current stable desktop Chromium only (Chrome, Edge); Firefox and WebKit are no longer tested or benchmarked.
+
+[Unreleased]: https://github.com/singh-pk/snowy-media/compare/@snowy-media/engine@0.1.0...HEAD
+[0.1.0]: https://github.com/singh-pk/snowy-media/releases/tag/@snowy-media/engine@0.1.0
