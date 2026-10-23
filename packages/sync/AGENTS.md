@@ -2,7 +2,7 @@
 
 The [root AGENTS.md](../../AGENTS.md) applies here too; this file adds what is specific to this package. Paths below are relative to `packages/sync/`.
 
-This package runs watch-together sessions: a local file streamed from one source to a group, with shared chat and per-viewer audio and subtitles. It plays through `@snowy-media/engine`, using only its public exports. Read [docs/architecture.md](docs/architecture.md) before changing it; code follows that design, and a change to the design changes that document in the same pull request.
+This package runs live sessions over one transport. In a watch session, a local file is streamed from one source to a group, with shared chat and per-viewer audio and subtitles; it plays through `@snowy-media/engine`, using only its public exports. In an edit session, people and agents edit one `@snowy-media/timeline` project, whose objects sync carries as opaque bytes without depending on that package. Read [docs/architecture.md](docs/architecture.md) before changing it; code follows that design, and a change to the design changes that document in the same pull request.
 
 ## Commands
 
