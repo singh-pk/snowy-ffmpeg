@@ -112,11 +112,21 @@ function createDecoder(
   // Rounded as src/video.ts rounds the packets' timestamps, so a frame's matches its packet's.
   const micros = (t: bigint) => Math.round((Number(t) * num * 1e6) / den);
 
+  // A view of all of memory. The module's HEAPU8 is not: the decoder's threads grow memory
+  // as they allocate frames, and HEAPU8 follows only growth on this thread.
+  const memory = { view: new Uint8Array(m.wasmMemory.buffer) };
+
+  const heap = () => {
+    const { buffer } = m.wasmMemory;
+    if (memory.view.buffer !== buffer) memory.view = new Uint8Array(buffer);
+    return memory.view;
+  };
+
   const buf = m._malloc(params.length);
-  m.HEAPU8.set(params, buf);
+  heap().set(params, buf);
   const out = m._malloc(4);
   const opened = m._sny_decoder_open_params(buf, params.length, THREADS, out);
-  const dec = m.HEAP32[out >>> 2] ?? 0;
+  const dec = new DataView(m.wasmMemory.buffer).getInt32(out, true);
   m._free(out);
   m._free(buf);
   check(opened, "decoder_open_params");
@@ -190,7 +200,7 @@ function createDecoder(
     const displayWidth = sarNum > 0 && sarDen > 0 ? Math.round((width * sarNum) / sarDen) : width;
     const duration = m._sny_frame_duration(frame);
     // VideoFrame copies the data, so the buffer is packed into again for the next frame.
-    const picture = new VideoFrame(m.HEAPU8.subarray(packed.at, packed.at + size), {
+    const picture = new VideoFrame(heap().subarray(packed.at, packed.at + size), {
       format: pixelFormat(),
       codedWidth: width,
       codedHeight: height,
@@ -225,7 +235,7 @@ function createDecoder(
     decode({ data, pts, dts, duration, flags }: Extract<ToVideo, { type: "decode" }>) {
       const at = m._sny_packet_make(pkt, data.length, pts, dts, BigInt(duration), flags);
       if (!at) throw new Error("packet_make: out of memory");
-      m.HEAPU8.set(data, at);
+      heap().set(data, at);
       decode(pkt);
     },
     flush: () => decode(0),
