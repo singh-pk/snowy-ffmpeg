@@ -376,10 +376,14 @@ export function createProject() {
     return startOf(id, state.record, state.sequence);
   }
 
-  // A connected item must have a time to be placed.
+  // A connected item must start and end at a safe integer to be placed.
   function checkPlaced(id: ItemId, record: ItemRecord, sequence: ItemId) {
     if (inStoryline(record) || record.kind === "transition") return;
-    if (startOf(id, record, sequence) === undefined) skip("malformed", "a time out of range");
+    const from = startOf(id, record, sequence);
+
+    if (from === undefined || !Number.isSafeInteger(from + record.duration)) {
+      skip("malformed", "a time out of range");
+    }
   }
 
   // What an item's change can redraw: from its start, to the end of time if it moves others (a
@@ -419,6 +423,7 @@ export function createProject() {
     const state = liveItem(id);
     const record = checked(itemSchema, withLeaf(state.record, state.record.kind, path, value));
     checkClip(record, state.sequence, false);
+    checkPlaced(id, record, state.sequence);
     if (inStoryline(record))
       guarded(() => storylineOf(state.sequence).setDuration(id, record.duration));
     unlink(id, state.record);
@@ -461,6 +466,7 @@ export function createProject() {
     const state = items.get(id);
     if (state === undefined || !state.removed) skip("stale", `${id} isn't removed`);
     const { record, sequence } = state;
+    liveSequence(sequence);
     sequenceFor(id, record, true);
     checkClip(record, sequence, true);
     checkPlaced(id, record, sequence);

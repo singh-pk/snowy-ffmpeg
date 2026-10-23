@@ -363,6 +363,21 @@ test("a time past the safe integers is skipped, and changes nothing", () => {
   expect(project.storyline(sequence).map((placed) => placed.id)).toEqual([id(2, 0), id(2, 2)]);
 });
 
+test("a connected item whose end would pass the safe integers is skipped", () => {
+  const { project, apply } = setUp();
+  const late = Number.MAX_SAFE_INTEGER - 2 * SECOND;
+  const result = apply(
+    clip({ anchor: { origin: sequence, at: late }, duration: 100 * SECOND }),
+    clip({ anchor: { origin: sequence, at: late } }),
+    { op: "item.set", id: id(2, 1), path: "duration", value: Number.MAX_SAFE_INTEGER },
+  );
+  expect(result.skipped.map(({ index, reason }) => [index, reason])).toEqual([
+    [0, "malformed"],
+    [2, "malformed"],
+  ]);
+  expect(project.item(id(2, 1))?.duration).toBe(SECOND);
+});
+
 test("a storyline item keeps its place while a transition sits on it", () => {
   const { project, apply } = setUp();
   apply(clip(), clip({ anchor: at("a1") }), {
@@ -420,6 +435,33 @@ test("a sequence that holds items, or that a compound clip plays, can't be remov
     ]),
   ).toEqual([]);
   expect(reasons([{ op: "item.restore", id: id(3, 0) }])).toEqual(["stale"]);
+});
+
+test("an orphan can't come back to life in a removed sequence", () => {
+  const { apply } = setUp();
+  const { seq } = apply(
+    {
+      op: "sequence.add",
+      sequence: { name: "Other", rate: [24, 1], width: 1920, height: 1080, sampleRate: 48_000 },
+    },
+    {
+      op: "role.add",
+      role: { sequence: id(2, 0), name: "V", kind: "video", color: "#000000", order: "a0" },
+    },
+  );
+  const other = id(seq, 0);
+  const role = id(seq, 1);
+  apply(
+    clip({ anchor: { storyline: other, position: "a0" }, role }),
+    clip({ anchor: { clip: id(3, 0), at: 0 }, role, lane: 1 }),
+  );
+  const result = apply(
+    { op: "item.remove", id: id(3, 1) },
+    { op: "item.remove", id: id(3, 0) },
+    { op: "sequence.remove", id: other },
+    { op: "item.restore", id: id(3, 1) },
+  );
+  expect(result.skipped.map(({ index, reason }) => [index, reason])).toEqual([[3, "stale"]]);
 });
 
 test("applying a batch again adds nothing twice", () => {
