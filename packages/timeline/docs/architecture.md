@@ -572,7 +572,7 @@ The project lives in a folder the user picks (`showDirectoryPicker`, read and wr
 - **A segment is records**, each a 4-byte big-endian length and an object's canonical bytes, as it is signed. A new segment starts when the next record would take the last one past the segment size, or when the last one ends in a record cut short, and is named by the first seq or `n` in it, or one past the segment before if that is higher, so no segment is written over. A `write` names a path, the offset to write at, which is the file's length so far, and the bytes: the editor opens the file keeping its data and writes there.
 - **A batch is written once,** when it is committed here or first received, and an entry once, when it is applied. Pending batches are in their authors' logs, so they are pending again when the project opens.
 - **Opening a project** reads every log and history and checks each batch and entry as if it had just arrived: signature, its author's chain, the sequencer's signature, and that each entry follows the last. A file holding one that doesn't pass, or a record that doesn't read, is reported, and the rest opens, including the records of that file that do read; an entry whose batch is in such a file waits for it, as an entry received without its batch would, and the sequencer appends nothing to that branch until it applies, so it never signs a second entry with the number of one it read. An entry lost from a history cut short is gone for the sequencer too: it signs that number again, and a peer holding the lost entry refuses the new one unless it names the same batch.
-- **No document is saved.** Opening applies every entry again, since applying is a small part of opening: for a project of 4,000 entries, each adding a clip, opening took 430 ms in Chromium on an Apple M5, of which applying the batches took 6 ms and reading and checking the batches and entries the rest. A saved document can't spare that check, and would bring a format of its own and a way to tell it stale.
+- **No document is saved.** Opening applies every entry again, since applying is a small part of opening. `openFolder` on a project of one author's 4,000 entries on main, each adding a clip, took 430 ms in Playwright's Chromium on an Apple M5: about 80 ms reading and decoding the files, 170 ms checking and hashing the batches, and 160 ms pending and appending the entries, which checks and hashes each of them. Applying the 4,000 batches alone took 6 ms. Every batch and entry is still checked before it is trusted, so a saved document would spare only those 6 ms, and would bring a format of its own and a way to tell it stale. Checking Ed25519 signatures in parallel is no faster than one at a time.
 - **One tab writes a project.** The editor takes a Web Lock named after the project; another tab opening it gets the lock only when the first lets go, and until then is read-only and doesn't join the project's session.
 - A collaborator picks their own project folder when they join. Their folder holds the same logs and histories. Media they don't have on disk arrives through `@snowy-media/sync`, which keeps it in its own store.
 
@@ -647,7 +647,7 @@ It reports what happened as events:
 | Name | Value |
 | --- | --- |
 | Flicks per second | 705,600,000 |
-| `SNAPSHOT_EVERY` | 512 entries, until measured |
+| `SNAPSHOT_EVERY` | 512 entries, kept in memory for going back, until measured |
 | Log and history segment size | 1 MiB, until measured |
 | HLC | The format and rules of `@snowy-media/sync`'s chat |
 
