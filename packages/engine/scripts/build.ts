@@ -12,7 +12,7 @@ import { $, Glob } from "bun";
 import { rm } from "node:fs/promises";
 import { dirname } from "node:path";
 
-const pkg = new URL("../", import.meta.url).pathname;
+const pkg = Bun.fileURLToPath(new URL("../", import.meta.url));
 
 interface Options {
   /** Where the bundles go. */

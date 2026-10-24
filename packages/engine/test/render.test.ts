@@ -9,7 +9,7 @@
 // Usage: bun run test.
 
 import { afterAll, expect, test } from "bun:test";
-import { launch } from "./support/browsers";
+import { decodable, launch } from "./support/browsers";
 import { MEDIA_WORKER, PAGE, serveEngine } from "./support/serve";
 
 interface Video {
@@ -24,9 +24,8 @@ interface Video {
   scale?: number;
 }
 
-const expected: Record<string, { video: Video }> = await Bun.file(
-  new URL("fixtures/expected.json", import.meta.url),
-).json();
+const generated = await Bun.file(new URL("fixtures/expected.json", import.meta.url)).json();
+const expected: Record<string, { video: Video }> = decodable(generated);
 // Frames shown one by one, then a jump to a later one.
 const STEPS = 20;
 const JUMP = 59;

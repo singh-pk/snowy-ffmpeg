@@ -30,7 +30,7 @@ export function serve(root: URL, page: string, { isolated = true, mounts = {} }:
       }
 
       const [prefix, dir] = Object.entries(mounts).find(([p]) => path.startsWith(p)) ?? ["/", root];
-      const file = Bun.file(dir.pathname + path.slice(prefix.length));
+      const file = Bun.file(Bun.fileURLToPath(dir) + path.slice(prefix.length));
       const exists = await file.exists();
       return exists ? new Response(file, { headers }) : new Response("not found", { status: 404 });
     },

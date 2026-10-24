@@ -40,9 +40,9 @@ const REAL_TIME = 0.25;
 const SECONDS = Number(process.env.SNOWY_SYNC_SECONDS ?? 20);
 // How far the frame on screen may be from the one due at the media time heard, in seconds.
 const MAX_OFFSET = 0.02;
-// On CI's virtual machines the GPU does not draw in real time (Chromium's page gets 30
-// animation frames a second), so video falls behind: p99 82 ms in Chromium, up to three
-// quarters of a second at worst. There, the offsets are bounded by these, and logged; the
+// On CI's runners, a virtual machine's GPU or software, Chromium does not draw in real time
+// (on macOS its page gets 30 animation frames a second), so video falls behind: p99 82 ms on
+// macOS, up to three quarters of a second at worst. There, the offsets are bounded by these, and logged; the
 // bounds above hold on real hardware.
 const CI_LATE = 1;
 const CI_EARLY = 0.15;

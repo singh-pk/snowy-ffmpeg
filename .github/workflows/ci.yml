@@ -136,17 +136,30 @@ jobs:
         run: bun test
 
   engine:
-    name: engine test
+    name: engine test (${{ matrix.os }})
     needs: [changes, build]
     if: needs.changes.outputs.engine == 'true'
-    # Only macOS runners have WebGPU with a GPU in Chromium
-    # (packages/engine/docs/architecture.md#testing).
-    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        # Only macOS runners have WebGPU with a GPU in Chromium; Windows and Linux render in
+        # software (packages/engine/docs/architecture.md#testing).
+        include:
+          - os: macos-26
+          - os: windows-latest
+            gpu: warp
+          - os: ubuntu-latest
+            gpu: swiftshader
+    runs-on: ${{ matrix.os }}
+    env:
+      SNOWY_GPU: ${{ matrix.gpu }}
     # It takes about 5 minutes; a browser that hangs would otherwise hold the runner for 6 hours.
     timeout-minutes: 20
     defaults:
       run:
         working-directory: packages/engine
+        # Not Windows' PowerShell, so the steps run the same on every runner.
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -163,7 +176,8 @@ jobs:
           path: packages/ffmpeg/dist
       # The published bundle; the tests build their own (test/support/serve.ts).
       - run: bun run build
-      - run: bunx playwright install chromium
+      # --with-deps installs the libraries Chromium needs on Linux, and nothing elsewhere.
+      - run: bunx playwright install --with-deps chromium
       - run: bun run test
       # For reading only: shared runners are too noisy to fail on (packages/engine/bench).
       - run: bun run bench --runs 5 >> "$GITHUB_STEP_SUMMARY"

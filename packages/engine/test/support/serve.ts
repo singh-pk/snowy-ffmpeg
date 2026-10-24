@@ -10,8 +10,9 @@ import { serve } from "../../../../tooling/test-server";
 import { build } from "../../scripts/build";
 
 const pkg = new URL("../../", import.meta.url);
+const dir = Bun.fileURLToPath(pkg);
 const ffmpeg = Bun.pathToFileURL(
-  `${dirname(Bun.resolveSync("@snowy-media/ffmpeg/package.json", pkg.pathname))}/`,
+  `${dirname(Bun.resolveSync("@snowy-media/ffmpeg/package.json", dir))}/`,
 );
 
 export const ENTRY = "/test/dist/index.js";
@@ -25,7 +26,7 @@ export const PAGE = "/test/dist/test/support/page.js";
 export const RING_WORKER = "/test/dist/bench/ring.worker.js";
 
 async function buildAll() {
-  const outdir = `${pkg.pathname}test/dist/`;
+  const outdir = `${dir}test/dist/`;
   await build({ outdir, ffmpeg: "/ffmpeg/" });
   await build({
     outdir,

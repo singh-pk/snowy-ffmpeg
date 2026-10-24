@@ -11,7 +11,7 @@
 // Usage: bun run test.
 
 import { afterAll, expect, test } from "bun:test";
-import { launch } from "./support/browsers";
+import { decodable, launch } from "./support/browsers";
 import { ENTRY, PAGE, serveEngine } from "./support/serve";
 
 interface Video {
@@ -24,8 +24,9 @@ interface Video {
   keyframes: number[];
 }
 
+const generated = await Bun.file(new URL("fixtures/expected.json", import.meta.url)).json();
 const expected: Record<string, { video?: Video; audio?: unknown; duration: number }> =
-  await Bun.file(new URL("fixtures/expected.json", import.meta.url)).json();
+  decodable(generated);
 const SEEKS = Number(process.env.SNOWY_SEEKS ?? 10);
 // The time a seek may take, in milliseconds, with the reads after it.
 const SEEK_TIME = 1000;

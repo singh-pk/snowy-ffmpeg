@@ -11,7 +11,7 @@
 // Usage: bun run test.
 
 import { afterAll, expect, test } from "bun:test";
-import { launch } from "./support/browsers";
+import { decodable, launch } from "./support/browsers";
 import { MEDIA_WORKER, PAGE, serveEngine } from "./support/serve";
 
 interface Colour {
@@ -21,10 +21,11 @@ interface Colour {
   range: string;
 }
 
+const generated = await Bun.file(new URL("fixtures/expected.json", import.meta.url)).json();
 const expected: Record<
   string,
   { video: { id: number; codec: string; codecString?: string; colour: Colour } }
-> = await Bun.file(new URL("fixtures/expected.json", import.meta.url)).json();
+> = decodable(generated);
 const files = Object.entries(expected).map(([name, e]) => ({
   name,
   stream: e.video.id,
