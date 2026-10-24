@@ -146,7 +146,6 @@ jobs:
         # software (packages/engine/docs/architecture.md#testing).
         include:
           - os: macos-26
-            gpu: ""
           - os: windows-latest
             gpu: warp
           - os: ubuntu-latest
@@ -159,6 +158,7 @@ jobs:
     defaults:
       run:
         working-directory: packages/engine
+        # Not Windows' PowerShell, so the steps run the same on every runner.
         shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
