@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// Peers that sign batches, and histories of main, for tests of src/history.ts.
+// Peers that sign batches, and histories of main, for tests of src/history.ts and
+// src/branches.ts.
 
 import { batchHash, keyIdOf, signBatch } from "../../src/batch";
 import { createHistory } from "../../src/history";
@@ -9,13 +10,16 @@ import type { Op } from "./project";
 
 export const generate = () => crypto.subtle.generateKey("Ed25519", false, ["sign", "verify"]);
 
-/** A peer that signs its batches in order, each on `main`. */
+/** A peer that signs its batches in order, by default on `main`. */
 export async function author() {
   const peer = await generate();
   const key = await keyIdOf(peer.publicKey);
   const hashes: string[] = [];
+  // The seq of the peer's last batch on each branch.
+  const lastOn = new Map<string, number>();
 
-  async function commit(
+  async function commitTo(
+    branch: string,
     ops: Op[],
     hlc: string,
     base = { n: 0, hash: "" },
@@ -26,8 +30,8 @@ export async function author() {
       author: key,
       seq,
       prev: hashes.at(-1) ?? "",
-      branch: "main",
-      branchPrev: seq - 1,
+      branch,
+      branchPrev: lastOn.get(branch) ?? 0,
       base,
       hlc,
       label: "Edit",
@@ -36,10 +40,18 @@ export async function author() {
     });
     const hash = await batchHash(batch);
     hashes.push(hash);
+    lastOn.set(branch, seq);
     return { batch, hash };
   }
 
-  return { peer, key, commit };
+  const commit = (
+    ops: Op[],
+    hlc: string,
+    base?: { n: number; hash: string },
+    undoes?: { author: string; seq: number },
+  ) => commitTo("main", ops, hlc, base, undoes);
+
+  return { peer, key, commit, commitTo };
 }
 
 /** A history of main sequenced by `sequencer`, and a helper that appends what it sequences. */
