@@ -144,7 +144,8 @@ test("a segment cut short keeps the records before the cut, and writing goes on 
   expect(unreadable).toEqual([path]);
   expect(branches().history("main")?.entries()).toHaveLength(1);
 
-  // The sequencer appends the batch again, in a segment after the cut one.
+  // Entry 2 is lost, so the sequencer signs it again, here for the same batch, in a segment
+  // after the cut one.
   await edit(a, "main", [rename("Three")]);
   expect(disk.files.has("history/main/2")).toBe(true);
   await reopen();

@@ -147,14 +147,13 @@ async function verified(read: Array<Read<Batch>>, unreadable: string[]) {
   const hashesOf = new Map<string, Set<string>>();
   const ordered = read.toSorted((a, b) => a.value.seq - b.value.seq);
   const checked = await Promise.all(
-    ordered.map(async ({ value }) => {
+    ordered.map(async ({ path, value }) => {
       const [valid, hash] = await Promise.all([verifyBatch(value), batchHash(value)]);
-      return { valid, hash };
+      return { path, value, valid, hash };
     }),
   );
 
-  for (const [i, { path, value }] of ordered.entries()) {
-    const { valid, hash } = checked[i] ?? { valid: false, hash: "" };
+  for (const { path, value, valid, hash } of checked) {
     const chained =
       value.seq === 1 ||
       hashesOf.get(keyOf({ author: value.author, seq: value.seq - 1 }))?.has(value.prev) === true;
