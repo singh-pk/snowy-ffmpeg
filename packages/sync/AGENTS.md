@@ -31,7 +31,7 @@ The relay tests (`test/relay.test.ts`) start a MoQ relay in Docker. On Colima, s
 | `src/chat-session.ts` | a peer's chat in one session: the store, log, sending, receiving and repair, wired to its links |
 | `src/chat-store.ts` | chat in the local store: an append-only OPFS log per author, read back after a reload |
 | `src/link.ts` | the link to one peer that both transports give, so nothing else refers to either |
-| `src/relay.ts` | the connection to the relay over MoQ Transport draft 18: presence, this peer's tracks, subscriptions, and a `Link` to each peer |
+| `src/relay.ts` | the connection to the relay over MoQ, through `@moq/net`: presence, this peer's tracks, subscriptions, and a `Link` to each peer |
 | `src/opfs.d.ts` | types for OPFS sync access handles, which TypeScript's DOM library lacks |
 | `src/rank.ts` | ranking peers by hash, so every asker picks alike and different questions spread out |
 | `test/` | unit tests (`*.unit.ts`), run in Chromium by `unit.test.ts`; browser tests (`*.test.ts`), such as the relay tests, which need Docker; `test/support/` holds what they share |
