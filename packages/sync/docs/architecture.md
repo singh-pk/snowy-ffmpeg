@@ -236,9 +236,9 @@ Every name sits under the namespace `snowy/<SessionId>`. The relay enforces who 
 - **A peer serves its own tracks.** It announces a broadcast (MoQ Transport's namespace) and answers the subscriptions the relay forwards to it; nothing is pushed with `PUBLISH`, which moq-relay doesn't accept.
 - **Each sender has a broadcast of its own** under `inbox/<recipient>`, so every broadcast has exactly one publisher, and a relay never has to choose between two.
 - **Every object is a group of its own**, inbox messages included, so one lost or slow object never holds up another. Objects on the relay may therefore arrive in any order: everything sent through it is either self-proving (batches, chunks) or answered whatever order it comes in (repair messages).
-- **An object's key travels with it** on `chat` and `deliver`, framed as a 2-byte big-endian key length, the key in UTF-8, then the sealed bytes. A message on `ctl` is JSON.
+- **An object's key travels with it** on `chat`, `deliver`, `catalog` and `init/<track>`, framed as a 2-byte big-endian key length, the key in UTF-8, then the sealed bytes. A message on `ctl` is JSON.
 - **Presence** is a watch of the announcements under `peer/*` (`SUBSCRIBE_NAMESPACE` in MoQ Transport): a peer is online while its `peer/<PeerId>` broadcast is announced, and the relay reports the announcements and withdrawals.
-- **A broadcast's tracks exist before it is announced**, so a peer that subscribes on seeing a broadcast finds every track in it. A peer creates its own tracks before announcing `peer/<PeerId>`, so they are fixed when it connects.
+- **A broadcast's tracks exist before it is announced**, so a peer that subscribes on seeing a broadcast finds every track in it. A peer creates its own tracks before announcing `peer/<PeerId>`, so they are fixed when it connects, and the source announces `source` before that, so a peer that sees the source online finds `source` too.
 - **No group is skipped for its age.** `@moq/net` skips a group once a newer one is further ahead in time than the subscriber allows, which suits live media; every frame here carries the same timestamp, so none ever is.
 - **A link over the relay** opens at each end once it has subscribed to both tracks of `inbox/<self>/<peer>` and heard anything on them. An end sends nothing before it has both of its own subscriptions, so whatever arrives proves the other end can hear this one. Each end sends a `link-open` message after subscribing, and answers with one more when it opens on hearing the other first, since a message sent before the other end subscribed may not be delivered. As objects arrive in any order, what arrives before the link opens is kept and handed on, in order, once it does. The link closes when either end withdraws its inbox broadcast or the peer's `peer/<PeerId>` broadcast is withdrawn, and at an end whose subscription the relay ends.
 - **A subscription may begin with the last few seconds of groups**, which the publisher keeps for subscribers that come later, as a relay may too. Nothing relies on them: everything is self-proving or answered whatever order it comes in, and what a peer missed before that comes through repair.
@@ -282,7 +282,23 @@ type Catalog = {
   chunkCount?: number;           // set once demuxing has reached the end of the file
   sig: string;
 };
+
+type CodecSetup = {              // init/<track>: what the track's decoder is configured with
+  track: number;
+  codec: string;
+  description?: string;          // WebCodecs `description` (extradata), unpadded base64url
+  codedWidth?: number;
+  codedHeight?: number;
+  sampleRate?: number;
+  numberOfChannels?: number;
+  sig: string;
+};
 ```
+
+- **Both are JSON signed by the session key.** `sig` covers a domain prefix (`snowy catalog v1` or `snowy init v1`, then a newline) and the JSON of `{ session, …fields }`: the `SessionId`, then the record's fields in the order above, absent ones left out, as the join grant names its session too. The prefix means a signature over one kind of record can't pass for another, or for anything else the session key signs.
+- **A peer checks every field** and refuses a record with a field nobody signed, a `description` in another base64url spelling, or two tracks with one `id`. Track ids are 0 to 65535, as in chunk headers.
+- **The object key names what it holds:** a catalog is `catalog@<version>` and a codec setup `init/<track>`, and a peer refuses one whose content doesn't match its key. As the key is the encryption's associated data, a sealed catalog can't be passed off as another version either.
+- Versions count up from 1, and a peer keeps the catalog with the highest. Every record is signed, so a peer can take one from anyone.
 
 ### Media chunk
 

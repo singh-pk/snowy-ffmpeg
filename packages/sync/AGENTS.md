@@ -19,6 +19,7 @@ The relay tests (`test/relay.test.ts`) start a MoQ relay in Docker. On Colima, s
 | --- | --- |
 | `src/crypto.ts` | key pairs and key ids, Ed25519 signatures, the content key, and sealing objects with AES-GCM |
 | `src/chunk.ts` | the media chunk: its signed header and packet records, encoded and checked |
+| `src/catalog.ts` | the source's records: the catalog and each track's codec setup, signed by the session key and checked |
 | `src/hlc.ts` | the hybrid logical clock that orders chat |
 | `src/chat.ts` | chat messages in canonical bytes, their hash chain, and signed checkpoints |
 | `src/chat-log.ts` | the chat log: shared order, gaps, version vectors, and edits, deletes and reactions applied |
