@@ -13,11 +13,11 @@ import {
   decodeSetup,
   encodeCatalog,
   encodeSetup,
-  InvalidRecordError,
   type Catalog,
   type CodecSetup,
 } from "../src/catalog";
 import { generateKeyPair, keyId, sign, type Bytes } from "../src/crypto";
+import { InvalidRecordError } from "../src/signed-record";
 import { rejection } from "./support/rejection";
 
 const pair = await generateKeyPair();

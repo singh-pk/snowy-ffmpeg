@@ -555,7 +555,8 @@ type Control = {
 ```
 
 - **Only the source** writes control. Viewers can't play, pause or seek for the group.
-- **Clock:** every peer uses `(performance.timeOrigin + performance.now()) × 1000`, wall time in microseconds at high resolution. The measured offset turns the source's `atUs` into the local clock.
+- **It is signed like the catalog** ([Catalog](#catalog)), under the prefix `snowy control v1`, and its object key is `control@<epoch>`. Epochs count up from 1, and a peer follows the record with the highest. `sequence` is for edit sessions only: a watch session's record has no other fields. A record that is `ended` isn't `playing`.
+- **Clock:** every peer uses `(performance.timeOrigin + performance.now()) × 1000`, wall time in microseconds at high resolution, rounded to whole microseconds as every time in a record is. The measured offset turns the source's `atUs` into the local clock.
 - Playback always runs at normal speed. The position a viewer should be at is `mediaUs + (sourceNow − atUs)` while playing, and `mediaUs` while paused.
 
 ### Clock offset
