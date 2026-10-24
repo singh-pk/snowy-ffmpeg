@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Position keys (docs/architecture.md#anchors): fractional indexes, strings that sort between
 // their neighbours, so an item goes between two others without changing either. A key is an

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Where connected items go (docs/architecture.md#layout): the time an anchor gives, and the lane
 // each item of a role takes. Both are worked out from anchors and durations, the same way on

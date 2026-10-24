@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Ranking peers (src/rank.ts) and asking for missing chat (src/chat-repairs.ts), in Chromium: every
 // asker ranks alike, different questions spread over peers, and an ask moves to the next

@@ -8,10 +8,10 @@ Snowy is a frontend-only media toolkit for the browser: a video player first, an
 
 | Package | Directory | Licence | What it is |
 | --- | --- | --- | --- |
-| `@snowy-media/engine` | [`packages/engine`](packages/engine) | MIT | The playback pipeline, without a user interface ([AGENTS.md](packages/engine/AGENTS.md)) |
+| `@snowy-media/engine` | [`packages/engine`](packages/engine) | Snowy License 1.0 | The playback pipeline, without a user interface ([AGENTS.md](packages/engine/AGENTS.md)) |
 | `@snowy-media/ffmpeg` | [`packages/ffmpeg`](packages/ffmpeg) | LGPL-2.1-or-later | FFmpeg 9 compiled to WebAssembly modules ([AGENTS.md](packages/ffmpeg/AGENTS.md)) |
-| `@snowy-media/sync` | [`packages/sync`](packages/sync) | MIT | Watch-together sessions: streaming, chat and playback sync ([AGENTS.md](packages/sync/AGENTS.md)) |
-| `@snowy-media/timeline` | [`packages/timeline`](packages/timeline) | MIT | The edit document: a magnetic timeline, its operations and its linear history ([AGENTS.md](packages/timeline/AGENTS.md)) |
+| `@snowy-media/sync` | [`packages/sync`](packages/sync) | Snowy License 1.0 | Watch-together sessions: streaming, chat and playback sync ([AGENTS.md](packages/sync/AGENTS.md)) |
+| `@snowy-media/timeline` | [`packages/timeline`](packages/timeline) | Snowy License 1.0 | The edit document: a magnetic timeline, its operations and its linear history ([AGENTS.md](packages/timeline/AGENTS.md)) |
 
 ## Commands
 
@@ -36,8 +36,9 @@ Run `bun run check` before every commit; the hook runs it anyway.
 | `tooling/test-server.ts`, `tooling/run-unit.ts`, `tooling/unit.ts`, `tooling/unit-worker.ts` | serving a package to Chromium for its tests and benchmarks, and running unit tests there (rule 2) |
 | `scripts/` | repository scripts, such as `settings.ts`, which applies `.github/settings.yml` |
 | `.agents/skills/` | task playbooks, also linked into `.claude/skills` |
-| `brand/` | the logo, avatar and social preview, and the rules for using them |
-| `LICENSES/` | licence texts that SPDX headers refer to ([REUSE](https://reuse.software)) |
+| `brand/` | the logo, avatar and social preview, and the rules for using them; trademarks, not licensed ([TRADEMARKS.md](TRADEMARKS.md)) |
+| `LICENSE.md`, `LICENSES/` | which licence covers which files, and the licence texts that SPDX headers refer to ([REUSE](https://reuse.software)) |
+| `CLA.md`, `.github/cla-signatures.txt` | the Contributor License Agreement every contributor signs, and who has signed it |
 
 Shared configuration lives once, at the root: `tsconfig.base.json`, `.oxlintrc.json`, `.oxfmtrc.json`, `knip.json`, `_typos.toml`, `.markdownlint-cli2.jsonc`, `REUSE.toml`. Packages extend it; never copy it into a package.
 
@@ -49,8 +50,9 @@ Shared configuration lives once, at the root: `tsconfig.base.json`, `.oxlintrc.j
 4. **No fallbacks.** One platform baseline (cross-origin isolation, WebAssembly SIMD and threads, WebCodecs, WebGPU, AudioWorklet, File System Access) and one code path. Do not add feature detection, browser-specific branches or main-thread variants.
 5. **Performance is measured.** Never claim a speed-up you have not measured; include before and after numbers from the same machine.
 6. **Bun and TypeScript only.** Tooling is TypeScript run by Bun. No Node.js or Python scripts; shell only inside Docker builds.
-7. **Small, focused diffs.** Change only what the task needs, normally in one package. Match the surrounding style: short functions, comments that explain *why*, SPDX headers on new files with the licence of the package (MIT outside `packages/ffmpeg`). `bun run lint` also enforces the house rules: no classes, no module-level `let` (keep state in a `createX()` factory), `await` into a `const` instead of nesting it or chaining `.then`, no `setInterval`, and a blank line around every multi-line block.
+7. **Small, focused diffs.** Change only what the task needs, normally in one package. Match the surrounding style: short functions, comments that explain *why*, SPDX headers on new files (rule 9). `bun run lint` also enforces the house rules: no classes, no module-level `let` (keep state in a `createX()` factory), `await` into a `const` instead of nesting it or chaining `.then`, no `setInterval`, and a blank line around every multi-line block.
 8. **No internal notes in the repository.** No plans, roadmaps, TODO lists, meeting notes or agent scratch files. Rationale for the current design goes in the package's `docs/`; user-visible changes go in its `CHANGELOG.md` under *Unreleased*.
+9. **Licences have boundaries.** Every file carries the licence of where it lives ([LICENSE.md](LICENSE.md)): `LicenseRef-Snowy-License-1.0` in every package except `packages/ffmpeg`, new packages included; `LGPL-2.1-or-later` in `packages/ffmpeg`; `MIT` for tooling, configuration and root documents. A new package sets `"license": "SEE LICENSE IN LICENSE"` and its release copies the licence text into `LICENSE`. Never move code across a boundary, such as Snowy-licensed code into tooling or FFmpeg's C into another package. Third-party code keeps its own licence and SPDX header and is listed in the package's NOTICE. Changing a licence, `LICENSE.md`, `TRADEMARKS.md` or `CLA.md` is the maintainer's decision, never an agent's.
 
 ## Before you open a pull request
 

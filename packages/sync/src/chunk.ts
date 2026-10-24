@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The media chunk (docs/architecture.md#media-chunk): a header the source signs, then the
 // chunk's packets in decode order. The header carries the body's SHA-256, so one signature

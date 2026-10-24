@@ -1,0 +1,84 @@
+# SPDX-FileCopyrightText: 2026 The Snowy Authors
+# SPDX-License-Identifier: MIT
+#
+# Checks that every author of a pull request signed the Contributor License Agreement
+# (CLA.md): the person who opened it and the author of each of its commits. They sign once,
+# by adding "<numeric id> <login>" to .github/cla-signatures.txt in a pull request they open,
+# and nobody signs for anyone else. pull_request_target runs this file as it is on main, so a
+# pull request can't change the check; it reads the pull request through the API, as data,
+# and never checks out or runs its code.
+name: cla
+
+on:
+  pull_request_target: # zizmor: ignore[dangerous-triggers]
+    types: [opened, synchronize, reopened]
+
+permissions: {}
+
+jobs:
+  cla:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check every author signed the CLA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          AUTHOR_ID: ${{ github.event.pull_request.user.id }}
+          AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          COMMITS: ${{ github.event.pull_request.commits }}
+        run: |
+          set -f
+          file=.github/cla-signatures.txt
+
+          # The commits API lists at most 250 commits, so a longer pull request can't be checked.
+          if [ "$COMMITS" -gt 250 ]; then
+            echo "::error::A pull request with more than 250 commits can't be checked; split it or squash it."
+            exit 1
+          fi
+
+          signed=$(gh api "repos/$REPO/contents/$file?ref=$BASE" --jq .content | base64 -d | cut -d' ' -f1 | tr '\n' ' ')
+          patch=$(gh api --paginate "repos/$REPO/pulls/$PR/files" \
+            --jq ".[] | select(.filename == \"$file\") | .patch // \"\"")
+          added=$(printf '%s\n' "$patch" | sed -n 's/^+\([^#].*\)$/\1/p')
+
+          # Nobody removes or changes someone else's signature.
+          if printf '%s\n' "$patch" | grep -q '^-[^#]'; then
+            echo "::error::A pull request may not remove or change signatures in $file."
+            exit 1
+          fi
+
+          # A bot can't agree to a contract, so a pull request a bot opens is checked only for
+          # its human commit authors.
+          opener=$AUTHOR_ID
+          if [ "$AUTHOR_TYPE" = "Bot" ]; then
+            opener=""
+          fi
+
+          if [ -n "$added" ]; then
+            if [ "$(printf '%s\n' "$added" | cut -d' ' -f1)" != "$AUTHOR_ID" ]; then
+              echo "::error::A pull request may add only its own author's line to $file."
+              exit 1
+            fi
+            signed="$signed $AUTHOR_ID"
+          fi
+
+          # Commit authors without a GitHub account show as "none"; they can't have signed.
+          authors=$(gh api --paginate "repos/$REPO/pulls/$PR/commits" \
+            --jq '.[] | select(.author.type != "Bot") | (.author.id // "none" | tostring)')
+          missing=""
+          for id in $opener $authors; do
+            case " $signed " in
+              *" $id "*) ;;
+              *) missing="$missing $id" ;;
+            esac
+          done
+
+          if [ -n "$missing" ]; then
+            echo "::error::Not every author signed the CLA (GitHub account IDs:$missing). Read CLA.md and sign it by adding \"<numeric id> <login>\" to $file in a pull request you open."
+            exit 1
+          fi

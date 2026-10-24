@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // createEngine's platform check in Chromium: it starts where the baseline
 // is met, and names the missing feature where it is not. Usage: bun run test.

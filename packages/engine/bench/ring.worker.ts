@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // One side of the ring benchmark (run.ts), in a worker as in the engine. The producer writes
 // `count` packets of `size` bytes, as fast as it can or one every `interval` ms, stamped with

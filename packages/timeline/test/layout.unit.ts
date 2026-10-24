@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Where connected items go (src/layout.ts), in Chromium: an item anchored to a clip stays on the
 // same moment of its media through a head trim or a speed change, video snaps to a frame, and

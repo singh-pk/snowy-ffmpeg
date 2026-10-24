@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Framing an object with its key for the relay (src/relay.ts), in Chromium: it comes back as it
 // went, from any offset, and bytes too short for their key length are no object.

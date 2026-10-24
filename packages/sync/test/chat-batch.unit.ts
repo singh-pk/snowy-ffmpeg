@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The chat batch (src/chat-batch.ts), in Chromium: a batch round-trips with its checkpoint, proves
 // itself, and is rejected when it doesn't open, is moved to another key, or holds messages its

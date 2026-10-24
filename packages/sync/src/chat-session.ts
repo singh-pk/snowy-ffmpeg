@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // A peer's chat in one session (docs/architecture.md#chat): the local store, the log, sending,
 // receiving and repair, wired together and to the peer's links. Opening it restores what the

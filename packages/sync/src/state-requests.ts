@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Getting the session's state on join (docs/architecture.md#presence-and-membership): the relay
 // holds none, so a joiner asks one peer for the source's records, sent with a link's `send`. It

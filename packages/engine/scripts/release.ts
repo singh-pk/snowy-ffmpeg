@@ -1,10 +1,10 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Prepares the release for tag @snowy-media/engine@X.Y.Z (.github/workflows/release.yml), from
 // a build (bun run build): checks that the tag matches package.json and has a CHANGELOG.md
-// section, and that the @snowy-media/ffmpeg in the repository is released, copies the MIT
-// text into LICENSE, and writes into release/
+// section, and that the @snowy-media/ffmpeg in the repository is released, copies the Snowy
+// License text into LICENSE, and writes into release/
 //   notes.md                         that section
 //   snowy-media-engine-X.Y.Z.tgz     the npm package, checked to hold exactly the files below
 //                                    and to depend on that @snowy-media/ffmpeg, which npm
@@ -44,7 +44,10 @@ const out = `${root}release/`;
 const name = `snowy-media-engine-${version}`;
 await rm(out, { recursive: true, force: true });
 await Bun.write(`${out}notes.md`, `${section.slice(section.indexOf("\n") + 1).trim()}\n`);
-await Bun.write(`${root}LICENSE`, Bun.file(`${root}../../LICENSES/MIT.txt`));
+await Bun.write(
+  `${root}LICENSE`,
+  Bun.file(`${root}../../LICENSES/LicenseRef-Snowy-License-1.0.txt`),
+);
 
 // A wrong `files` pattern or a missing build step would otherwise publish an incomplete
 // package that npm never lets us replace. The declarations are what tsc emitted into dist/,

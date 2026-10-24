@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Item ids (src/ids.ts), in Chromium: an id names its batch and operation, splits back into
 // them, and has one spelling.

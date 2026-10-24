@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // What a promise rejects with, or undefined if it resolves: awaited as a value, so a test
 // asserts on it and can't forget to wait for the rejection.

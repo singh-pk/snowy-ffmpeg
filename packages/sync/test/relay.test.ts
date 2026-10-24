@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The relay connection (src/relay.ts) against a real MoQ relay (test/support/relay.ts), in
 // Chromium: admission by token, presence, links that open, carry messages and objects, and close,

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The platform baseline. createEngine checks it once, before anything starts, here for what
 // the main thread can see and in the render worker for the rest; nothing else in the engine

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // WebCodecs decoder configs for the codecs WebCodecs decodes. The codec string is built as
 // its spec defines it: from the stream's configuration record (avcC, hvcC, av1C), which is

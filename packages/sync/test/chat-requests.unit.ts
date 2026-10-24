@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Chat repair messages (src/chat-requests.ts), in Chromium: only well-formed messages pass the
 // check; peers wired by their messages, round-tripped through JSON as a link carries them, fill

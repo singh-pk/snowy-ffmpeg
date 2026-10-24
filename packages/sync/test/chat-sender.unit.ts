@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Sending chat (src/chat-sender.ts), in Chromium: messages chain at once and in call order; nothing
 // goes until the stream is writable, then everything queued goes as one batch, and what is

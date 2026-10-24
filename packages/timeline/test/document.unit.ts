@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The document's records and operations (src/document.ts) and the schemas under them
 // (src/schema.ts), in Chromium: each operation reads back in canonical shape, open records sort

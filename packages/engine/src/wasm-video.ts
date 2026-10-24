@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The render worker's decoders for the video streams WebCodecs does not decode: each stands in
 // for a VideoDecoder in src/video.ts, and decodes in the video decode worker

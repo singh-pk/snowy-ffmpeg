@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Chromium with WebGPU on a GPU, for the tests and the benchmarks: headless, it uses the GPU
 // only when told to (docs/architecture.md#testing). With SNOWY_PROFILE=low-end, as on a budget

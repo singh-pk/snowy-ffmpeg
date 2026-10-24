@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The video decode worker: decodes, with FFmpeg's `video` or `video-ext` module, the video
 // streams WebCodecs does not, for the render worker (src/wasm-video.ts). FFmpeg decodes

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The frame queue (src/frames.ts) and the compositor's fit (src/compositor.ts), in Chromium: the
 // queue keeps frames in presentation order, hands out the latest one due and closes those it

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // engine.open in Chromium: for every fixture it reports what native
 // ffprobe reports (test/fixtures/expected.json), and it rejects a file that is not media, an

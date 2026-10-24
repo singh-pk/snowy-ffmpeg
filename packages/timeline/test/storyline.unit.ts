@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The storyline's layout (src/storyline.ts), in Chromium: items are ordered by position key and
 // id, each starts where the ones before it end, removing or shortening an item closes up what

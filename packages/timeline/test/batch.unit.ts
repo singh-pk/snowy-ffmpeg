@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Batches (src/batch.ts), in Chromium: a batch signs and verifies with its author's key, reads
 // back exactly from its canonical bytes, and anything but those bytes, or a batch whose fields

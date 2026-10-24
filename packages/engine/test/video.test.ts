@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // WebCodecs decoder configs (src/codec.ts) in Chromium: every fixture has a decoder, and for
 // every fixture WebCodecs decodes, the browser's VideoDecoder takes the config made from the

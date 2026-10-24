@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Batches (docs/architecture.md#batches): one gesture's operations, signed by their author, in
 // canonical bytes (src/signed.ts) under the domain `snowy batch v1\n`.

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Chat messages and checkpoints (src/chat.ts), in Chromium: a message round-trips through its
 // canonical bytes, malformed ones are refused, a checkpoint verifies only as signed by its

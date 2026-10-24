@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The source's signed records (docs/architecture.md#catalog): JSON signed by the session key
 // over a domain prefix, the session and every field in a fixed order. The prefix keeps a

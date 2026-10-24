@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Builds the engine for a page without a bundler into test/dist, its ffmpeg imports pointing
 // at /ffmpeg/, and serves the package with the ffmpeg package under /ffmpeg/. A page imports

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The records of a project's document and the operations that change them
 // (docs/architecture.md#the-document, #operation-kinds), as schemas: each checks an untrusted

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // A watch session's source records as a peer holds them (docs/architecture.md#catalog): the
 // newest catalog, the newest control record, and each track's codec setup. Every record is signed by the session

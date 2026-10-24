@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Item ids (docs/architecture.md#ids): `<author>.<seq>.<index>`, the batch that made the item
 // and the operation's place in it, so ids are unique without a counter or a coordinator. An

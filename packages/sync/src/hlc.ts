@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The hybrid logical clock that orders chat (docs/architecture.md#order): 16 hex digits, the
 // wall clock in ms (48 bits) then a counter (16 bits), so comparing two as strings compares

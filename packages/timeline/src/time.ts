@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Time on a timeline (docs/architecture.md#time): integers in flicks, 705,600,000 per second.
 // Every conversion is computed exactly, as a fraction of integers in BigInt, then rounded once,

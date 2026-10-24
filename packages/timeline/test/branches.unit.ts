@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Branches (src/branches.ts), in Chromium: a branch starts from the document at its creating entry
 // and is sequenced by its creator, a merge brings a branch's edits once each, what waits for a

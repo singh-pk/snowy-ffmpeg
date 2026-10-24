@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The source's records (src/catalog.ts), in Chromium: a catalog and a codec setup round-trip
 // under the object keys that name them; a malformed one is refused before signing; and one that

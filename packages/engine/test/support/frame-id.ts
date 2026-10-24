@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The frame number burned into every test video (scripts/gen-fixtures.ts): a row of
 // FRAME_ID_BITS squares of CELL × CELL pixels in the top-left corner, white for a 1 and black

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Chat in the local store (docs/architecture.md#local-store): `chat/<author>` in the session's
 // OPFS directory, an append-only log of the author's messages and the checkpoints that prove

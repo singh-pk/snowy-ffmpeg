@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Keys, signatures and encryption (src/crypto.ts), in Chromium: key ids round-trip, signatures check
 // only against their key and data, and sealed objects open only under the same content key and

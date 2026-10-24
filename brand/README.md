@@ -21,4 +21,6 @@ The mark is a play button with a snowdrift settled at its foot, the drift's edge
 - Keep clear space around the logo of at least the height of the drift line's curve, about a quarter of the mark's height.
 - Don't set "Snowy" in a live font next to the mark; use `logo.svg`.
 
+The name and these files are trademarks, not licensed with the code: [TRADEMARKS.md](../TRADEMARKS.md) says how they may be used.
+
 GitHub has no API for the social preview or an account's avatar, so a maintainer uploads `social-preview.png` in the repository's settings, and `avatar.png` on the GitHub account and the npm organisation, by hand.

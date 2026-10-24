@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Code for the test and benchmark pages, bundled by serve.ts and imported from PAGE: the
 // packet ring and the hash test/fixtures/expected.json records for a stream's packets, and

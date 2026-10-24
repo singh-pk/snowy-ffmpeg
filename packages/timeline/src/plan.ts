@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The render plan (docs/architecture.md#queries-and-the-render-plan): what @snowy-media/engine
 // plays and exports for a range of a sequence. The range is cut into segments in which the set of

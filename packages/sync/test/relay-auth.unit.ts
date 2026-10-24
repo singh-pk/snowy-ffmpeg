@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Relay authorization (src/relay-auth.ts), in Chromium: a peer's token admits it to its own
 // namespaces in its own session, the source's to `source` too, and anything forged, stale,

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The render worker. It checks the part of the platform baseline only a worker can see:
 // WebGPU on an OffscreenCanvas, WebCodecs, and a VideoFrame imported as a GPU texture, the

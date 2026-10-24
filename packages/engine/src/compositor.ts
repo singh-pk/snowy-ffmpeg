@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The WebGPU compositor. A decoded frame is uploaded into textures of its own, a picture, and
 // closed: a VideoFrame's planes copied out first, FFmpeg's straight from its shared memory;

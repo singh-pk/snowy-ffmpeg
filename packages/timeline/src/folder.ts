@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The project folder (docs/architecture.md#the-project-folder): what the editor writes for each
 // author's batches and each branch's entries, and opening a project from it again. The package

@@ -39,7 +39,7 @@ How @snowy-media/timeline is built: the document a Snowy edit is, the operations
 
 ## Package boundaries
 
-- `@snowy-media/timeline` is its own package, MIT-licensed, with no dependency on another Snowy package. Where it must match `@snowy-media/sync` byte for byte (the hybrid logical clock), it has its own implementation of the same format.
+- `@snowy-media/timeline` is its own package, under the Snowy License ([LICENSE.md](../../../LICENSE.md)), with no dependency on another Snowy package. Where it must match `@snowy-media/sync` byte for byte (the hybrid logical clock), it has its own implementation of the same format.
 - **It knows nothing about media.** An asset is an identity and the stream facts the editor read when it was added. Reading, decoding and drawing are `@snowy-media/engine`'s; the timeline hands it a [render plan](#queries-and-the-render-plan).
 - **It knows nothing about networks.** It produces signed batches, history entries, refusals and terms as bytes and takes the ones others produced. Carrying them between peers is `@snowy-media/sync`'s ([Requirements on @snowy-media/sync](#requirements-on-snowy-mediasync)).
 - **It knows nothing about storage.** It says what to write and reads what it is given; the editor writes the [project folder](#the-project-folder).

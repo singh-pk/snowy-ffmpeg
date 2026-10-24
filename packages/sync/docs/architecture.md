@@ -76,7 +76,7 @@ The engine's baseline, plus:
 
 ## Package boundaries
 
-- `@snowy-media/sync` is its own package, MIT-licensed.
+- `@snowy-media/sync` is its own package, under the Snowy License ([LICENSE.md](../../../LICENSE.md)).
 - It uses `@snowy-media/engine` only through the engine's public exports.
 - The engine knows nothing about networks. It plays packets from whatever packet source it is given ([Requirements on @snowy-media/engine](#requirements-on-snowy-mediaengine)).
 - Both transports sit behind one `Link` interface. The scheduler, store and chat never refer to MoQ or WebRTC directly.

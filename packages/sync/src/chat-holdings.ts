@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // What a peer holds of each author's chat, to answer repairs (docs/architecture.md#gaps-and-repair):
 // the messages, and for each run of chained seqs, the checkpoint with the highest seq. Every

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The auth server for the relay tests (test/support/relay.ts): src/relay-auth.ts's handler,
 // served by Bun in a container that shares the relay's network, since moq-relay asks a plain

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Receiving chat (src/chat-receiver.ts), in Chromium: two peers end to end. Batches from the
 // author's track reach the log and move the clock; a lost batch is noticed and asked for, and a

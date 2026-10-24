@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // A project's document, changed only by applying batches (docs/architecture.md#applying). Every
 // operation is checked again as it is applied, against the document as it is then, and one that

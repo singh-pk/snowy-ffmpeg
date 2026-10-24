@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The project folder (src/folder.ts), in Chromium: what a project writes opens again as the same
 // branches, entries, documents and pending batches; logs grow in segments; and a file that

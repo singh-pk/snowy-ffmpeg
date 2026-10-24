@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Serves the FFmpeg core module's reads from a File, synchronously with FileReaderSync, so
 // FFmpeg reads a file as it reads a disk. Workers only: FileReaderSync blocks.

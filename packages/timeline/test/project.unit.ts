@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Applying item operations (src/project.ts), in Chromium: operations that fit change the
 // document, the rest are skipped with their reason, and applying reports what changed.

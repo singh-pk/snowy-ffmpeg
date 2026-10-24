@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The render plan (src/plan.ts), in Chromium: a range cut into segments where the layers change,
 // layers in compositing order, keyframes at their times on the timeline, and times in

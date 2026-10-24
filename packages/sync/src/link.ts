@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // A link to one peer (docs/architecture.md#package-boundaries). Both transports give one: the
 // relay, through the inbox tracks, and a direct connection, through its data channels. Chat,

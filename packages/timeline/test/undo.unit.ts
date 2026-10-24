@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Undo, redo, revert and going back (src/undo.ts, src/history.ts), in Chromium: an undo takes
 // back what still stands as the batch left it and reports the rest, redo is an undo of the undo,

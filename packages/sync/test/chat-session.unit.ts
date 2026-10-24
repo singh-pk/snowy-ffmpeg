@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // A peer's chat in one session (src/chat-session.ts), in Chromium, over links in memory: what a
 // peer writes is shown at once and reaches others through its track; a gap is repaired over a

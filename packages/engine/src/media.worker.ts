@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The media worker: it reads the file and demuxes it with the FFmpeg core module, and decodes
 // and resamples its audio. It is the one thread that may block, so it reads the file

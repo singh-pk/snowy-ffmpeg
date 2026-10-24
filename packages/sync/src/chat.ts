@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Chat messages and checkpoints (docs/architecture.md#chat). A message's bytes are its
 // canonical JSON: the fields in the order of `ChatMessage`, absent ones left out, as UTF-8.

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Receiving chat (docs/architecture.md#chat). A batch proves itself, so one path takes them all:
 // from an author's track, from a repair reply, and this peer's own as it publishes them. Each

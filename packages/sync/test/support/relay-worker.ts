@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The relay tests' side in Chromium (test/relay.test.ts), in a dedicated worker, where the chat
 // store's OPFS sync access handles work. Each scenario runs peers against the relay and posts

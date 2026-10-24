@@ -6,7 +6,7 @@
 # @snowy-media/sync
 
 [![ci](https://github.com/singh-pk/snowy-media/actions/workflows/ci.yml/badge.svg)](https://github.com/singh-pk/snowy-media/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/singh-pk/snowy-media/blob/main/LICENSE)
+[![License: Snowy License 1.0](https://img.shields.io/badge/license-Snowy%20License%201.0-blue)](https://github.com/singh-pk/snowy-media/blob/main/LICENSES/LicenseRef-Snowy-License-1.0.txt)
 
 Live sessions for [Snowy](https://github.com/singh-pk/snowy-media), over a stateless [MoQ](https://datatracker.ietf.org/wg/moq/about/) relay on WebTransport. It runs two kinds:
 
@@ -24,4 +24,4 @@ A page served with cross-origin isolation (`Cross-Origin-Opener-Policy: same-ori
 
 ## Licence
 
-MIT.
+The [Snowy License 1.0](https://github.com/singh-pk/snowy-media/blob/main/LICENSES/LicenseRef-Snowy-License-1.0.txt): free for individuals, companies of up to 3 people, non-profits, education, open-source projects and evaluation. Larger companies using it in production need a company licence ([LICENSE.md](https://github.com/singh-pk/snowy-media/blob/main/LICENSE.md)).
