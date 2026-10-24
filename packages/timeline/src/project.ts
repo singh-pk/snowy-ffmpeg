@@ -1242,6 +1242,14 @@ export function createProject(initial?: Snapshot) {
     name: () => name,
     sequence: (id: ItemId) => sequences.get(id)?.record,
     role: (id: ItemId) => roles.get(id)?.record,
+    /** A sequence's live roles, each with its id, in order, by `order` and then id. */
+    roles: (sequence: ItemId) =>
+      [...roles]
+        .filter(([, state]) => !state.removed && state.record.sequence === sequence)
+        .map(([id, { record }]) => Object.assign({ id }, record))
+        .toSorted((a, b) =>
+          a.order === b.order ? byCodeUnit(a.id, b.id) : byCodeUnit(a.order, b.order),
+        ),
     asset: (id: string) => assets.get(id)?.record,
     effects: chain,
     /** The keyframes on a clip or effect, by param and then source point. */
