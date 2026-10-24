@@ -121,8 +121,8 @@ test("a merge brings a branch's edits to the target once each, with their own id
     [a.key, 4],
   ]);
   expect(historyOf(alt).document().name()).toBe("Main");
-  // The merges among them aren't merged again: they name main's entries.
-  expect(back.entered[0]?.merged[0]?.skipped.map(({ reason }) => reason)).toEqual(["unsupported"]);
+  // The merges among them bring nothing more: the branch has what they merged.
+  expect(back.entered[0]?.merged.flatMap(({ skipped }) => skipped)).toEqual([]);
 });
 
 test("a merge of chosen entries applies them in the branch's order, and a stale one is skipped", async () => {
@@ -143,20 +143,105 @@ test("a merge of chosen entries applies them in the branch's order, and a stale 
 test("an entry merging entries this peer doesn't have yet waits for them", async () => {
   const { a, b, batches, entries, edit, historyOf, alt } = await setUp();
   await edit(b, alt, [rename("Three")]);
-  await edit(a, "main", [{ op: "branch.merge", branch: alt, through: historyOf(alt).head() }]);
+  await edit(a, "main", [rename("Main")]);
+  const merge = await edit(a, "main", [
+    { op: "branch.merge", branch: alt, through: historyOf(alt).head() },
+  ]);
   const other = createBranches({ sequencer: a.key });
 
   for (const { batch, hash } of batches.filter((each) => each.batch.branch === "main"))
     await other.pend(batch, hash);
   for (const entry of entries.filter(({ branch }) => branch === "main")) await other.append(entry);
   const main = other.history("main") ?? fail();
-  expect(main.head().n).toBe(2);
+  expect(main.head().n).toBe(3);
+  const entered = [];
 
   for (const { batch, hash } of batches.filter((each) => each.batch.branch === alt))
     await other.pend(batch, hash);
-  for (const entry of entries.filter(({ branch }) => branch === alt)) await other.append(entry);
-  expect(main.head()).toEqual(historyOf("main").head());
+
+  for (const entry of entries.filter(({ branch }) => branch === alt)) {
+    const changes = await other.append(entry);
+    entered.push(...(changes.get("main")?.entered ?? []));
+  }
+
+  expect(main.entries()).toEqual(historyOf("main").entries());
   expect(main.document().snapshot()).toEqual(historyOf("main").document().snapshot());
+  // Both peers mark the merge alike.
+  expect(
+    entered.map(({ skipped, merged, concurrent }) => ({ skipped, merged, concurrent })),
+  ).toEqual(
+    merge.entered.map(({ skipped, merged, concurrent }) => ({ skipped, merged, concurrent })),
+  );
+  expect(entered[0]?.concurrent).toBe(true);
+});
+
+test("the sequencer holds back a merge of entries it doesn't have, and appends it once they arrive", async () => {
+  const { a, b, batches, entries, edit, historyOf, alt } = await setUp();
+  const other = createBranches({ sequencer: a.key });
+  for (const { batch, hash } of batches) await other.pend(batch, hash);
+  for (const entry of entries) await other.append(entry);
+  const onAlt = await edit(b, alt, [rename("Three")]);
+  const merging = await a.commitTo(
+    "main",
+    [{ op: "branch.merge", branch: alt, through: historyOf(alt).head() }],
+    "00000000000000ff",
+    historyOf("main").head(),
+  );
+  await other.pend(merging.batch, merging.hash);
+  const held = await other.sequence(a.peer);
+  expect(held.entries).toEqual([]);
+
+  await other.pend(onAlt.batch, batches.at(-1)?.hash ?? fail());
+  for (const entry of entries.filter(({ branch }) => branch === alt)) await other.append(entry);
+  const { entries: made } = await other.sequence(a.peer);
+  expect(made.map(({ branch, n }) => [branch, n])).toEqual([["main", 3]]);
+  expect(other.history("main")?.document().name()).toBe("Three");
+});
+
+test("a merge brings what the branch got by merging, so catching up loses nothing", async () => {
+  const { a, b, edit, historyOf, alt } = await setUp();
+  const created = await edit(b, "main", [{ op: "branch.create", name: "Alt 2" }]);
+  const alt2 = `${b.key}.${created.batch.seq}.0`;
+  await edit(b, alt, [rename("From alt")]);
+  await edit(a, "main", [{ op: "branch.merge", branch: alt, through: historyOf(alt).head() }]);
+  const { entered } = await edit(b, alt2, [
+    { op: "branch.merge", branch: "main", through: historyOf("main").head() },
+  ]);
+  expect(historyOf(alt2).document().name()).toBe("From alt");
+  // Main's merge, and through it alt's rename.
+  expect(entered[0]?.merged.map(({ batch }) => batch.author)).toEqual([a.key, b.key]);
+  expect(entered[0]?.merged[0]?.skipped).toEqual([]);
+});
+
+test("a merge's edits are applied by their own rules: a revert among them is skipped", async () => {
+  const { a, b, edit, historyOf, alt } = await setUp();
+  await edit(b, alt, [{ op: "revert", to: { n: 0, hash: "" } }, rename("Reverted")]);
+  const { entered } = await edit(a, "main", [
+    { op: "branch.merge", branch: alt, through: historyOf(alt).head() },
+  ]);
+  expect(entered[0]?.merged[0]?.skipped.map(({ index, reason }) => [index, reason])).toEqual([
+    [0, "unsupported"],
+  ]);
+  expect(historyOf("main").document().name()).toBe("Reverted");
+  // On the branch the revert went back to the branch's start, which is main's second entry.
+  expect(historyOf(alt).document().name()).toBe("Reverted");
+});
+
+test("going back across a merge, and reverting it, leave its batches counted", async () => {
+  const { a, b, edit, historyOf, alt } = await setUp();
+  const before = historyOf("main").head();
+  await edit(b, alt, [rename("Three")]);
+  const through = historyOf(alt).head();
+  await edit(a, "main", [{ op: "branch.merge", branch: alt, through }]);
+  const after = historyOf("main").head();
+  expect(historyOf("main").at(before).name()).toBe("Two");
+  expect(historyOf("main").at(after).name()).toBe("Three");
+
+  await edit(a, "main", [{ op: "revert", to: before }]);
+  expect(historyOf("main").document().name()).toBe("Two");
+  const again = await edit(a, "main", [{ op: "branch.merge", branch: alt, through }]);
+  expect(again.entered[0]?.merged).toEqual([]);
+  expect(historyOf("main").document().name()).toBe("Two");
 });
 
 test("a merge whose edits clash with a change on the target since the branch started is concurrent", async () => {
@@ -167,11 +252,18 @@ test("a merge whose edits clash with a change on the target since the branch sta
   ]);
   expect(quiet.entered[0]?.concurrent).toBe(false);
 
+  // The first merge's rename came from the branch, whose author saw it: no clash.
   await edit(b, alt, [rename("Four")]);
+  const again = await edit(a, "main", [
+    { op: "branch.merge", branch: alt, through: historyOf(alt).head() },
+  ]);
+  expect(again.entered[0]?.concurrent).toBe(false);
+
+  await edit(a, "main", [rename("Main")]);
+  await edit(b, alt, [rename("Five")]);
   const clashing = await edit(a, "main", [
     { op: "branch.merge", branch: alt, through: historyOf(alt).head() },
   ]);
-  // The first merge's rename, on main since the branch started, clashes with the branch's.
   expect(clashing.entered[0]?.concurrent).toBe(true);
 });
 
@@ -183,7 +275,16 @@ test("a closed branch takes no more entries, and main can't close", async () => 
   expect(historyOf(alt).pending()).toHaveLength(1);
   expect(historyOf(alt).head().n).toBe(1);
 
-  const { entered } = await edit(a, "main", [{ op: "branch.close", branch: "main" }]);
-  expect(entered[0]?.skipped.map(({ reason }) => reason)).toEqual(["structural"]);
+  const { entered } = await edit(a, "main", [
+    { op: "branch.close", branch: "main" },
+    { op: "branch.merge", branch: "main", through: historyOf("main").head() },
+  ]);
+  expect(entered[0]?.skipped.map(({ reason }) => reason)).toEqual(["structural", "structural"]);
   expect(branches.branches()[0]?.closed).toBe(false);
+});
+
+test("a branch can be closed from another branch", async () => {
+  const { a, branches, edit, alt } = await setUp();
+  await edit(a, "main", [{ op: "branch.close", branch: alt }]);
+  expect(branches.branches().map(({ closed }) => closed)).toEqual([false, true]);
 });

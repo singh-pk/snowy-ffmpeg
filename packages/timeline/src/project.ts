@@ -34,7 +34,7 @@ type Operation = Batch["ops"][number];
 type Merge = Extract<Operation, { op: "branch.merge" }>;
 
 /** Why an operation was skipped: the kinds docs/architecture.md#applying names. */
-type SkipReason = "malformed" | "stale" | "structural" | "unsupported";
+type SkipReason = "malformed" | "stale" | "structural" | "unsupported" | "waiting";
 
 /** An operation of a batch that applying skipped, by its index in the batch. */
 type Skip = { index: number; reason: SkipReason; detail: string };
@@ -90,13 +90,33 @@ export type Document = Omit<ReturnType<typeof createProject>, "apply">;
 type AtEntry = (ref: EntryRef) => Snapshot | undefined;
 
 /**
- * What applying needs from the history: the document at an entry of the branch, for a revert,
- * and the batches a merge brings, in their branch's order, or undefined for entries it can't name.
+ * What applying needs from the history: the branch applied to, the document at an entry of it,
+ * for a revert, and the batches a merge brings, in their branch's order; "missing" while this peer
+ * doesn't have every entry the merge names, "stale" for entries it never will.
  */
 export type Resolver = {
+  branch: Batch["branch"];
   at: AtEntry;
-  merged: (op: Merge) => ReadonlyArray<Pick<Batch, "author" | "seq" | "ops">> | undefined;
+  merged: (op: Merge) => ReadonlyArray<Pick<Batch, "author" | "seq" | "ops">> | "missing" | "stale";
 };
+
+// Each author's applied seqs as sorted, disjoint [first, last] runs. An author's seqs come mostly
+// in order, so there are few runs, and a snapshot shares them instead of copying every batch.
+// Runs are never changed, only replaced.
+type Runs = ReadonlyArray<readonly [number, number]>;
+
+const holds = (runs: Runs | undefined, seq: number) =>
+  runs?.some(([first, end]) => first <= seq && seq <= end) === true;
+
+// `runs` with `seq` added, joining the runs it meets.
+function withSeq(runs: Runs, seq: number): Runs {
+  const before = runs.filter(([, end]) => end < seq - 1);
+  const after = runs.filter(([first]) => first > seq + 1);
+  const touching = runs.filter(([first, end]) => first <= seq + 1 && end >= seq - 1);
+  const first = Math.min(seq, ...touching.map(([from]) => from));
+  const end = Math.max(seq, ...touching.map(([, to]) => to));
+  return [...before, [first, end], ...after];
+}
 
 /** A project's whole state as plain data, which a new project can start from. */
 export type Snapshot = {
@@ -107,8 +127,8 @@ export type Snapshot = {
   items: Array<ItemState & { id: ItemId }>;
   effects: Array<EffectState & { id: ItemId }>;
   keyframes: KeyframeRecord[];
-  /** Every batch applied to the document, merged ones included, by author and seq. */
-  batches: string[];
+  /** Every batch applied to the document, merged ones included: each author's runs of seqs. */
+  batches: Array<{ author: string; runs: Runs }>;
 };
 
 // What a clip's absent video or audio fields are, so setting one leaf of them fills the rest.
@@ -187,8 +207,6 @@ function isValue(value: unknown): value is Value {
 }
 
 const byId = (state: { id: ItemId }) => state.id;
-
-const batchKey = (batch: { author: string; seq: number }) => `${batch.author} ${batch.seq}`;
 
 // Adds to `target`'s states those only `now` has, removed, so a revert keeps their ids taken.
 function withRemoved<T extends { removed: boolean }>(
@@ -317,7 +335,14 @@ export function createProject(initial?: Snapshot) {
   // Each target's keyframes, by param and source point.
   const keyframes = new Map<ItemId, Map<string, KeyframeRecord>>();
   // The batches applied, so a merge brings each batch once, however the branches were merged.
-  const batches = new Set<string>();
+  const batches = new Map<string, Runs>();
+
+  const has = (batch: { author: string; seq: number }) =>
+    holds(batches.get(batch.author), batch.seq);
+
+  function hold(batch: { author: string; seq: number }) {
+    batches.set(batch.author, withSeq(batches.get(batch.author) ?? [], batch.seq));
+  }
 
   function live(index: Map<string, Set<ItemId>>, key: string) {
     return [...(index.get(key) ?? [])].filter((id) => items.get(id)?.removed === false);
@@ -1021,7 +1046,7 @@ export function createProject(initial?: Snapshot) {
     const merged: Merged[] = [];
     const changed = new Set<ItemId>();
     const ranges = new Map<ItemId, Range>();
-    batches.add(batchKey(batch));
+    hold(batch);
 
     function widen(span: { sequence: ItemId; from: number; to: number }) {
       const range = ranges.get(span.sequence);
@@ -1030,8 +1055,10 @@ export function createProject(initial?: Snapshot) {
       ranges.set(span.sequence, { from, to });
     }
 
-    // Applies one operation, recording what it changed, or records it in `skips` as skipped.
-    function step(op: Operation, id: ItemId, index: number, skips: Skip[], at?: Resolver) {
+    // Applies one operation, recording what it changed, or records it in `skips` as skipped. One
+    // a merge brought, the merge being the batch's operation `within`, merges in turn, but
+    // doesn't revert or open or close a branch: those name its own branch's entries.
+    function step(op: Operation, id: ItemId, index: number, skips: Skip[], within?: number) {
       const about = subject(op, id);
       const clip = touched(op);
       const before = [
@@ -1040,8 +1067,12 @@ export function createProject(initial?: Snapshot) {
       ];
 
       try {
-        if (op.op === "branch.merge" && at !== undefined) merge(op, index, at);
-        else for (const changedId of applyOne(op, id, at)) changed.add(changedId);
+        const names = op.op === "revert" || op.op === "branch.create" || op.op === "branch.close";
+        if (within !== undefined && names)
+          skip("unsupported", `${op.op} names another branch's entries`);
+        if (op.op === "branch.merge" && history !== undefined)
+          merge(op, within ?? index, history, within === undefined);
+        else for (const changedId of applyOne(op, id, history)) changed.add(changedId);
       } catch (error) {
         if (!(error instanceof Skipped)) throw error;
         skips.push({ index, reason: error.reason, detail: error.message });
@@ -1056,28 +1087,29 @@ export function createProject(initial?: Snapshot) {
       for (const sequence of wholeSequences(op)) widen({ sequence, ...EVERYTHING });
     }
 
-    // Applies the batches a merge brings that the document doesn't have yet, each operation with
-    // the id it has on its own branch. A revert or branch operation among them is skipped: it
-    // names the other branch's entries.
-    function merge(op: Merge, index: number, at: Resolver) {
+    // Applies the batches a merge, the batch's operation `index`, brings that the document
+    // doesn't have yet, each operation with the id it has on its own branch.
+    function merge(op: Merge, index: number, at: Resolver, own: boolean) {
+      if (own && op.branch === at.branch) skip("structural", "a branch can't merge itself");
       const found = at.merged(op);
-      if (found === undefined) skip("stale", `no such entries of ${op.branch}`);
+      if (found === "missing") skip("waiting", `entries of ${op.branch} aren't here yet`);
+      if (found === "stale") skip("stale", `no such entries of ${op.branch}`);
 
       for (const each of found) {
-        if (batches.has(batchKey(each))) continue;
-        batches.add(batchKey(each));
+        if (has(each)) continue;
+        hold(each);
+        // Listed before the batches its own merges bring.
         const inner: Skip[] = [];
+        merged.push({ index, batch: each, skipped: inner });
 
         for (const [i, mergedOp] of each.ops.entries()) {
-          step(mergedOp, itemId(each.author, each.seq, i), i, inner);
+          step(mergedOp, itemId(each.author, each.seq, i), i, inner, index);
         }
-
-        merged.push({ index, batch: each, skipped: inner });
       }
     }
 
     for (const [index, op] of batch.ops.entries()) {
-      step(op, itemId(batch.author, batch.seq, index), index, skipped, history);
+      step(op, itemId(batch.author, batch.seq, index), index, skipped);
     }
 
     return { skipped, merged, changed: [...changed], ranges };
@@ -1138,7 +1170,7 @@ export function createProject(initial?: Snapshot) {
       items: [],
       effects: [],
       keyframes: [],
-      batches: [...batches],
+      batches: [...batches].map(([author, runs]) => ({ author, runs })),
     };
     for (const { record, removed } of assets.values()) state.assets.push({ record, removed });
     for (const [id, { record, removed }] of sequences)
@@ -1158,7 +1190,7 @@ export function createProject(initial?: Snapshot) {
   // item has no length, as removing it left it.
   function load(state: Snapshot) {
     name = state.name;
-    for (const key of state.batches) batches.add(key);
+    for (const { author, runs } of state.batches) batches.set(author, runs);
     for (const asset of state.assets) assets.set(asset.record.id, { ...asset });
 
     for (const { id, record, removed } of state.sequences) {
@@ -1200,6 +1232,8 @@ export function createProject(initial?: Snapshot) {
   return {
     apply,
     snapshot,
+    /** Whether a batch is applied to the document, itself or by a merge. */
+    has,
     record: recordOf,
     item,
     start,

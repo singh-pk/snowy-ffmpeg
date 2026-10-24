@@ -17,6 +17,19 @@ import type { Snapshot } from "./project";
 type BranchId = Batch["branch"];
 type History = ReturnType<typeof createHistory>;
 
+// What a caller reads of a branch's history: everything but handing it batches and entries, which
+// go through the branches, so that what they open and close is followed.
+const readOnly = (history: History) => ({
+  head: history.head,
+  at: history.at,
+  undo: history.undo,
+  undoable: history.undoable,
+  redoable: history.redoable,
+  entries: history.entries,
+  pending: history.pending,
+  document: history.document,
+});
+
 const none = (): Changes => new Map();
 
 /** A branch: its name, the entry it starts from (none for main), who sequences it, and whether closed. */
@@ -71,17 +84,26 @@ export function createBranches(options: { sequencer: KeyId; from?: Snapshot }) {
     return run;
   }
 
-  // What a merge into `target` brings: entries of another branch, once this peer has them all.
+  // What a merge into `target` brings: entries of a branch, once this peer has them all. A
+  // merge of the target itself is only ever one a merge brought, and brings nothing new.
   const mergingInto =
     (target: BranchId): Merging =>
     (op) => {
-      if (op.branch === target) return "stale";
       const source = branches.get(op.branch);
       if (source === undefined) return "missing";
-      const batches = source.history.batches(op);
-      if (typeof batches === "string") return batches;
+      const found = source.history.batches(op);
+      if (typeof found === "string") return found;
+      let seen: ((batch: { author: KeyId; seq: number }) => boolean) | undefined;
+
+      // Worked out only when an entry is checked for concurrency.
+      const saw = (batch: { author: KeyId; seq: number }) => {
+        seen ??= source.history.at(found.latest).has;
+        return seen(batch);
+      };
+
       const { from } = source.branch;
-      return from?.branch === target ? { batches, since: from.entry.n } : { batches };
+      const since = from?.branch === target ? { since: from.entry.n } : {};
+      return { batches: found.batches, saw, ...since };
     };
 
   function open(branch: Omit<Branch, "closed">, from?: Snapshot) {
@@ -228,13 +250,17 @@ export function createBranches(options: { sequencer: KeyId; from?: Snapshot }) {
     append: (entry: Entry) => serial(() => appendNow(entry)),
     /**
      * Appends what every open branch this peer sequences has received, as `createHistory`'s
-     * `sequence` does. Returns the entries to publish.
+     * `sequence` does. Returns the entries to publish. A batch merging entries this peer didn't
+     * have waits for the next call after they arrive.
      */
     sequence: (peer: CryptoKeyPair) => serial(() => sequenceNow(peer)),
     /** The branches, main first, then in the order they were created here. */
     branches: (): ReadonlyArray<Readonly<Branch>> =>
       [...branches.values()].map(({ branch }) => branch),
-    /** A branch's history, or undefined for a branch not created here. */
-    history: (id: BranchId) => branches.get(id)?.history,
+    /** A branch's history, to read, or undefined for a branch not created here. */
+    history: (id: BranchId) => {
+      const found = branches.get(id);
+      return found === undefined ? undefined : readOnly(found.history);
+    },
   };
 }
