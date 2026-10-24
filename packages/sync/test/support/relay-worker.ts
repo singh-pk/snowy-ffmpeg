@@ -41,8 +41,13 @@ function watch() {
   return { changed, until };
 }
 
-async function peer(config: RelayConfig, session: KeyId, tracks: string[] = []) {
-  const pair = await generateKeyPair();
+async function peer(
+  config: RelayConfig,
+  session: KeyId,
+  tracks: string[] = [],
+  known: Promise<CryptoKeyPair> = generateKeyPair(),
+) {
+  const pair = await known;
   const id = await keyId(pair.publicKey);
   const relay = await connectRelay({
     url: config.url,
@@ -63,7 +68,7 @@ async function presence(config: RelayConfig) {
   alice.relay.on("unannounce", () => void seen.push("unannounce"));
   alice.relay.on("announce", alice.changed);
   alice.relay.on("unannounce", alice.changed);
-  await alice.relay.listen();
+  alice.relay.listen();
 
   const bob = await peer(config, session);
   const bobSaw: KeyId[] = [];
@@ -73,7 +78,7 @@ async function presence(config: RelayConfig) {
     bob.changed();
   });
 
-  await bob.relay.listen();
+  bob.relay.listen();
   await Promise.all([alice.until(() => seen.length === 1), bob.until(() => bobSaw.length === 1)]);
   await bob.relay.close();
   await alice.until(() => seen.length === 2);
@@ -108,7 +113,8 @@ async function links(config: RelayConfig) {
     });
   }
 
-  await Promise.all([alice.relay.listen(), bob.relay.listen()]);
+  alice.relay.listen();
+  bob.relay.listen();
   await Promise.all([alice.until(() => "alice" in opened), bob.until(() => "bob" in opened)]);
   opened.alice!.send({ type: "chat-gone", author: alice.id, firstSeq: 1 });
   opened.bob!.send({ type: "chat-gone", author: bob.id, firstSeq: 2 });
@@ -127,6 +133,51 @@ async function links(config: RelayConfig) {
     closed: closed.toSorted(),
     peers: { alice: opened.bob!.peer === alice.id, bob: opened.alice!.peer === bob.id },
   };
+}
+
+// Rejoining: a peer that leaves and comes back with the same key opens a new link with a peer
+// that stayed, which carries messages as the first did.
+async function rejoin(config: RelayConfig) {
+  const session = randomId();
+  const alice = await peer(config, session);
+  const seen: Link[] = [];
+  const heard: unknown[] = [];
+  const closed = { count: 0 };
+
+  alice.relay.on("link", (link) => {
+    seen.push(link);
+    link.on("message", (value) => void heard.push(value));
+    link.on("message", alice.changed);
+    link.on("close", () => void closed.count++);
+    link.on("close", alice.changed);
+    alice.changed();
+  });
+
+  alice.relay.listen();
+  const first = await peer(config, session);
+  first.relay.listen();
+  await alice.until(() => seen.length === 1);
+  await first.relay.close();
+  await alice.until(() => closed.count === 1);
+
+  const again = await peer(config, session, [], Promise.resolve(first.pair));
+  const fromAlice: unknown[] = [];
+
+  again.relay.on("link", (link) => {
+    link.on("message", (value) => void fromAlice.push(value));
+    link.on("message", again.changed);
+    link.send({ type: "chat-gone", author: again.id, firstSeq: 3 });
+  });
+
+  again.relay.listen();
+  await alice.until(() => seen.length === 2);
+  seen[1]!.send({ type: "chat-gone", author: alice.id, firstSeq: 4 });
+  await Promise.all([
+    alice.until(() => heard.length === 1),
+    again.until(() => fromAlice.length === 1),
+  ]);
+  await Promise.all([alice.relay.close(), again.relay.close()]);
+  return { samePeer: seen[1]!.peer === first.id, heard, fromAlice };
 }
 
 // A peer's chat over the relay: its track carries what it writes, and its links repairs.
@@ -163,7 +214,7 @@ async function chatter(config: RelayConfig, session: KeyId, content: CryptoKey) 
     member.changed();
   });
 
-  await member.relay.listen();
+  member.relay.listen();
 
   async function say(text: string) {
     await chat.write({ kind: "text", text }, 0);
@@ -221,7 +272,7 @@ async function refused(config: RelayConfig) {
   }
 }
 
-const scenarios = { presence, links, chat: chatting, refused };
+const scenarios = { presence, links, rejoin, chat: chatting, refused };
 
 async function run({ scenario, config }: { scenario: Scenario; config: RelayConfig }) {
   try {
@@ -234,11 +285,9 @@ async function run({ scenario, config }: { scenario: Scenario; config: RelayConf
   }
 }
 
-// A rejection nothing handles fails the scenario rather than leaving it waiting. Except one:
-// moqtail's loop accepting incoming streams leaves the session's close unhandled.
+// A rejection nothing handles fails the scenario rather than leaving it waiting.
 addEventListener("unhandledrejection", (event: PromiseRejectionEvent) => {
   const { reason }: { reason: unknown } = event;
-  if (reason instanceof WebTransportError) return;
   postMessage({
     error: reason instanceof Error ? `${reason.message}\n${reason.stack}` : String(reason),
   });

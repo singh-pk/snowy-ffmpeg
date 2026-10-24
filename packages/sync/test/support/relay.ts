@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// A MoQ relay for the browser tests: MOQtail's draft-18 relay in Docker, with a certificate
+// A MoQ relay for the browser tests: moq-dev's moq-relay in Docker, with a certificate
 // made for the run. Chromium trusts it by its hash (`serverCertificateHashes`), which takes
 // only an ECDSA certificate valid for at most 14 days, so none is kept in the repository. The
 // files go into the container with `docker cp`, which works whatever the Docker host shares.
@@ -11,9 +11,9 @@ import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// Built for linux/amd64 only.
+// 0.17.8, built for linux/amd64 and linux/arm64.
 const RELAY =
-  "ghcr.io/moqtail/relay@sha256:2102a596ee6acac2e11d76dc23f2339492605973b9f66f2c0b299fcf4626c8f8";
+  "moqdev/moq-relay@sha256:e36365ebdc72337fb776241d80011ea05bed69c9540478ad79f7b14e6f85f450";
 const ALPINE = "alpine@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc";
 
 // Prints the certificate, the key and the certificate's SHA-256, between markers.
@@ -51,19 +51,19 @@ async function host() {
   return address;
 }
 
-// Whether a log stream says the relay is running, before it ends.
+// Whether a log stream says the relay is listening, before it ends.
 async function says(stream: ReadableStream<Uint8Array>, seen: { text: string }) {
   const decoder = new TextDecoder();
 
   for await (const chunk of stream) {
     seen.text += decoder.decode(chunk, { stream: true });
-    if (seen.text.includes("is running")) return true;
+    if (seen.text.includes("listening")) return true;
   }
 
   return false;
 }
 
-// Resolves once the relay logs that it is running, on either of its log streams.
+// Resolves once the relay logs that it is listening, on either of its log streams.
 async function running(name: string) {
   const logs = Bun.spawn(["docker", "logs", "-f", name], { stdout: "pipe", stderr: "pipe" });
   const seen = { text: "" };
@@ -97,19 +97,18 @@ export async function startRelay() {
     "create",
     "--name",
     name,
-    "--platform",
-    "linux/amd64",
     "-p",
     "4433/udp",
     RELAY,
-    "--host",
-    "0.0.0.0",
-    "--port",
-    "4433",
-    "--cert-file",
+    "--listen",
+    "0.0.0.0:4433",
+    "--listen-tls-cert",
     "/tmp/cert.pem",
-    "--key-file",
+    "--listen-tls-key",
     "/tmp/key.pem",
+    // Anyone may publish and subscribe anywhere, until the tests bring an auth server.
+    "--auth-public",
+    "**",
   ]);
   const stop = () => run(["docker", "rm", "-f", name]);
 

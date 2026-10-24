@@ -29,8 +29,7 @@ const browser = await chromium.launch();
 afterAll(() => browser.close());
 
 // Runs a scenario in a worker of a fresh page, against a relay of its own, resolving with what
-// it posted. A relay per scenario keeps one that fails from failing the next: MOQtail's stops
-// answering once a peer leaves while it handles that peer's PUBLISH.
+// it posted. A relay per scenario keeps one that fails from failing the next.
 async function scenario(name: Scenario) {
   const relay = await startRelay();
   const tab = await browser.newPage();
@@ -77,6 +76,15 @@ test("a link carries messages and objects, and closes when its peer leaves", asy
     fromBob: [true],
     closed: ["alice", "bob"],
     peers: { alice: true, bob: true },
+  });
+}, 60_000);
+
+test("a peer that leaves and comes back with the same key opens a new link", async () => {
+  const result = await scenario("rejoin");
+  expect(result).toMatchObject({
+    samePeer: true,
+    heard: [expect.objectContaining({ firstSeq: 3 })],
+    fromAlice: [expect.objectContaining({ firstSeq: 4 })],
   });
 }, 60_000);
 
