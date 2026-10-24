@@ -21,7 +21,12 @@ const ARGS: Record<string, string[]> = {
     "--enable-features=Vulkan",
     "--use-vulkan=swiftshader",
   ],
-  warp: ["--enable-unsafe-webgpu", "--ignore-gpu-blocklist", "--use-webgpu-adapter=d3d11"],
+  warp: [
+    "--enable-unsafe-webgpu",
+    "--enable-gpu",
+    "--ignore-gpu-blocklist",
+    "--use-webgpu-adapter=d3d11",
+  ],
 };
 const gpu = process.env.SNOWY_GPU ?? "";
 const args = ARGS[gpu];
