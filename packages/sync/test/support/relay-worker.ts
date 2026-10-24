@@ -6,17 +6,8 @@
 // back what they saw; the test asserts on it. Waiting is on events: each peer's `until` resolves
 // once a check holds after something it watches has changed.
 
-import { decodeCatalog, decodeSetup, encodeCatalog, encodeSetup } from "../../src/catalog";
 import { openChat } from "../../src/chat-session";
-import {
-  contentKey,
-  generateKeyPair,
-  keyId,
-  seal,
-  unseal,
-  type Bytes,
-  type KeyId,
-} from "../../src/crypto";
+import { contentKey, generateKeyPair, keyId, type Bytes, type KeyId } from "../../src/crypto";
 import type { Link } from "../../src/link";
 import {
   connectRelay,
@@ -26,6 +17,7 @@ import {
   type RelayOptions,
 } from "../../src/relay";
 import { joinGrant, peerToken, sourceToken, type JoinGrant } from "../../src/relay-auth";
+import { createSourceRecords, sealSourceRecord, type SourceRecord } from "../../src/source-records";
 import { rejection } from "./rejection";
 
 export type RelayConfig = { url: string; hash: string };
@@ -381,7 +373,7 @@ async function impostor(config: RelayConfig) {
 }
 
 // The source's records: only the source's token lets a peer publish `source`, and what the source
-// publishes there reaches the others, sealed and framed with its key, and checks out.
+// publishes there reaches the others, sealed and framed with its key, and is kept.
 async function sourceRecords(config: RelayConfig) {
   const sessionPair = await generateKeyPair();
   const grant = await joinGrant(sessionPair);
@@ -430,7 +422,7 @@ async function sourceRecords(config: RelayConfig) {
     self: sourceId,
     token,
     tracks: [],
-    source: ["catalog", "init/0"],
+    source: ["catalog", "control", "init/0"],
   });
   const asked = { now: false, ...watch() };
 
@@ -444,30 +436,36 @@ async function sourceRecords(config: RelayConfig) {
   source.listen();
   await bob.until(() => online.includes(sourceId) && bobLinks.some((l) => l.peer === sourceId));
 
-  // Each record received, by its object key.
-  const received: Record<string, unknown> = {};
-
-  // Opens what arrives on a `source` track, as a peer that holds the content key does.
-  function opener(decode: typeof decodeCatalog | typeof decodeSetup) {
-    return async (payload: Bytes) => {
-      const framed = unframe(payload);
-      if (framed === undefined) return;
-
-      // A record that fails to open fails the test with the reason, rather than leaving it waiting.
-      try {
-        const plain = await unseal(content, framed.key, new Uint8Array(framed.bytes));
-        received[framed.key] = await decode(sessionPair.publicKey, framed.key, plain);
-      } catch (error) {
-        received[framed.key] = String(error);
-      }
-
+  // The kinds of record Bob keeps, and why any was rejected.
+  const kept: string[] = [];
+  const rejected: string[] = [];
+  const records = createSourceRecords({
+    sessionKey: sessionPair.publicKey,
+    content,
+    onRecord: (record) => {
+      kept.push(record.kind);
       bob.changed();
-    };
+    },
+  });
+
+  // Takes what arrives on a `source` track. A record that is rejected fails the test with the
+  // reason, rather than leaving it waiting.
+  async function take(payload: Bytes) {
+    const framed = unframe(payload);
+    if (framed === undefined) return;
+
+    try {
+      await records.receive({ key: framed.key, sealed: new Uint8Array(framed.bytes) });
+    } catch (error) {
+      rejected.push(`${framed.key}: ${String(error)}`);
+      bob.changed();
+    }
   }
 
   await Promise.all([
-    bob.relay.subscribeSource("catalog", opener(decodeCatalog)),
-    bob.relay.subscribeSource("init/0", opener(decodeSetup)),
+    bob.relay.subscribeSource("catalog", take),
+    bob.relay.subscribeSource("control", take),
+    bob.relay.subscribeSource("init/0", take),
   ]);
   // Bob's subscriptions are in place before the source publishes, since nothing may rely on the
   // groups a publisher keeps for later subscribers: once the source hears Bob, it publishes.
@@ -481,21 +479,37 @@ async function sourceRecords(config: RelayConfig) {
     durationUs: 10_000_000,
     tracks: [{ id: 0, kind: "video" as const, codec: "vp09.00.10.08", bitrateKbps: 900 }],
   };
-  const records = await Promise.all([
-    encodeCatalog(sessionPair, catalog),
-    encodeSetup(sessionPair, { track: 0, codec: "vp09.00.10.08", codedWidth: 64, codedHeight: 48 }),
-  ]);
+  const setup = { track: 0, codec: "vp09.00.10.08", codedWidth: 64, codedHeight: 48 };
+  const published: Array<{ track: string; record: SourceRecord }> = [
+    { track: "catalog", record: { kind: "catalog", catalog } },
+    {
+      track: "control",
+      record: {
+        kind: "control",
+        control: { epoch: 1, playing: true, mediaUs: 0, atUs: 5, ended: false },
+      },
+    },
+    { track: "init/0", record: { kind: "setup", setup } },
+  ];
+  const objects = await Promise.all(
+    published.map(async ({ track, record }) => {
+      const object = await sealSourceRecord(sessionPair, content, record);
+      return { track, object };
+    }),
+  );
 
-  for (const [i, { key, bytes }] of records.entries()) {
-    const sealed = await seal(content, key, bytes);
-    source.sourceTrack(i === 0 ? "catalog" : "init/0").send(frame(key, sealed));
+  for (const { track, object } of objects) {
+    source.sourceTrack(track).send(frame(object.key, object.sealed));
   }
 
-  await bob.until(() => Object.keys(received).length === 2);
+  await bob.until(() => kept.length === 3 || rejected.length > 0);
   await Promise.all([source.close(), bob.relay.close()]);
   return {
     forgedRefused: forgedRefused instanceof RelayRequestError,
-    received,
+    rejected,
+    catalog: records.catalog(),
+    control: records.control(),
+    setup: records.setup(0),
   };
 }
 
