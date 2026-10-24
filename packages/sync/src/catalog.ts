@@ -3,15 +3,23 @@
 //
 // The source's records of what it streams (docs/architecture.md#catalog): the catalog, the
 // session's tracks and duration, and one codec setup per track, what a decoder is configured
-// with. Each is JSON signed by the session key, over a domain prefix, the session and every
-// field in a fixed order, so a peer can take one from anyone. Each object's key names what it
-// holds, `catalog@<version>` or `init/<track>`, and reading one checks that it holds that.
+// with. Each is a signed record (src/signed-record.ts), so a peer can take one from anyone. Each
+// object's key names what it holds, `catalog@<version>` or `init/<track>`, and reading one checks
+// that it holds that.
 
 import { isCount, isRecord } from "./chat";
-import { keyId, sigBytes, sign, verify, type Bytes, type KeyId } from "./crypto";
+import type { Bytes } from "./crypto";
+import {
+  base64,
+  checkRecordSig,
+  InvalidRecordError,
+  onlyFields,
+  parseRecord,
+  signRecord,
+} from "./signed-record";
 
 const KINDS = ["video", "audio", "subtitle"] as const;
-const CATALOG_FIELDS = new Set(["version", "durationUs", "tracks", "chunkCount", "sig"]);
+const CATALOG_FIELDS = new Set(["version", "durationUs", "tracks", "chunkCount"]);
 const TRACK_FIELDS = new Set(["id", "kind", "codec", "bitrateKbps", "language", "title"]);
 const SETUP_FIELDS = new Set([
   "track",
@@ -21,11 +29,8 @@ const SETUP_FIELDS = new Set([
   "codedHeight",
   "sampleRate",
   "numberOfChannels",
-  "sig",
 ]);
 const U16 = 0xffff;
-const encoder = new TextEncoder();
-const decoder = new TextDecoder("utf-8", { fatal: true });
 
 type TrackKind = (typeof KINDS)[number];
 
@@ -61,34 +66,18 @@ export type CodecSetup = {
   numberOfChannels?: number;
 };
 
-/** Thrown for a record that doesn't parse, isn't the one its key names, or isn't signed. */
-export class InvalidRecordError extends Error {
-  constructor(reason: string) {
-    super(`Invalid source record: ${reason}`);
-    this.name = "InvalidRecordError";
-  }
-}
-
-const base64 = (bytes: Bytes) => bytes.toBase64({ alphabet: "base64url", omitPadding: true });
-
 // The object key of a catalog.
 const catalogKey = (version: number) => `catalog@${version}`;
 
 // The object key of a track's codec setup.
 const setupKey = (track: number) => `init/${track}`;
 
-const isTrackId = (value: unknown): value is number => isCount(value, 0) && value <= U16;
 const isText = (value: unknown): value is string => typeof value === "string" && value !== "";
-
-// The fields of `value` that aren't in `fields`, so a record carries nothing unsigned.
-function unknownField(value: Record<string, unknown>, fields: Set<string>) {
-  const unknown = Object.keys(value).find((k) => !fields.has(k));
-  if (unknown !== undefined) throw new InvalidRecordError(`unknown field ${unknown}`);
-}
+const isTrackId = (value: unknown): value is number => isCount(value, 0) && value <= U16;
 
 function checkTrack(value: unknown): CatalogTrack {
   if (!isRecord(value)) throw new InvalidRecordError("a track isn't an object");
-  unknownField(value, TRACK_FIELDS);
+  onlyFields(value, TRACK_FIELDS);
 
   const { id, codec, bitrateKbps, language, title } = value;
   const kind = KINDS.find((k) => k === value.kind);
@@ -110,7 +99,7 @@ function checkTrack(value: unknown): CatalogTrack {
 // A catalog in canonical shape: its fields in order, absent ones left out.
 function checkCatalog(value: unknown): Catalog {
   if (!isRecord(value)) throw new InvalidRecordError("not an object");
-  unknownField(value, CATALOG_FIELDS);
+  onlyFields(value, CATALOG_FIELDS);
 
   const { version, durationUs, tracks, chunkCount } = value;
   if (!isCount(version, 1)) throw new InvalidRecordError("bad version");
@@ -138,7 +127,7 @@ const COUNTS = ["codedWidth", "codedHeight", "sampleRate", "numberOfChannels"] a
 // A codec setup as signed, in canonical shape with its description as base64url, and as read.
 function checkSetup(value: unknown) {
   if (!isRecord(value)) throw new InvalidRecordError("not an object");
-  unknownField(value, SETUP_FIELDS);
+  onlyFields(value, SETUP_FIELDS);
 
   const { track, codec, description } = value;
   if (!isTrackId(track)) throw new InvalidRecordError("bad track");
@@ -180,46 +169,13 @@ function descriptionBytes(description: unknown) {
   return bytes;
 }
 
-// What the session key signs: a domain prefix, so the signature can't pass for anything else
-// the session key signs, then the session and the record's canonical JSON.
-const signedBytes = (domain: string, session: KeyId, record: object) =>
-  encoder.encode(`${domain}\n${JSON.stringify({ session, ...record })}`);
-
-async function signed(session: CryptoKeyPair, domain: string, record: object) {
-  const id = await keyId(session.publicKey);
-  const sig = await sign(session.privateKey, signedBytes(domain, id, record));
-  return encoder.encode(JSON.stringify({ ...record, sig: base64(sig) }));
-}
-
-// The record in `bytes`, parsed, or an `InvalidRecordError`.
-function parse(bytes: Bytes): Record<string, unknown> {
-  let value: unknown;
-
-  try {
-    value = JSON.parse(decoder.decode(bytes));
-  } catch {
-    throw new InvalidRecordError("not UTF-8 JSON");
-  }
-
-  if (!isRecord(value)) throw new InvalidRecordError("not an object");
-  return value;
-}
-
-async function checkSig(sessionKey: CryptoKey, domain: string, sig: unknown, record: object) {
-  const bytes = sigBytes(sig);
-  if (bytes === undefined) throw new InvalidRecordError("bad sig");
-  const session = await keyId(sessionKey);
-  const valid = await verify(sessionKey, bytes, signedBytes(domain, session, record));
-  if (!valid) throw new InvalidRecordError("bad signature");
-}
-
 /**
  * Signs a catalog with the session key. Returns its object key and bytes. Throws an
  * `InvalidRecordError` for a malformed one.
  */
 export async function encodeCatalog(session: CryptoKeyPair, catalog: Catalog) {
   const canonical = checkCatalog(catalog);
-  const bytes = await signed(session, "snowy catalog v1", canonical);
+  const bytes = await signRecord(session, "snowy catalog v1", canonical);
   return { key: catalogKey(canonical.version), bytes };
 }
 
@@ -228,10 +184,10 @@ export async function encodeCatalog(session: CryptoKeyPair, catalog: Catalog) {
  * key, then reads it. Rejects with an `InvalidRecordError` for anything else.
  */
 export async function decodeCatalog(sessionKey: CryptoKey, key: string, bytes: Bytes) {
-  const { sig, ...fields } = parse(bytes);
+  const { sig, fields } = parseRecord(bytes);
   const catalog = checkCatalog(fields);
   if (key !== catalogKey(catalog.version)) throw new InvalidRecordError("another version");
-  await checkSig(sessionKey, "snowy catalog v1", sig, catalog);
+  await checkRecordSig(sessionKey, "snowy catalog v1", sig, catalog);
   return catalog;
 }
 
@@ -245,7 +201,7 @@ export async function encodeSetup(session: CryptoKeyPair, setup: CodecSetup) {
     ...rest,
     ...(description === undefined ? {} : { description: base64(description) }),
   });
-  const bytes = await signed(session, "snowy init v1", record);
+  const bytes = await signRecord(session, "snowy init v1", record);
   return { key: setupKey(record.track), bytes };
 }
 
@@ -258,9 +214,9 @@ export async function decodeSetup(
   key: string,
   bytes: Bytes,
 ): Promise<CodecSetup> {
-  const { sig, ...fields } = parse(bytes);
+  const { sig, fields } = parseRecord(bytes);
   const { record, setup } = checkSetup(fields);
   if (key !== setupKey(setup.track)) throw new InvalidRecordError("another track");
-  await checkSig(sessionKey, "snowy init v1", sig, record);
+  await checkRecordSig(sessionKey, "snowy init v1", sig, record);
   return setup;
 }
