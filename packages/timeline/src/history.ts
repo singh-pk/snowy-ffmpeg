@@ -11,13 +11,41 @@ import { keyIdOf, type Batch } from "./batch";
 import { entries as entryFormat, type Entry } from "./entry";
 import type { ItemId, KeyId } from "./ids";
 import type { EntryRef } from "./document";
-import { createProject, type Applied, type Document, type Range, type Snapshot } from "./project";
+import {
+  createProject,
+  type Applied,
+  type Document,
+  type Range,
+  type Resolver,
+  type Snapshot,
+} from "./project";
 import { undoBatch, type Undo } from "./undo";
+
 type Operation = Batch["ops"][number];
 type BranchId = Batch["branch"];
+type Merge = Extract<Operation, { op: "branch.merge" }>;
 
-/** An entry as applied: the operations it skipped, and whether its author couldn't see a change. */
-type Entered = { entry: Entry; skipped: Applied["skipped"]; concurrent: boolean };
+/**
+ * An entry as applied, with its hash and batch: the operations it skipped, the batches its merges
+ * brought, and whether its author couldn't see a change.
+ */
+type Entered = {
+  entry: Entry;
+  hash: string;
+  batch: Batch;
+  skipped: Applied["skipped"];
+  merged: Applied["merged"];
+  concurrent: boolean;
+};
+
+/**
+ * The batches a merge brings, from the branch it names, and the last entry of this branch their
+ * authors could see, if that branch started from this one. "missing" while this peer doesn't
+ * have every entry it names; "stale" for entries it never will.
+ */
+export type Merging = (
+  op: Merge,
+) => { batches: readonly Batch[]; since?: number } | "missing" | "stale";
 
 /** What a call changed: the records and ranges to redraw, and the entries it applied. */
 export type Change = {
@@ -132,10 +160,18 @@ function widen(ranges: Map<ItemId, Range>, more: Map<ItemId, Range>) {
 
 const emptyChange = (): Change => ({ changed: [], ranges: new Map(), entered: [] });
 
-function record(change: Change, applied: Applied) {
+function record(change: Change, applied: Pick<Applied, "changed" | "ranges">) {
   change.changed.push(...applied.changed);
   widen(change.ranges, applied.ranges);
 }
+
+/** Adds what `more` changed to `change`. */
+export function combine(change: Change, more: Change) {
+  record(change, more);
+  change.entered.push(...more.entered);
+}
+
+const merges = (batch: Batch) => batch.ops.some(({ op }) => op === "branch.merge");
 
 // Waits for a call that came before, whatever it did: its caller has its error.
 async function settledOf(previous: Promise<unknown>) {
@@ -150,10 +186,17 @@ async function settledOf(previous: Promise<unknown>) {
  * The history of `branch`, sequenced by `sequencer`, whose document starts from `from`, or empty.
  * Batches handed to it must already be verified: signed by their author and chained to the
  * author's previous batch. Its calls run one at a time, in the order they are made, so an entry
- * that arrives twice at once is applied once.
+ * that arrives twice at once is applied once. `merging` finds what a merge brings; without it,
+ * every merge is stale.
  */
-export function createHistory(options: { branch: BranchId; sequencer: KeyId; from?: Snapshot }) {
+export function createHistory(options: {
+  branch: BranchId;
+  sequencer: KeyId;
+  from?: Snapshot | undefined;
+  merging?: Merging;
+}) {
   const { branch, sequencer } = options;
+  const merging = options.merging ?? (() => "stale");
   const appended: Entry[] = [];
   const hashes: string[] = [];
   // Each entry's author and touches, for telling later entries concurrent.
@@ -217,8 +260,38 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
     let from = ref.n;
     while (!snapshots.has(from)) from -= 1;
     const project = createProject(snapshots.get(from));
-    for (let n = from + 1; n <= ref.n; n += 1) project.apply(batchOf(n), atEntry);
+    for (let n = from + 1; n <= ref.n; n += 1) project.apply(batchOf(n), resolver);
     return project.snapshot();
+  }
+
+  function mergedBy(op: Merge) {
+    const found = merging(op);
+    return typeof found === "string" ? undefined : found.batches;
+  }
+
+  const resolver: Resolver = { at: atEntry, merged: mergedBy };
+
+  // Whether a batch merges entries this peer doesn't have yet, so its entry has to wait.
+  const waits = (batch: Batch) =>
+    batch.ops.some((op) => op.op === "branch.merge" && merging(op) === "missing");
+
+  /**
+   * The batches of this branch's entries, in order: every one through `through`, or those named.
+   * "missing" while an entry named is ahead of the last; "stale" for one under another hash.
+   */
+  function batchesOf(op: Merge): Batch[] | "missing" | "stale" {
+    const named = "through" in op ? [op.through] : op.entries;
+
+    for (const ref of named) {
+      if (ref.n > appended.length) return "missing";
+      if (ref.hash !== (ref.n === 0 ? "" : hashes[ref.n - 1])) return "stale";
+    }
+
+    const ns =
+      "through" in op
+        ? Array.from({ length: op.through.n }, (_, i) => i + 1)
+        : [...new Set(op.entries.map(({ n }) => n))].filter((n) => n > 0).toSorted((a, b) => a - b);
+    return ns.map(batchOf);
   }
 
   /** A read-only document at an entry: going back. Throws a RangeError for an unknown entry. */
@@ -241,7 +314,7 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
       const found = shown[index];
       if (found === undefined) throw new RangeError(`no batch ${key} on ${branch}`);
       before = createProject(entered.snapshot());
-      for (const { held: each } of shown.slice(0, index)) before.apply(each.batch, atEntry);
+      for (const { held: each } of shown.slice(0, index)) before.apply(each.batch, resolver);
       batch = found.held.batch;
     } else {
       before = createProject(atEntry({ n: n - 1, hash: n === 1 ? "" : (hashes[n - 2] ?? "") }));
@@ -249,7 +322,7 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
     }
 
     const after = createProject(before.snapshot());
-    const { skipped } = after.apply(batch, atEntry);
+    const { skipped } = after.apply(batch, resolver);
     return { batch, before, after, skipped: new Set(skipped.map(({ index }) => index)) };
   }
 
@@ -337,22 +410,38 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
     for (const { applied } of shown) record(change, applied);
     view = createProject(entered.snapshot());
     shown = [...pending.values()].toSorted(byClock).map((each) => {
-      const applied = view.apply(each.batch, atEntry);
+      const applied = view.apply(each.batch, resolver);
       record(change, applied);
       return { held: each, applied };
     });
   }
 
-  function concurrent(entry: Entry, batch: Batch, mine: Set<string>) {
-    const from = Math.max(batch.base.n, 0);
-
-    for (let n = from + 1; n < entry.n; n += 1) {
+  // Whether `mine` clashes with an entry after `from` and before `entry`, by another author than
+  // `author` if one is given.
+  function clashesSince(from: number, entry: Entry, mine: Set<string>, author?: KeyId) {
+    for (let n = Math.max(from, 0) + 1; n < entry.n; n += 1) {
       const other = touched[n - 1];
-      if (other !== undefined && other.author !== batch.author && clash(mine, other.touches))
-        return true;
+      if (other !== undefined && other.author !== author && clash(mine, other.touches)) return true;
     }
 
     return false;
+  }
+
+  // What each merge of a batch touches, with the entry since which a change on this branch makes
+  // it concurrent: the branch's start, if it started here, or else the batch's base.
+  function mergeTouches(batch: Batch, applied: Applied) {
+    return batch.ops.flatMap((op, index) => {
+      if (op.op !== "branch.merge") return [];
+      const found = merging(op);
+      const since = typeof found === "string" ? undefined : found.since;
+      const brought = applied.merged
+        .filter((each) => each.index === index)
+        .flatMap(({ batch: { ops }, skipped }) => {
+          const left = new Set(skipped.map((skip) => skip.index));
+          return ops.filter((_, i) => !left.has(i)).flatMap(touches);
+        });
+      return [{ since: since ?? batch.base.n, touches: new Set(brought) }];
+    });
   }
 
   // Whether an entry can be the next: chained to the last, naming a batch whose author's seq on
@@ -378,12 +467,19 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
     const reverts = each.batch.ops.some(({ op }) => op === "revert");
     const prior = reverts ? entered.snapshot() : undefined;
     const ahead = head();
-    const applied = entered.apply(each.batch, (ref) =>
-      prior !== undefined && ref.n === ahead.n && ref.hash === ahead.hash ? prior : atEntry(ref),
-    );
+    const applied = entered.apply(each.batch, {
+      at: (ref) =>
+        prior !== undefined && ref.n === ahead.n && ref.hash === ahead.hash ? prior : atEntry(ref),
+      merged: mergedBy,
+    });
     const skipped = new Set(applied.skipped.map((skip) => skip.index));
     const mine = new Set(each.batch.ops.filter((_, i) => !skipped.has(i)).flatMap(touches));
-    const isConcurrent = concurrent(entry, each.batch, mine);
+    const brought = mergeTouches(each.batch, applied);
+    // A merge's edits clash with any change here since, whoever made it: none of them saw it.
+    const isConcurrent =
+      clashesSince(each.batch.base.n, entry, mine, each.batch.author) ||
+      brought.some(({ since, touches: merged }) => clashesSince(since, entry, merged));
+    for (const { touches: merged } of brought) for (const touch of merged) mine.add(touch);
     appended.push(entry);
     hashes.push(hash);
     touched.push({ author: each.batch.author, touches: mine });
@@ -392,7 +488,14 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
     own(each.batch.author).push(each.batch);
     if (entry.n % SNAPSHOT_EVERY === 0 || reverts) snapshots.set(entry.n, entered.snapshot());
     settled.add(key);
-    change.entered.push({ entry, skipped: applied.skipped, concurrent: isConcurrent });
+    change.entered.push({
+      entry,
+      hash,
+      batch: each.batch,
+      skipped: applied.skipped,
+      merged: applied.merged,
+      concurrent: isConcurrent,
+    });
     // Another batch the author signed with the same seq can never be appended now.
     let others = false;
 
@@ -404,9 +507,9 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
     }
 
     // The entry orders its batch as the shown document had it first: nothing shown changes. A
-    // revert is the exception, since what it reverts to depends on the entries this peer had
-    // when it showed the batch.
-    if (shown[0]?.held === each && !others && !reverts) {
+    // revert or a merge is the exception, since what it brings depends on the entries this peer
+    // had when it showed the batch.
+    if (shown[0]?.held === each && !others && !reverts && !merges(each.batch)) {
       shown.shift();
       return;
     }
@@ -424,7 +527,8 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
         return;
       }
 
-      if (!held.has(next.batch.hash)) return;
+      const each = held.get(next.batch.hash);
+      if (each === undefined || waits(each.batch)) return;
       early.delete(next.n);
       const hash = await entryFormat.hash(next);
       enter(next, hash, change);
@@ -443,7 +547,7 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
     const end = shown.at(-1)?.held;
 
     if (end === undefined || byClock(end, each) < 0) {
-      const applied = view.apply(batch, atEntry);
+      const applied = view.apply(batch, resolver);
       shown.push({ held: each, applied });
       record(change, applied);
     } else {
@@ -474,11 +578,13 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
     return change;
   }
 
-  // Whether a batch can be appended: its seq isn't yet, and its author's previous batch on the
-  // branch is.
+  // Whether a batch can be appended: its seq isn't yet, its author's previous batch on the branch
+  // is, and this peer has every entry it merges.
   const ready = ({ batch }: Held) =>
     !settled.has(keyOf(batch)) &&
-    (batch.branchPrev === 0 || settled.has(keyOf({ author: batch.author, seq: batch.branchPrev })));
+    (batch.branchPrev === 0 ||
+      settled.has(keyOf({ author: batch.author, seq: batch.branchPrev }))) &&
+    !waits(batch);
 
   async function sequenceNow(peer: CryptoKeyPair) {
     const self = await keyIdOf(peer.publicKey);
@@ -515,6 +621,15 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
     return { entries: made, change };
   }
 
+  // Applies the entries that were waiting for another branch's entries, and shows pending merges
+  // again with what this peer now has.
+  async function retryNow() {
+    const change = emptyChange();
+    await drain(change);
+    if (shown.some(({ held: each }) => merges(each.batch))) reshow(change);
+    return change;
+  }
+
   return {
     /** Takes a verified batch for this branch, showing it as pending until an entry appends it. */
     pend: (batch: Batch, hash: string) => serial(() => pendNow(batch, hash)),
@@ -531,6 +646,12 @@ export function createHistory(options: { branch: BranchId; sequencer: KeyId; fro
      * publish.
      */
     sequence: (peer: CryptoKeyPair) => serial(() => sequenceNow(peer)),
+    /**
+     * Tries again what waits for another branch: an entry whose batch merges entries this peer
+     * didn't have, and the pending merges shown. Called when another branch appends entries.
+     */
+    retry: () => serial(retryNow),
+    batches: batchesOf,
     /** The last entry, as a batch's `base` names it. */
     head,
     at,
