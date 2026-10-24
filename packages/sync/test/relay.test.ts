@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 //
 // The relay connection (src/relay.ts) against a real MoQ relay (test/support/relay.ts), in
-// Chromium: presence, links that open, carry messages and objects, and close, and chat whose
-// tracks and repairs go through the relay. Each scenario runs in a worker of its own page
+// Chromium: admission by token, presence, links that open, carry messages and objects, and close,
+// and chat whose tracks and repairs go through the relay. Each scenario runs in a worker of its own page
 // (test/support/relay-worker.ts). Needs Docker. Usage: bun run test
 
 import { afterAll, expect, test } from "bun:test";
@@ -91,6 +91,16 @@ test("a peer that leaves and comes back with the same key opens a new link", asy
 test("the relay refuses a subscription to a track nobody publishes", async () => {
   const result = await scenario("refused");
   expect(result).toEqual({ refused: true });
+}, 60_000);
+
+test("the relay admits a peer only with a token for its session, signed by its key", async () => {
+  const result = await scenario("admission");
+  expect(result).toEqual({ admitted: true, elsewhere: true, forged: true });
+}, 60_000);
+
+test("a peer can't announce itself as another", async () => {
+  const result = await scenario("impostor");
+  expect(result).toEqual({ sawImpostor: false, subscribeRefused: true });
 }, 60_000);
 
 test("chat goes through the relay, and a late joiner catches up over a link", async () => {

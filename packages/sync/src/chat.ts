@@ -204,7 +204,7 @@ export async function signCheckpoint(
 
 // The bytes of a signature in its one spelling, or undefined: like a key id, base64url can
 // spell some signatures more than one way.
-function sigBytes(sig: unknown) {
+export function sigBytes(sig: unknown) {
   if (typeof sig !== "string" || !SIG.test(sig)) return undefined;
 
   const bytes = new Uint8Array(Uint8Array.fromBase64(sig, { alphabet: "base64url" }));
