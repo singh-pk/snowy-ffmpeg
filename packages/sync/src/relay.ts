@@ -6,6 +6,7 @@
 //
 // - presence: a peer is online while its broadcast `peer/<PeerId>` is announced;
 // - this peer's tracks under `peer/<self>`, and subscriptions to other peers' tracks;
+// - the source's tracks under `source`, published by the source and subscribed by the rest;
 // - a `Link` to each online peer, over the inbox broadcasts.
 //
 // Every object is a group of its own, so one lost or slow object never holds up another, and
@@ -37,6 +38,11 @@ export type RelayOptions = {
    * is announced, so a peer that subscribes on seeing it online finds every one.
    */
   tracks: string[];
+  /**
+   * The source only: the names of the tracks it publishes under `source`, such as `catalog` and
+   * `init/<track>`. Like this peer's own, they exist before the broadcast is announced.
+   */
+  source?: string[];
 };
 
 export type RelayEvents = {
@@ -291,6 +297,16 @@ export async function connectRelay(options: RelayOptions) {
   const inboxes = new Set<KeyId>();
   const state = { closed: false };
 
+  // The source announces `source` before itself, so a peer that subscribes to it on seeing the
+  // source online finds it.
+  const sourceTracks = new Map<string, Publisher>();
+
+  if (options.source !== undefined) {
+    const broadcast = local.createBroadcast(Moq.Path.from("source"));
+    for (const name of options.source) sourceTracks.set(name, publisher(broadcast, name));
+    broadcast.announce();
+  }
+
   const own = local.createBroadcast(Moq.Path.from("peer", self));
   const ownTracks = new Map(options.tracks.map((name) => [name, publisher(own, name)]));
   own.announce();
@@ -530,7 +546,7 @@ export async function connectRelay(options: RelayOptions) {
   // Ends everything this peer published or watched.
   function release() {
     for (const { shut } of links.values()) shut();
-    for (const published of ownTracks.values()) published.stop();
+    for (const published of [...ownTracks.values(), ...sourceTracks.values()]) published.stop();
     local.close();
     remote.close();
   }
@@ -585,6 +601,16 @@ export async function connectRelay(options: RelayOptions) {
   }
 
   /**
+   * One of the source's tracks, `source/<name>`, for the peer connected with `source`; each
+   * object goes as a group. Its `send` throws a `RelayRequestError` once the connection has closed.
+   */
+  function sourceTrack(name: string) {
+    const published = sourceTracks.get(name);
+    if (published === undefined) throw new Error(`${name} isn't one of the source's tracks`);
+    return published;
+  }
+
+  /**
    * Subscribes to a peer's track, `peer/<peer>/<name>`. The first objects may be ones sent in the
    * last few seconds, which the peer still keeps. Resolves with a function that ends the
    * subscription; it also ends by itself when the peer stops serving the track or the connection
@@ -595,11 +621,22 @@ export async function connectRelay(options: RelayOptions) {
     return cancel;
   }
 
+  /**
+   * Subscribes to one of the source's tracks, `source/<name>`, as `subscribe` does to a peer's.
+   * Rejects with a `RelayRequestError` if the source isn't connected. The subscription ends by
+   * itself when the source leaves; its peer's `unannounce` says so, and subscribing again once it
+   * is back reaches it.
+   */
+  async function subscribeSource(name: string, handle: (payload: Bytes) => unknown) {
+    const { cancel } = await subscriber(Moq.Path.from("source"), name, handle);
+    return cancel;
+  }
+
   /** Withdraws this peer and closes the connection. */
   async function close() {
     established.close();
     await established.closed;
   }
 
-  return { on: events.on, listen, track, subscribe, close };
+  return { on: events.on, listen, track, sourceTrack, subscribe, subscribeSource, close };
 }

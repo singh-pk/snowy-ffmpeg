@@ -3,7 +3,7 @@
 //
 // The relay connection (src/relay.ts) against a real MoQ relay (test/support/relay.ts), in
 // Chromium: admission by token, presence, links that open, carry messages and objects, and close,
-// and chat whose tracks and repairs go through the relay. Each scenario runs in a worker of its own page
+// the source's records, and chat whose tracks and repairs go through the relay. Each scenario runs in a worker of its own page
 // (test/support/relay-worker.ts). Needs Docker. Usage: bun run test
 
 import { afterAll, expect, test } from "bun:test";
@@ -101,6 +101,21 @@ test("the relay admits a peer only with a token for its session, signed by its k
 test("a peer can't announce itself as another", async () => {
   const result = await scenario("impostor");
   expect(result).toEqual({ sawImpostor: false, subscribeRefused: true });
+}, 60_000);
+
+test("only the source publishes `source`, and its records reach the others and check out", async () => {
+  const result = await scenario("source");
+  expect(result).toEqual({
+    forgedRefused: true,
+    received: {
+      "catalog@1": {
+        version: 1,
+        durationUs: 10_000_000,
+        tracks: [{ id: 0, kind: "video", codec: "vp09.00.10.08", bitrateKbps: 900 }],
+      },
+      "init/0": { track: 0, codec: "vp09.00.10.08", codedWidth: 64, codedHeight: 48 },
+    },
+  });
 }, 60_000);
 
 test("chat goes through the relay, and a late joiner catches up over a link", async () => {

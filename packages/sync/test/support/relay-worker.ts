@@ -6,8 +6,17 @@
 // back what they saw; the test asserts on it. Waiting is on events: each peer's `until` resolves
 // once a check holds after something it watches has changed.
 
+import { decodeCatalog, decodeSetup, encodeCatalog, encodeSetup } from "../../src/catalog";
 import { openChat } from "../../src/chat-session";
-import { contentKey, generateKeyPair, keyId, type Bytes, type KeyId } from "../../src/crypto";
+import {
+  contentKey,
+  generateKeyPair,
+  keyId,
+  seal,
+  unseal,
+  type Bytes,
+  type KeyId,
+} from "../../src/crypto";
 import type { Link } from "../../src/link";
 import {
   connectRelay,
@@ -16,7 +25,8 @@ import {
   unframe,
   type RelayOptions,
 } from "../../src/relay";
-import { joinGrant, peerToken, type JoinGrant } from "../../src/relay-auth";
+import { joinGrant, peerToken, sourceToken, type JoinGrant } from "../../src/relay-auth";
+import { rejection } from "./rejection";
 
 export type RelayConfig = { url: string; hash: string };
 export type Scenario = keyof typeof scenarios;
@@ -370,7 +380,135 @@ async function impostor(config: RelayConfig) {
   return { sawImpostor: online.includes(victimId), subscribeRefused: subscription.refused };
 }
 
-const scenarios = { presence, links, rejoin, chat: chatting, refused, admission, impostor };
+// The source's records: only the source's token lets a peer publish `source`, and what the source
+// publishes there reaches the others, sealed and framed with its key, and checks out.
+async function sourceRecords(config: RelayConfig) {
+  const sessionPair = await generateKeyPair();
+  const grant = await joinGrant(sessionPair);
+  const content = await contentKey(crypto.getRandomValues(new Uint8Array(32)), grant.session);
+  const bob = await peer(config, grant);
+  const online: KeyId[] = [];
+  const bobLinks: Link[] = [];
+
+  bob.relay.on("announce", (id) => {
+    online.push(id);
+    bob.changed();
+  });
+
+  bob.relay.on("link", (link) => {
+    bobLinks.push(link);
+    bob.changed();
+  });
+
+  bob.relay.listen();
+
+  // Mallory publishes `source` with a peer's token: once Bob sees her she has been admitted, with
+  // whatever she announced, `source` first, and nobody can subscribe to her `source`.
+  const mallory = await generateKeyPair();
+  const [malloryId, malloryToken] = await Promise.all([
+    keyId(mallory.publicKey),
+    peerToken(grant, mallory),
+  ]);
+  const forged = await dial(config, {
+    session: grant.session,
+    self: malloryId,
+    token: malloryToken,
+    tracks: [],
+    source: ["catalog"],
+  });
+  await bob.until(() => online.includes(malloryId));
+  const forgedRefused = await rejection(bob.relay.subscribeSource("catalog", () => undefined));
+  await forged.close();
+
+  const sourcePair = await generateKeyPair();
+  const [sourceId, token] = await Promise.all([
+    keyId(sourcePair.publicKey),
+    sourceToken(sessionPair, sourcePair),
+  ]);
+  const source = await dial(config, {
+    session: grant.session,
+    self: sourceId,
+    token,
+    tracks: [],
+    source: ["catalog", "init/0"],
+  });
+  const asked = { now: false, ...watch() };
+
+  source.on("link", (link) => {
+    link.on("message", () => {
+      asked.now = true;
+      asked.changed();
+    });
+  });
+
+  source.listen();
+  await bob.until(() => online.includes(sourceId) && bobLinks.some((l) => l.peer === sourceId));
+
+  // Each record received, by its object key.
+  const received: Record<string, unknown> = {};
+
+  // Opens what arrives on a `source` track, as a peer that holds the content key does.
+  function opener(decode: typeof decodeCatalog | typeof decodeSetup) {
+    return async (payload: Bytes) => {
+      const framed = unframe(payload);
+      if (framed === undefined) return;
+
+      // A record that fails to open fails the test with the reason, rather than leaving it waiting.
+      try {
+        const plain = await unseal(content, framed.key, new Uint8Array(framed.bytes));
+        received[framed.key] = await decode(sessionPair.publicKey, framed.key, plain);
+      } catch (error) {
+        received[framed.key] = String(error);
+      }
+
+      bob.changed();
+    };
+  }
+
+  await Promise.all([
+    bob.relay.subscribeSource("catalog", opener(decodeCatalog)),
+    bob.relay.subscribeSource("init/0", opener(decodeSetup)),
+  ]);
+  // Bob's subscriptions are in place before the source publishes, since nothing may rely on the
+  // groups a publisher keeps for later subscribers: once the source hears Bob, it publishes.
+  bobLinks
+    .find((l) => l.peer === sourceId)
+    ?.send({ type: "chat-gone", author: bob.id, firstSeq: 1 });
+  await asked.until(() => asked.now);
+
+  const catalog = {
+    version: 1,
+    durationUs: 10_000_000,
+    tracks: [{ id: 0, kind: "video" as const, codec: "vp09.00.10.08", bitrateKbps: 900 }],
+  };
+  const records = await Promise.all([
+    encodeCatalog(sessionPair, catalog),
+    encodeSetup(sessionPair, { track: 0, codec: "vp09.00.10.08", codedWidth: 64, codedHeight: 48 }),
+  ]);
+
+  for (const [i, { key, bytes }] of records.entries()) {
+    const sealed = await seal(content, key, bytes);
+    source.sourceTrack(i === 0 ? "catalog" : "init/0").send(frame(key, sealed));
+  }
+
+  await bob.until(() => Object.keys(received).length === 2);
+  await Promise.all([source.close(), bob.relay.close()]);
+  return {
+    forgedRefused: forgedRefused instanceof RelayRequestError,
+    received,
+  };
+}
+
+const scenarios = {
+  presence,
+  links,
+  rejoin,
+  chat: chatting,
+  refused,
+  admission,
+  impostor,
+  source: sourceRecords,
+};
 
 async function run({ scenario, config }: { scenario: Scenario; config: RelayConfig }) {
   try {
