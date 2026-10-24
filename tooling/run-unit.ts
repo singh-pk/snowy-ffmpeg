@@ -103,20 +103,20 @@ interface Options {
 
 /** Registers a test for each unit test of the package at `pkg`, in a describe per file. */
 export async function runUnitTests(pkg: URL, { support = [] }: Options = {}) {
-  const files = [...new Glob("test/**/*.unit.ts").scanSync(pkg.pathname)].toSorted();
-  const outdir = `${pkg.pathname}test/dist/unit/`;
+  const files = [...new Glob("test/**/*.unit.ts").scanSync(Bun.fileURLToPath(pkg))].toSorted();
+  const outdir = `${Bun.fileURLToPath(pkg)}test/dist/unit/`;
   // Emptied first, so a test never loads a stale bundle of a file since renamed.
   await rm(outdir, { recursive: true, force: true });
   const runner = await Bun.build({
-    entrypoints: [new URL("unit-worker.ts", import.meta.url).pathname],
+    entrypoints: [Bun.fileURLToPath(new URL("unit-worker.ts", import.meta.url))],
     outdir: `${outdir}runner/`,
     target: "browser",
     format: "esm",
   });
   if (!runner.success) throw new AggregateError(runner.logs, "unit tests: runner build failed");
   const built = await Bun.build({
-    entrypoints: [...files, ...support].map((f) => `${pkg.pathname}${f}`),
-    root: `${pkg.pathname}test/`,
+    entrypoints: [...files, ...support].map((f) => `${Bun.fileURLToPath(pkg)}${f}`),
+    root: `${Bun.fileURLToPath(pkg)}test/`,
     outdir,
     target: "browser",
     format: "esm",

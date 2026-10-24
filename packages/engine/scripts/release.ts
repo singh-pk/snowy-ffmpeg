@@ -15,7 +15,7 @@ import { $, Glob } from "bun";
 import { rm } from "node:fs/promises";
 
 const tag = process.argv[2] ?? "";
-const root = new URL("../", import.meta.url).pathname;
+const root = Bun.fileURLToPath(new URL("../", import.meta.url));
 const pkg = await Bun.file(`${root}package.json`).json();
 const { version } = pkg;
 if (tag !== `${pkg.name}@${version}`) throw new Error(`tag "${tag}" is not ${pkg.name}@${version}`);

@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { PCM_CHANNELS, PCM_RATE, probe as probeSamples } from "../test/support/audio";
 import { brightnessGrid, CELL, FRAME_ID_BITS, readFrameId } from "../test/support/frame-id";
 
-const dir = new URL("../test/fixtures/", import.meta.url).pathname;
+const dir = Bun.fileURLToPath(new URL("../test/fixtures/", import.meta.url));
 const WIDTH = 320;
 const HEIGHT = 180;
 const FPS = 30;
