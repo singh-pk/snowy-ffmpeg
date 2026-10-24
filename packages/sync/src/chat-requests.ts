@@ -8,9 +8,9 @@
 // it holds none of what was asked. Every field from a peer is checked before it is used.
 
 import { sealBatch, type ChatBatch } from "./chat-batch";
-import { isCount, isKeyId, isRecord } from "./chat";
+import { isCount, isRecord } from "./chat";
 import type { createChatHoldings } from "./chat-holdings";
-import type { Bytes, KeyId } from "./crypto";
+import { isKeyId, type Bytes, type KeyId } from "./crypto";
 
 /** Asks for an author's messages from `firstSeq`. */
 type ChatRequest = { type: "chat-request"; author: KeyId; firstSeq: number };

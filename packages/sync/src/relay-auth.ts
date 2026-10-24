@@ -7,8 +7,17 @@
 // answer comes from the token and the dialed path alone. It is a `fetch` handler on Web Crypto,
 // so it runs wherever that does: `Bun.serve({ fetch: authServer })`, or a Worker.
 
-import { isKeyId, isRecord, sigBytes } from "./chat";
-import { keyId, publicKey, sign, verify, type Bytes, type KeyId } from "./crypto";
+import { isRecord } from "./chat";
+import {
+  isKeyId,
+  keyId,
+  publicKey,
+  sigBytes,
+  sign,
+  verify,
+  type Bytes,
+  type KeyId,
+} from "./crypto";
 
 /** How long a token admits a connection after it is made. */
 export const TOKEN_AGE = 5 * 60_000;

@@ -8,7 +8,16 @@
 // proves every message that chains back from it.
 
 import { isHlc, type Hlc } from "./hlc";
-import { keyBytes, keyId, publicKey, sign, verify, type Bytes, type KeyId } from "./crypto";
+import {
+  isKeyId,
+  keyId,
+  publicKey,
+  sigBytes,
+  sign,
+  verify,
+  type Bytes,
+  type KeyId,
+} from "./crypto";
 
 const KINDS = ["text", "edit", "delete", "react"] as const;
 const FIELDS = new Set([
@@ -22,9 +31,8 @@ const FIELDS = new Set([
   "text",
   "emoji",
 ]);
-// A SHA-256 hash and an Ed25519 signature, as unpadded base64url.
+// A SHA-256 hash, as unpadded base64url.
 const HASH = /^[A-Za-z0-9_-]{43}$/;
-const SIG = /^[A-Za-z0-9_-]{86}$/;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
 const CHECKPOINT_DOMAIN = encoder.encode("snowy checkpoint v1\n");
@@ -68,18 +76,6 @@ export const isCount = (value: unknown, min: number): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= min;
 
 const isSeq = (value: unknown) => isCount(value, 1);
-
-// Only the one spelling of each key: base64url can spell some keys two ways, which would give
-// one author two logs.
-export function isKeyId(value: unknown): value is KeyId {
-  if (typeof value !== "string") return false;
-
-  try {
-    return keyBytes(value).toBase64({ alphabet: "base64url", omitPadding: true }) === value;
-  } catch {
-    return false;
-  }
-}
 
 function checkTarget(value: unknown): ChatTarget {
   if (!isRecord(value) || Object.keys(value).length !== 2) {
@@ -200,16 +196,6 @@ export async function signCheckpoint(
   const signed = { author, seq: newest.seq, head };
   const sig = await sign(peer.privateKey, checkpointBytes(signed));
   return { ...signed, sig: sig.toBase64({ alphabet: "base64url", omitPadding: true }) };
-}
-
-// The bytes of a signature in its one spelling, or undefined: like a key id, base64url can
-// spell some signatures more than one way.
-export function sigBytes(sig: unknown) {
-  if (typeof sig !== "string" || !SIG.test(sig)) return undefined;
-
-  const bytes = new Uint8Array(Uint8Array.fromBase64(sig, { alphabet: "base64url" }));
-  const canonical = bytes.toBase64({ alphabet: "base64url", omitPadding: true }) === sig;
-  return canonical ? bytes : undefined;
 }
 
 /**
