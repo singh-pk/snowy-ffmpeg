@@ -131,14 +131,14 @@ The seek tests (`test/seek.test.ts`) seek each fixture with audio and video, pau
 
 ## Testing
 
-The tests run the engine in Chromium through Playwright, with a GPU, because WebGPU on a software renderer would leave the code real users run untested. That decides where they run:
+The tests run the engine in Chromium through Playwright, with a GPU, because WebGPU on a software renderer alone would leave the code real users run untested. CI's Windows and Linux runners have no GPU, so there Chromium runs WebGPU on SwiftShader, its software Vulkan, with `SNOWY_GPU=swiftshader` (`test/support/browsers.ts`). That still runs each operating system's own WebCodecs decoders and media stack, which a GPU does not change:
 
 | Runner | Chromium |
 | --- | --- |
-| macOS (CI: `macos-26`) | yes, with `--enable-gpu` |
-| Linux on CI | software renderer only |
+| macOS (CI: `macos-26`) | the GPU, with `--enable-gpu` |
+| Windows and Linux (CI: `windows-latest`, `ubuntu-latest`) | SwiftShader, with `SNOWY_GPU=swiftshader` |
 
-So CI runs the engine tests on `macos-26`. The checks that a browser can be made to fail have a test where they do: a page without cross-origin isolation, and WebGPU switched off.
+SwiftShader needs ANGLE and Chromium's compositor on it too (`--use-angle=swiftshader`, `--enable-features=Vulkan`, `--use-vulkan=swiftshader`): without them, a canvas cannot be read back and a frame cannot be imported as an external texture. So CI runs the engine tests on all three; the benchmarks also run on each, for reading only. The checks that a browser can be made to fail have a test where they do: a page without cross-origin isolation, and WebGPU switched off.
 
 ## Fixtures
 

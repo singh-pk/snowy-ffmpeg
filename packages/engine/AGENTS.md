@@ -13,7 +13,7 @@ This package is the playback pipeline of Snowy, without any user interface: it r
 | Benchmarks | `bun run bench --runs 5` |
 | Regenerate the fixtures (needs native FFmpeg 9.0.2) | `bun run fixtures` |
 
-The tests and benchmarks build what they run, and need `@snowy-media/ffmpeg` built first (`bun run build` in `packages/ffmpeg`; CI takes it from the ffmpeg build job). They need WebGPU on a GPU: macOS (as CI does), Windows, or Linux with a GPU.
+The tests and benchmarks build what they run, and need `@snowy-media/ffmpeg` built first (`bun run build` in `packages/ffmpeg`; CI takes it from the ffmpeg build job). They need WebGPU on a GPU: macOS, Windows, or Linux with a GPU; or on SwiftShader with `SNOWY_GPU=swiftshader`, as CI runs them on Windows and Linux ([architecture](docs/architecture.md#testing)).
 
 ## Map
 
