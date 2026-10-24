@@ -12,7 +12,7 @@ import type { createCompositor, Picture } from "./compositor";
 import { createDecodeTracker } from "./decoding";
 import { createFrameQueue } from "./frames";
 import { createConsumer, END, FAILED, KEY_FLAG, NO_TIMESTAMP } from "./ring";
-import type { createWasmVideo, Decoder, DecoderEvents } from "./wasm-video";
+import type { createWasmVideo, DecodedFrame, Decoder, DecoderEvents } from "./wasm-video";
 
 /**
  * The bytes of decoded frames the queue holds: enough for a few 4K 10-bit frames, and many
@@ -50,7 +50,7 @@ function webCodecsDecoder(p: VideoParams, events: DecoderEvents): Decoder {
 }
 
 // A frame's bytes, or as an RGBA texture when the decoder keeps it on the GPU (no format).
-const frameBytes = (frame: VideoFrame) =>
+const frameBytes = (frame: DecodedFrame) =>
   frame.format ? frame.allocationSize() : frame.codedWidth * frame.codedHeight * 4;
 
 /**
@@ -110,7 +110,7 @@ export function createVideoOutput(
     done: Promise.resolve(),
   };
 
-  async function upload(frame: VideoFrame) {
+  async function upload(frame: DecodedFrame) {
     try {
       const picture = await compositor.upload(frame, p.colorSpace);
 
@@ -127,7 +127,7 @@ export function createVideoOutput(
     }
   }
 
-  function send(frame: VideoFrame) {
+  function send(frame: DecodedFrame) {
     uploads.stamps.push(frame.timestamp);
     uploads.latest = frame.timestamp;
     uploads.done = upload(frame);

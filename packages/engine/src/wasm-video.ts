@@ -7,12 +7,28 @@
 // load its FFmpeg module again.
 
 import type { VideoParams } from "./codec";
-import type { FromVideo, ToVideo } from "./protocol";
+import type { FromVideo, HeldFrame, ToVideo } from "./protocol";
 import type { Packet } from "./ring";
+
+type Module = "video" | "video-ext";
+
+/**
+ * A frame FFmpeg decoded, its planes still in `memory`, the decoding module's, where `layout`
+ * says: uploaded from there, it is never copied on the CPU. Closing it hands it back.
+ */
+export interface SharedFrame extends Omit<HeldFrame, "frame" | "packed" | "size"> {
+  readonly displayHeight: number;
+  readonly memory: WebAssembly.Memory;
+  allocationSize(): number;
+  close(): void;
+}
+
+/** A decoded frame: from WebCodecs, or from FFmpeg. */
+export type DecodedFrame = VideoFrame | SharedFrame;
 
 /** Where a decoder's frames, its taking a packet, and its failure go. */
 export interface DecoderEvents {
-  output: (frame: VideoFrame) => void;
+  output: (frame: DecodedFrame) => void;
   dequeue: () => void;
   error: (e: Error) => void;
 }
@@ -33,6 +49,7 @@ export interface Decoder {
 
 interface Open {
   events: DecoderEvents;
+  memory?: WebAssembly.Memory;
   queued: number;
   flushed: PromiseWithResolvers<void>;
 }
@@ -51,15 +68,37 @@ export function createWasmVideo(
   };
   const open = new Map<number, Open>();
 
+  // `held`, from `module`, whose memory is `memory`, as a frame that goes back to it once closed.
+  function shared(held: HeldFrame, module: Module, memory: WebAssembly.Memory): SharedFrame {
+    const { frame, packed, size, ...rest } = held;
+    const own = { closed: false };
+
+    return {
+      ...rest,
+      displayHeight: held.codedHeight,
+      memory,
+      allocationSize: () => size,
+      close() {
+        if (own.closed) return;
+        own.closed = true;
+        send({ type: "release", module, frame, packed });
+      },
+    };
+  }
+
   function receive({ data }: MessageEvent<FromVideo>) {
     const decoder = open.get(data.id);
 
     if (data.type === "frame") {
-      // A decoder closed since: nothing takes it.
-      if (decoder) decoder.events.output(data.frame);
-      else data.frame.close();
+      const { module, frame } = data;
+      const memory = decoder?.memory;
+      // A decoder closed since: nothing takes it, so it goes back at once.
+      if (decoder && memory) decoder.events.output(shared(frame, module, memory));
+      else send({ type: "release", module, frame: frame.frame, packed: frame.packed });
     } else if (!decoder) {
       return;
+    } else if (data.type === "memory") {
+      decoder.memory = data.memory;
     } else if (data.type === "error") {
       decoder.events.error(new Error(data.message));
     } else if (data.flushed) {
@@ -107,7 +146,8 @@ export function createWasmVideo(
     }
 
     const id = state.next++;
-    const decoder: Open = { events, queued: 0, flushed: Promise.withResolvers<void>() };
+    const flushed = Promise.withResolvers<void>();
+    const decoder: Open = { events, queued: 0, flushed };
     open.set(id, decoder);
     send({ type: "open", id, module, params: p.params, timeBase: p.timeBase });
 

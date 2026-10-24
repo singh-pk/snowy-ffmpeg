@@ -1,12 +1,15 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
 // SPDX-License-Identifier: MIT
 //
-// The WebGPU compositor. A decoded VideoFrame is uploaded into textures of its own, a picture,
-// and closed; a picture is drawn into the canvas, rotated and flipped as the stream's display
-// matrix says, scaled to fit and centred, with black around it. A frame whose planes can be
-// read is converted to RGB here, with its own matrix and range, so every decoder's frames look
-// the same and keep every bit; one whose planes cannot (a 10-bit hardware frame) is converted
-// by Chromium, as an external texture (docs/architecture.md#colour).
+// The WebGPU compositor. A decoded frame is uploaded into textures of its own, a picture, and
+// closed: a VideoFrame's planes copied out first, FFmpeg's straight from its shared memory;
+// a picture is drawn into the canvas, rotated and flipped as the stream's display matrix says,
+// scaled to fit and centred, with black around it. A frame whose planes can be read is
+// converted to RGB here, with its own matrix and range, so every decoder's frames look the same
+// and keep every bit; one whose planes cannot (a 10-bit hardware frame) is converted by
+// Chromium, as an external texture (docs/architecture.md#colour).
+
+import type { DecodedFrame } from "./wasm-video";
 
 const VERTEX = /* wgsl */ `
 struct View {
@@ -258,8 +261,13 @@ interface Slot extends Picture {
 }
 
 // The size of the part of `frame` that is shown.
-const visibleWidth = (frame: VideoFrame) => frame.visibleRect?.width ?? frame.codedWidth;
-const visibleHeight = (frame: VideoFrame) => frame.visibleRect?.height ?? frame.codedHeight;
+// FFmpeg's frames are their visible part.
+const visibleWidth = (frame: DecodedFrame) =>
+  frame instanceof VideoFrame ? (frame.visibleRect?.width ?? frame.codedWidth) : frame.codedWidth;
+const visibleHeight = (frame: DecodedFrame) =>
+  frame instanceof VideoFrame
+    ? (frame.visibleRect?.height ?? frame.codedHeight)
+    : frame.codedHeight;
 
 /** A compositor drawing with `device` into `context`, configured for it with `format`. */
 export function createCompositor(
@@ -369,18 +377,23 @@ export function createCompositor(
   const texture = (fmt: GPUTextureFormat, width: number, height: number, usage: number) =>
     device.createTexture({ format: fmt, size: [width, height], usage });
 
-  // Copies the planes of `frame`, which has a format, into a picture, and converts them when
-  // drawn.
-  async function uploadPlanes(
-    frame: VideoFrame,
-    pixels: VideoPixelFormat,
-    stated: VideoColorSpaceInit,
-  ) {
-    const width = visibleWidth(frame);
-    const height = visibleHeight(frame);
+  // Where the planes of `frame` are: a VideoFrame's copied out into the staging buffer first.
+  async function readPlanes(frame: DecodedFrame) {
+    if (!(frame instanceof VideoFrame)) return { data: frame.memory.buffer, layout: frame.layout };
     const size = frame.allocationSize();
     if (size > staging.buffer.byteLength) staging.buffer = new ArrayBuffer(size);
     const layout = await frame.copyTo(staging.buffer);
+    return { data: staging.buffer, layout };
+  }
+
+  // Writes the planes of `frame`, which has a format, into a picture, and converts them when
+  // drawn.
+  async function uploadPlanes(frame: DecodedFrame, stated: VideoColorSpaceInit) {
+    const pixels = frame.format;
+    if (!pixels) throw new Error("a frame without a format has no planes to read");
+    const width = visibleWidth(frame);
+    const height = visibleHeight(frame);
+    const { data, layout } = await readPlanes(frame);
     const key = keyOf(pixels, width, height);
     shape.planes ??= planesOf(pixels, width, height);
     const { yuv, depth, planes } = shape.planes;
@@ -431,7 +444,7 @@ export function createCompositor(
       if (!plane || !destination) throw new Error(`${pixels}: no plane ${i}`);
       source.offset = plane.offset;
       source.bytesPerRow = plane.stride;
-      device.queue.writeTexture(destination, staging.buffer, source, destination.texture);
+      device.queue.writeTexture(destination, data, source, destination.texture);
     }
 
     if (picture.colour) {
@@ -495,15 +508,15 @@ export function createCompositor(
    * stream states (`stated`): a decoder fills in what the stream leaves out its own way.
    * Uploads complete in the order they are called.
    */
-  async function upload(frame: VideoFrame, stated: VideoColorSpaceInit): Promise<Picture> {
+  async function upload(frame: DecodedFrame, stated: VideoColorSpaceInit): Promise<Picture> {
     const before = uploads.last;
     const done = Promise.withResolvers<void>();
     uploads.last = done.promise;
 
     try {
       await before;
-      const pixels = frame.format;
-      const uploading = pixels ? uploadPlanes(frame, pixels, stated) : uploadImported(frame);
+      const imported = frame instanceof VideoFrame && !frame.format;
+      const uploading = imported ? uploadImported(frame) : uploadPlanes(frame, stated);
       const picture = await uploading;
       picture.timestamp = frame.timestamp;
       picture.displayWidth = frame.displayWidth;
