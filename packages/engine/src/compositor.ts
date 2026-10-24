@@ -152,6 +152,13 @@ const GRID_ROW = GRID_WIDTH * 16;
 // apart; with fewer than this, as in a dark frame, the next frame is measured.
 const MIDTONES = [0.1, 0.9] as const;
 const MIN_POINTS = 300;
+// Of its points, those whose channels differ by more than this are coloured: only they tell a
+// matrix apart, and a frame with fewer than MIN_COLOURED, near grey, is not measured either.
+const COLOURED = 0.1;
+const MIN_COLOURED = 100;
+// The frames measured before giving up on a stream, as in a dark or grey one: its planes are
+// read, as before.
+const MAX_TRIES = 60;
 // How far Chromium's conversion may be from this one's, at the median and the 95th percentile of
 // the points: the two filter differently at edges, and Apple's gamma moves a midtone by 11 levels
 // of 255.
@@ -167,12 +174,14 @@ const P95_OFF = 6 / 255;
 export interface Route {
   readonly stated: VideoColorSpaceInit;
   via: "unmeasured" | "imported" | "apple" | "read";
+  // The frames measured so far.
+  tries: number;
 }
 
 // What Chromium converts as FFmpeg does, which converts neither primaries nor transfer: BT.709's
 // primaries, and the transfers it takes for sRGB's, all a stream that states none is decoded as
-// (src/codec.ts). Measuring tells only the transfer apart, as a grey shows it, not a matrix or
-// primaries, which only some colours would.
+// (src/codec.ts). Measuring tells a transfer and a matrix apart, but not primaries, which only
+// the most saturated colours would.
 const KEPT_PRIMARIES = new Set<VideoColorPrimaries | null | undefined>([undefined, "bt709"]);
 const KEPT_TRANSFERS = new Set<VideoTransferCharacteristics | null | undefined>([
   undefined,
@@ -187,7 +196,7 @@ const KEPT_TRANSFERS = new Set<VideoTransferCharacteristics | null | undefined>(
  */
 export function createRoute(stated: VideoColorSpaceInit): Route {
   const kept = KEPT_PRIMARIES.has(stated.primaries) && KEPT_TRANSFERS.has(stated.transfer);
-  return { stated, via: kept ? "unmeasured" : "read" };
+  return { stated, via: kept ? "unmeasured" : "read", tries: 0 };
 }
 
 const srgbDecode = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
@@ -196,6 +205,42 @@ const srgbDecode = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.0
 function quantile(values: Float32Array, count: number, q: number) {
   const sorted = values.subarray(0, count).toSorted();
   return sorted[Math.min(count - 1, Math.floor(q * count))] ?? Infinity;
+}
+
+/**
+ * Which way a stream goes, from a grid read back (`data`): Chromium's conversion of each point,
+ * then this one's, in rows of GRID_ROW bytes. Undecided while too few channels are midtones or
+ * too few points coloured. `asIs` and `undone` hold a difference for each channel.
+ */
+export function verdict(
+  data: Float32Array,
+  asIs: Float32Array,
+  undone: Float32Array,
+): Route["via"] | undefined {
+  const read = GRID_HEIGHT * (GRID_ROW / 4);
+  let count = 0;
+  let coloured = 0;
+
+  for (let i = 0; i < read; i += 4) {
+    const [r = 0, g = 0, b = 0] = data.subarray(read + i, read + i + 3);
+    if (Math.max(r, g, b) - Math.min(r, g, b) > COLOURED) coloured++;
+
+    // Alpha is left out.
+    for (let c = i; c < i + 3; c++) {
+      const truth = data[read + c] ?? 0;
+      if (truth < MIDTONES[0] || truth > MIDTONES[1]) continue;
+      const imported = data[c] ?? 0;
+      asIs[count] = Math.abs(imported - truth);
+      undone[count] = Math.abs(srgbDecode(Math.max(imported, 0)) ** (1 / 1.961) - truth);
+      count++;
+    }
+  }
+
+  if (count < MIN_POINTS || coloured < MIN_COLOURED) return undefined;
+  const off = (values: Float32Array) =>
+    quantile(values, count, 0.5) <= MEDIAN_OFF && quantile(values, count, 0.95) <= P95_OFF;
+  if (off(asIs)) return "imported";
+  return off(undone) ? "apple" : "read";
 }
 
 // FFmpeg's identity display matrix: 16.16 fixed point, and 2.30 in the last column.
@@ -431,7 +476,11 @@ export function createCompositor(
     // A difference for each channel of the grid, as is and with Apple's gamma undone.
     asIs: new Float32Array(GRID_WIDTH * GRID_HEIGHT * 3),
     undone: new Float32Array(GRID_WIDTH * GRID_HEIGHT * 3),
+    // Resolved as the measurement under way ends, for the tests.
+    done: Promise.withResolvers<void>(),
   };
+  // None is under way at first.
+  measuring.done.resolve();
 
   function keyOf(kind: string, width: number, height: number) {
     if (kind === shape.kind && width === shape.width && height === shape.height) return shape.key;
@@ -492,35 +541,12 @@ export function createCompositor(
   const texture = (fmt: GPUTextureFormat, width: number, height: number, usage: number) =>
     device.createTexture({ format: fmt, size: [width, height], usage });
 
-  // Which way `route` goes, from the grid read back (`data`): Chromium's conversion of each point,
-  // then this one's. Undecided while too few channels are midtones.
-  function verdict(data: Float32Array): Route["via"] | undefined {
-    const { asIs, undone } = measuring;
-    const read = GRID_HEIGHT * (GRID_ROW / 4);
-    let count = 0;
-
-    for (let i = 0; i < read; i++) {
-      // Alpha is left out.
-      if (i % 4 === 3) continue;
-      const truth = data[read + i] ?? 0;
-      if (truth < MIDTONES[0] || truth > MIDTONES[1]) continue;
-      const imported = data[i] ?? 0;
-      asIs[count] = Math.abs(imported - truth);
-      undone[count] = Math.abs(srgbDecode(Math.max(imported, 0)) ** (1 / 1.961) - truth);
-      count++;
-    }
-
-    if (count < MIN_POINTS) return undefined;
-    const off = (values: Float32Array) =>
-      quantile(values, count, 0.5) <= MEDIAN_OFF && quantile(values, count, 0.95) <= P95_OFF;
-    if (off(asIs)) return "imported";
-    return off(undone) ? "apple" : "read";
-  }
-
   // Converts the points of the grid of `frame` both ways, from its planes uploaded into `picture`
-  // and as Chromium converts it, and decides `route` by them, or leaves it for a later frame.
+  // and as Chromium converts it, and decides `route` by them, or leaves it for a later frame,
+  // up to MAX_TRIES. A measurement that fails reads the planes from then on.
   async function measure(frame: VideoFrame, picture: Slot, route: Route) {
     measuring.busy = true;
+    route.tries++;
 
     try {
       const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC;
@@ -564,11 +590,19 @@ export function createCompositor(
 
       device.queue.submit([encoder.finish()]);
       await buffer.mapAsync(GPUMapMode.READ);
-      const via = verdict(new Float32Array(buffer.getMappedRange()));
+      const via = verdict(
+        new Float32Array(buffer.getMappedRange()),
+        measuring.asIs,
+        measuring.undone,
+      );
       buffer.unmap();
       if (via) route.via = via;
+      else if (route.tries >= MAX_TRIES) route.via = "read";
+    } catch {
+      route.via = "read";
     } finally {
       measuring.busy = false;
+      measuring.done.resolve();
     }
   }
 
@@ -648,7 +682,11 @@ export function createCompositor(
 
       device.queue.writeBuffer(picture.colour, 0, colour);
       const unmeasured = route.via === "unmeasured" && !measuring.busy;
-      if (unmeasured && frame instanceof VideoFrame) void measure(frame, picture, route);
+
+      if (unmeasured && frame instanceof VideoFrame) {
+        measuring.done = Promise.withResolvers<void>();
+        void measure(frame, picture, route);
+      }
     }
 
     return picture;
@@ -759,5 +797,11 @@ export function createCompositor(
     device.queue.submit([encoder.finish()]);
   }
 
-  return { upload, draw, clear };
+  return {
+    upload,
+    draw,
+    clear,
+    /** Resolves once the last measurement started has ended, for the tests. */
+    measured: () => measuring.done.promise,
+  };
 }
