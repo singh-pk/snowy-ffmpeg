@@ -620,6 +620,9 @@ export function createHistory(options: {
     if (self !== sequencer) throw new RangeError("only the sequencer appends");
     const change = emptyChange();
     const made: Entry[] = [];
+    // Entries it signed that wait for their batches, as after opening a project with a log that
+    // didn't read, hold numbers it must not sign again.
+    if (early.size > 0) return { entries: made, change };
     const waiting = queue
       .splice(0)
       .flatMap((hash) => {
@@ -671,8 +674,8 @@ export function createHistory(options: {
     append: (entry: Entry) => serial(() => appendNow(entry)),
     /**
      * As the sequencer, appends every received batch that can be: in (hlc, author, seq) order,
-     * each once its author's previous batch on the branch is appended. Returns the entries to
-     * publish.
+     * each once its author's previous batch on the branch is appended, and none while an entry
+     * ahead of the last waits. Returns the entries to publish.
      */
     sequence: (peer: CryptoKeyPair) => serial(() => sequenceNow(peer)),
     /**
