@@ -24,7 +24,7 @@ import {
   type Value,
 } from "./document";
 import { itemId, type ItemId } from "./ids";
-import { assignLanes, clipAnchorStart, originAnchorStart } from "./layout";
+import { assignLanes, clipAnchorStart, originAnchorStart, transitionHalves } from "./layout";
 import { InvalidError } from "./schema";
 import { keyBetween } from "./position";
 import { createStoryline } from "./storyline";
@@ -492,7 +492,9 @@ export function createProject(initial?: Snapshot) {
       const cut = items.get(record.cut);
       if (cut === undefined || cut.removed || !inStoryline(cut.record)) return undefined;
       const { duration } = cut.record;
-      return line.start(record.cut) + duration - Math.floor(record.duration / 2);
+      const rate = sequences.get(sequence)?.record.rate;
+      if (rate === undefined) return undefined;
+      return line.start(record.cut) + duration - transitionHalves(record.duration, rate).before;
     }
 
     const { anchor } = record;
@@ -1290,6 +1292,8 @@ export function createProject(initial?: Snapshot) {
     connected,
     itemBefore,
     transitions,
+    /** A sequence's length: its storyline's, in flicks. */
+    length: (sequence: ItemId) => sequences.get(sequence)?.storyline.duration() ?? 0,
     /** The time base a clip's source points are in: its stream's, or flicks'. */
     timeBase: timeBaseOf,
     name: () => name,

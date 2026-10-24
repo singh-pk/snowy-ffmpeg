@@ -6,7 +6,7 @@
 // every peer, and never stored.
 
 import type { ItemId } from "./ids";
-import { snapToFrame, sourceToFlicks, type Ratio } from "./time";
+import { frameFlicks, snapToFrame, sourceToFlicks, type Ratio } from "./time";
 
 /** What layout needs of the storyline clip a connected item is anchored to. */
 export type AnchorClip = {
@@ -39,6 +39,18 @@ export function clipAnchorStart(clip: AnchorClip, at: number, rate?: Ratio) {
 /** Where an item connected to a sequence's start at `at` flicks starts; video snaps to a frame. */
 export function originAnchorStart(at: number, rate?: Ratio) {
   return rate === undefined ? flicks(at) : snapToFrame(at, rate);
+}
+
+/**
+ * The halves of a transition of `duration` flicks on either side of its cut, in whole frames of
+ * `rate`: the frames before the cut, rounded down, and the rest after it. Storyline items are
+ * whole frames, so both halves start and end on frames.
+ */
+export function transitionHalves(duration: number, rate: Ratio) {
+  const frame = frameFlicks(rate);
+  const frames = Math.floor(duration / frame);
+  const before = Math.floor(frames / 2) * frame;
+  return { before, after: frames * frame - before };
 }
 
 /** A connected item of one role, placed in time, with the lane it prefers. */

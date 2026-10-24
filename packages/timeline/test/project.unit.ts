@@ -488,3 +488,11 @@ test("a storyline in a range lists what plays in it or starts at its end, as the
     expect(project.storyline(sequence, { from, to })).toEqual(within(from, to));
   }
 });
+
+test("the item before a storyline item passes over removed ones", () => {
+  const { project, apply } = setUp();
+  apply(clip({ anchor: at("a0") }), clip({ anchor: at("a1") }), clip({ anchor: at("a2") }));
+  apply({ op: "item.remove", id: id(2, 1) });
+  expect(project.itemBefore(id(2, 2))).toEqual({ id: id(2, 0), start: 0, duration: SECOND });
+  expect(project.itemBefore(id(2, 0))).toBe(undefined);
+});

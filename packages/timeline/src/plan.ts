@@ -11,7 +11,15 @@ import type { ItemRecord, KeyframeRecord, SequenceRecord, Value } from "./docume
 import type { ItemId } from "./ids";
 import type { Document } from "./project";
 import { leafOf } from "./project";
-import { flicksToMicros, frameFlicks, sourceToFlicks, toFlicks, type Ratio } from "./time";
+import { transitionHalves } from "./layout";
+import {
+  flicksToMicros,
+  flicksToSource,
+  frameFlicks,
+  sourceToFlicks,
+  sourceToFlicksDown,
+  type Ratio,
+} from "./time";
 
 type Clip = Extract<ItemRecord, { kind: "clip" }>;
 type Blend = NonNullable<Clip["video"]>["blend"];
@@ -39,6 +47,8 @@ type Layer = {
   in: number;
   timeBase: Ratio;
   start: number;
+  /** Where the clip ends on the timeline, in microseconds; a transition can play it past that. */
+  end: number;
   speed: Ratio;
   effects: PlannedEffect[];
 };
@@ -103,8 +113,8 @@ type Placed = {
   video: boolean;
 };
 
-// A transition as placed, in flicks.
-type Crossing = Omit<PlannedTransition, "from" | "to"> & { from: number; to: number };
+// A transition as placed, its times in flicks.
+type Crossing = PlannedTransition;
 
 const byOrder = (a: Placed, b: Placed) => {
   for (const [i, value] of a.order.entries()) {
@@ -170,21 +180,35 @@ export function plan(document: Document, sequence: ItemId, from: number, to: num
   return { sequence: { id: sequence, ...record }, segments, next } satisfies Plan;
 }
 
-// How long a clip's source plays on past its end, or before its start, in flicks on the timeline:
-// as far as its stream goes, or without end for a generator or a sequence.
+// How long a clip's source plays on past its end, or before its start, in flicks on the timeline,
+// rounded down: as far as its stream goes, as far as the sequence it plays goes, or without end
+// for a generator.
 function media(document: Document, clip: Clip, side: "after" | "before") {
   const { source } = clip;
-  if (!("asset" in source)) return Number.POSITIVE_INFINITY;
-  const stream = document.asset(source.asset)?.streams.find((each) => each.index === source.stream);
-  if (stream === undefined) return 0;
-  const [num, den] = clip.speed;
-  const rate = Math.abs(num) / den;
-  const point =
-    toFlicks(clip.in, document.timeBase(clip)) +
-    (side === "after" ? clip.duration * (num / den) : 0);
-  const onwards = (side === "after") === num > 0;
-  const left = onwards ? stream.start + stream.duration - point : point - stream.start;
-  return Math.max(0, Math.floor(left / rate));
+  if ("generator" in source) return Number.POSITIVE_INFINITY;
+  const timeBase = document.timeBase(clip);
+  let first = 0;
+  let last = document.length("sequence" in source ? source.sequence : "");
+
+  if ("asset" in source) {
+    const found = document.asset(source.asset)?.streams.find((s) => s.index === source.stream);
+    if (found === undefined) return 0;
+    first = found.start;
+    last = found.start + found.duration;
+  }
+
+  const forwards = clip.speed[0] > 0;
+  const end = clip.in + flicksToSource(clip.duration, timeBase, clip.speed);
+  // At a negative speed the source runs down, so what is past the end is below it.
+  const left =
+    side === "after"
+      ? forwards
+        ? last - end
+        : end - first
+      : forwards
+        ? clip.in - first
+        : last - clip.in;
+  return left <= 0 ? 0 : sourceToFlicksDown(left, timeBase, clip.speed);
 }
 
 // Every enabled clip of a sequence that plays between `from` and `to`, or starts at `to`, with
@@ -210,9 +234,11 @@ function placedClips(
     return each;
   };
 
-  const line = document.storyline(sequence, { from, to });
-  const [first] = line;
-  const prior = first === undefined ? undefined : document.itemBefore(first.id);
+  // Items of no length are passed over, as they are in looking up the item at a time, so the
+  // plan doesn't depend on where the range starts.
+  const line = document.storyline(sequence, { from, to }).filter((item) => item.duration > 0);
+  let prior = line[0] === undefined ? undefined : document.itemBefore(line[0].id);
+  while (prior?.duration === 0) prior = document.itemBefore(prior.id);
   const items = prior === undefined ? line : [prior, ...line];
   const stories = items.map((item) => ({ item, placed: take(item.id, item.start, [0]) }));
   const crossings = crossingsOf(document, sequence, record, stories, take);
@@ -230,9 +256,10 @@ function placedClips(
 type Story = { item: { id: ItemId; start: number; duration: number }; placed: Placed | undefined };
 
 // The transitions on the cuts after `stories`, widening the clips on each side to play through
-// them. A transition is centred on its cut and shortens on each side to the media that side has
-// past the cut, and to the item there, so it never reaches past the items next to the cut. Video
-// keeps to the sequence's frames. Of two transitions on one cut, the first by id plays.
+// them. Each half shortens on its own, so a transition can sit off centre: to the media its side
+// has past the cut, and to half the item next to the cut, so two transitions on one item never
+// meet. A transition with no clip on either side plays nothing, and of two on one cut, made at
+// once, the first by id plays.
 function crossingsOf(
   document: Document,
   sequence: ItemId,
@@ -242,6 +269,13 @@ function crossingsOf(
 ) {
   const crossings: Crossing[] = [];
   const frame = frameFlicks(record.rate);
+
+  // Half an item, in whole frames, as storyline items are: the first half takes the odd frame.
+  const half = (duration: number, part: "first" | "last") => {
+    const frames = Math.floor(duration / frame);
+    const first = Math.floor(frames / 2);
+    return (part === "first" ? frames - first : first) * frame;
+  };
 
   for (const [i, { item, placed: out }] of stories.entries()) {
     const [transition] = document.transitions(item.id);
@@ -255,23 +289,20 @@ function crossingsOf(
       after = found && { item: found, placed: take(found.id, found.start, [0]) };
     }
 
-    const half = Math.floor(transition.duration / 2);
-    let left = Math.min(half, item.duration);
-    let right = Math.min(transition.duration - half, after?.item.duration ?? 0);
+    const { placed: into } = after ?? {};
+    if (out === undefined && into === undefined) continue;
+    const { before, after: rest } = transitionHalves(transition.duration, record.rate);
     // Before the cut the clip after it plays early, from its media before its start; after the
     // cut the clip before it plays on, from its media past its end.
-    if (after?.placed !== undefined)
-      left = Math.min(left, media(document, after.placed.clip, "before"));
+    let left = Math.min(before, half(item.duration, "last"));
+    let right = Math.min(rest, half(after?.item.duration ?? 0, "first"));
+    if (into !== undefined) left = Math.min(left, media(document, into.clip, "before"));
     if (out !== undefined) right = Math.min(right, media(document, out.clip, "after"));
-
-    if (out?.video === true || after?.placed?.video === true) {
-      left -= left % frame;
-      right -= right % frame;
-    }
-
+    left -= left % frame;
+    right -= right % frame;
     if (left + right === 0) continue;
     if (out !== undefined) out.to = cut + right;
-    if (after?.placed !== undefined) after.placed.from = cut - left;
+    if (into !== undefined) into.from = cut - left;
     crossings.push({
       id: transition.id,
       effect: transition.effect,
@@ -279,7 +310,7 @@ function crossingsOf(
       from: cut - left,
       to: cut + right,
       ...(out === undefined ? {} : { out: out.clip.id }),
-      ...(after?.placed === undefined ? {} : { in: after.placed.clip.id }),
+      ...(into === undefined ? {} : { in: into.clip.id }),
     });
   }
 
@@ -347,6 +378,7 @@ function layerOf(document: Document, each: Placed): VideoLayer | AudioLayer {
     in: clip.in,
     timeBase: document.timeBase(clip),
     start: flicksToMicros(each.start),
+    end: flicksToMicros(each.end),
     speed: clip.speed,
     effects,
   };
