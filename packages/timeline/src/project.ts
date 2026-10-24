@@ -1089,9 +1089,9 @@ export function createProject(initial?: Snapshot) {
 
     // Applies the batches a merge, the batch's operation `index`, brings that the document
     // doesn't have yet, each operation with the id it has on its own branch.
-    function merge(op: Merge, index: number, at: Resolver, own: boolean) {
-      if (own && op.branch === at.branch) skip("structural", "a branch can't merge itself");
-      const found = at.merged(op);
+    function merge(op: Merge, index: number, resolver: Resolver, own: boolean) {
+      if (own && op.branch === resolver.branch) skip("structural", "a branch can't merge itself");
+      const found = resolver.merged(op);
       if (found === "missing") skip("waiting", `entries of ${op.branch} aren't here yet`);
       if (found === "stale") skip("stale", `no such entries of ${op.branch}`);
 

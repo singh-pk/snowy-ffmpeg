@@ -445,7 +445,7 @@ export function createHistory(options: {
   ) {
     for (let n = Math.max(from, 0) + 1; n < entry.n; n += 1) {
       for (const other of touched[n - 1] ?? []) {
-        if (!saw(other) && clash(mine, other.touches)) return true;
+        if (clash(mine, other.touches) && !saw(other)) return true;
       }
     }
 
@@ -466,7 +466,9 @@ export function createHistory(options: {
         for (const touch of each.touches) brought.add(touch);
       }
 
-      return clashesSince(found.since ?? batch.base.n, entry, brought, found.saw);
+      return (
+        brought.size > 0 && clashesSince(found.since ?? batch.base.n, entry, brought, found.saw)
+      );
     });
   }
 
