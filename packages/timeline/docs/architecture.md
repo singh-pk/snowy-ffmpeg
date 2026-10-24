@@ -438,7 +438,7 @@ type Term = {
 - An active sequencer that sees a higher term from a peer listed *after* it starts a newer term itself. A peer that starts a term early, by mistake or on purpose, therefore can't take over from an active sequencer listed before it.
 - A sequencer that returns doesn't take over again while another is active, so control doesn't flip back and forth.
 - **The one case where the history's tail changes:** entries no peer the new sequencer could reach had received, and two candidates starting the same term at once. Entries after a term's `after` that aren't in its chain are dropped, and of two terms with the same number, the one whose sequencer is listed first wins. Their batches are still in their authors' logs, so they go back to pending and the new sequencer appends them again. The history shows them as *resequenced*.
-- **Entries are named by `EntryRef`, `n` and hash together,** wherever one is referred to (branch starts, merges, reverts, snapshots). A reference to a dropped entry is then recognisably stale instead of silently naming the entry that took its number.
+- **Entries are named by `EntryRef`, `n` and hash together,** wherever one is referred to (branch starts, merges, reverts). A reference to a dropped entry is then recognisably stale instead of silently naming the entry that took its number.
 
 ## Undo, revert and going back
 
@@ -469,7 +469,7 @@ Undo is per author: undo takes back your edits, never someone else's that came a
 
 Reverting to an entry sets each record to its state at that entry. A record added after it is removed, keeping its state and id, so a later batch can restore it. Keyframes are those of that entry. A revert naming an entry the branch doesn't have under that hash, such as one a new term dropped, is skipped as stale. It redraws every sequence, and touches every item for telling concurrent entries.
 
-The history keeps the entries' document every `SNAPSHOT_EVERY` entries in memory, as the project folder does on disk, so going back to an entry or reverting to it applies fewer than that many entries. It also keeps the document after every entry that holds a revert, so the entries it applies never hold one; memory grows with the number of reverts. A revert to the last entry, part way through a batch, reverts to the document before that batch, as it did while the batch was pending. Since a pending revert's result depends on the entries the peer had, its entry always shows the pending batches again.
+The history keeps the entries' document every `SNAPSHOT_EVERY` entries in memory, so going back to an entry or reverting to it applies fewer than that many entries. It also keeps the document after every entry that holds a revert, so the entries it applies never hold one; memory grows with the number of reverts. A revert to the last entry, part way through a batch, reverts to the document before that batch, as it did while the batch was pending. Since a pending revert's result depends on the entries the peer had, its entry always shows the pending batches again.
 
 ## Branches
 
@@ -559,7 +559,6 @@ The project lives in a folder the user picks (`showDirectoryPicker`, read and wr
   project.json                  the signed project record and grants
   logs/<KeyId>/<first seq>      each author's batches, in segments
   history/<BranchId>/<first n>  each branch's entries, refusals and terms, in segments
-  snapshots/<BranchId>/<n>      the document at entry n, with that entry's hash
   assets/<AssetId>/             what the editor derives from each asset:
     index                         keyframe index
     waveform                      min/max pyramid
@@ -573,7 +572,7 @@ The project lives in a folder the user picks (`showDirectoryPicker`, read and wr
 - **A segment is records**, each a 4-byte big-endian length and an object's canonical bytes, as it is signed. A new segment starts when the next record would take the last one past the segment size, or when the last one ends in a record cut short, and is named by the first seq or `n` in it, or one past the segment before if that is higher, so no segment is written over. A `write` names a path, the offset to write at, which is the file's length so far, and the bytes: the editor opens the file keeping its data and writes there.
 - **A batch is written once,** when it is committed here or first received, and an entry once, when it is applied. Pending batches are in their authors' logs, so they are pending again when the project opens.
 - **Opening a project** reads every log and history and checks each batch and entry as if it had just arrived: signature, its author's chain, the sequencer's signature, and that each entry follows the last. A file holding one that doesn't pass, or a record that doesn't read, is reported, and the rest opens, including the records of that file that do read; an entry whose batch is in such a file waits for it, as an entry received without its batch would, and the sequencer appends nothing to that branch until it applies, so it never signs a second entry with the number of one it read. An entry lost from a history cut short is gone for the sequencer too: it signs that number again, and a peer holding the lost entry refuses the new one unless it names the same batch.
-- **Snapshots** are written every `SNAPSHOT_EVERY` entries, so opening a project or going back applies at most that many entries. A snapshot whose entry hash no longer matches, after a resequenced tail, is ignored and replaced.
+- **No document is saved.** Opening applies every entry again, since applying is a small part of opening. `openFolder` on a project of one author's 4,000 entries on main, each adding a clip, took 430 ms in Playwright's Chromium on an Apple M5: about 80 ms reading and decoding the files, 170 ms checking and hashing the batches, and 160 ms pending and appending the entries, which checks and hashes each of them. Applying the 4,000 batches alone took 6 ms. Every batch and entry is still checked before it is trusted, so a saved document would spare only those 6 ms, and would bring a format of its own and a way to tell it stale. Checking Ed25519 signatures in parallel is no faster than one at a time.
 - **One tab writes a project.** The editor takes a Web Lock named after the project; another tab opening it gets the lock only when the first lets go, and until then is read-only and doesn't join the project's session.
 - A collaborator picks their own project folder when they join. Their folder holds the same logs and histories. Media they don't have on disk arrives through `@snowy-media/sync`, which keeps it in its own store.
 
@@ -601,7 +600,7 @@ The package acts only when it is called:
 
 | Call | When |
 | --- | --- |
-| `load(files)` | Opening a project: the project record, grants, logs, histories and the newest snapshot of each branch, as read from the project folder |
+| `load(files)` | Opening a project: the project record, grants, logs and histories, as read from the project folder |
 | `commit(ops, label)` | The user or an agent makes an edit |
 | `receive(object)` | A batch, entry, refusal, term or grant arrives from `@snowy-media/sync` |
 | `verify(bytes)` | `@snowy-media/sync` asks what an object is: a batch's `{ author, seq }`, a history object's `{ branch, term, n, hash }`, or invalid |
@@ -648,7 +647,7 @@ It reports what happened as events:
 | Name | Value |
 | --- | --- |
 | Flicks per second | 705,600,000 |
-| `SNAPSHOT_EVERY` | 512 entries, until measured |
+| `SNAPSHOT_EVERY` | 512 entries, kept in memory for going back, until measured |
 | Log and history segment size | 1 MiB, until measured |
 | HLC | The format and rules of `@snowy-media/sync`'s chat |
 
