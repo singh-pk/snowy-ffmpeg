@@ -22,6 +22,7 @@ The relay tests (`test/relay.test.ts`) start a MoQ relay in Docker. On Colima, s
 | `src/signed-record.ts` | the source's records as JSON signed by the session key, over a domain prefix and the session |
 | `src/catalog.ts` | the catalog and each track's codec setup, as signed records |
 | `src/control.ts` | the control record: the source's playback position and state from a moment on its clock |
+| `src/source-records.ts` | the source's records as a peer holds them: the newest catalog and control record and each track's setup, sealed as they came |
 | `src/hlc.ts` | the hybrid logical clock that orders chat |
 | `src/chat.ts` | chat messages in canonical bytes, their hash chain, and signed checkpoints |
 | `src/chat-log.ts` | the chat log: shared order, gaps, version vectors, and edits, deletes and reactions applied |

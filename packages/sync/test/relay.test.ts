@@ -103,18 +103,18 @@ test("a peer can't announce itself as another", async () => {
   expect(result).toEqual({ sawImpostor: false, subscribeRefused: true });
 }, 60_000);
 
-test("only the source publishes `source`, and its records reach the others and check out", async () => {
+test("only the source publishes `source`, and its records reach the others and are kept", async () => {
   const result = await scenario("source");
   expect(result).toEqual({
     forgedRefused: true,
-    received: {
-      "catalog@1": {
-        version: 1,
-        durationUs: 10_000_000,
-        tracks: [{ id: 0, kind: "video", codec: "vp09.00.10.08", bitrateKbps: 900 }],
-      },
-      "init/0": { track: 0, codec: "vp09.00.10.08", codedWidth: 64, codedHeight: 48 },
+    rejected: [],
+    catalog: {
+      version: 1,
+      durationUs: 10_000_000,
+      tracks: [{ id: 0, kind: "video", codec: "vp09.00.10.08", bitrateKbps: 900 }],
     },
+    control: { epoch: 1, playing: true, mediaUs: 0, atUs: 5, ended: false },
+    setup: { track: 0, codec: "vp09.00.10.08", codedWidth: 64, codedHeight: 48 },
   });
 }, 60_000);
 
