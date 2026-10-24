@@ -122,10 +122,10 @@ test("next hands out the earliest frame, due or not", () => {
   expect(closed).toEqual([]);
 });
 
-// A grid read back as the compositor measures one (src/compositor.ts): 64 × 36 points of RGBA,
+// A grid read back as the compositor measures one (src/compositor.ts): 128 × 72 points of RGBA,
 // Chromium's conversion of each, then the same points as converted from the planes, `truth`.
 function grid(truth: (k: number) => [number, number, number], imported: (c: number) => number) {
-  const points = 64 * 36;
+  const points = 128 * 72;
   const data = new Float32Array(2 * points * 4);
 
   for (let k = 0; k < points; k++) {

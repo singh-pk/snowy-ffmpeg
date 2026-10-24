@@ -133,7 +133,10 @@ struct Measured {
 }
 
 @fragment fn fs(@location(0) clip: vec2f) -> Measured {
-  let uv = clip * vec2f(0.5, -0.5) + 0.5;
+  // At the centre of the frame's nearest pixel, as both conversions sample alike there: between
+  // pixels, at an edge, they filter differently.
+  let size = vec2f(textureDimensions(luma));
+  let uv = (floor((clip * vec2f(0.5, -0.5) + 0.5) * size) + 0.5) / size;
   let imported = textureSampleBaseClampToEdge(frame, linear, uv).rgb;
   return Measured(vec4f(imported, 1.0), vec4f(convert(uv), 1.0));
 }
@@ -143,19 +146,19 @@ struct Measured {
 const IMPORTED: GPUTextureFormat = "rgb10a2unorm";
 
 // The points a frame is measured at, both conversions of each read back in 32-bit floats, a row
-// of them 1024 bytes, as a texture copy's rows are a multiple of 256 bytes.
-const GRID_WIDTH = 64;
-const GRID_HEIGHT = 36;
+// of them 2048 bytes, as a texture copy's rows are a multiple of 256 bytes.
+const GRID_WIDTH = 128;
+const GRID_HEIGHT = 72;
 const MEASURED: GPUTextureFormat = "rgba32float";
 const GRID_ROW = GRID_WIDTH * 16;
 // Of a measurement's channels, those neither near black nor near white tell the conversions
-// apart; with fewer than this, as in a dark frame, the next frame is measured.
+// apart, and in a sharp frame, as colour bars, they are only along its edges; with fewer than this, as in a dark frame, the next frame is measured.
 const MIDTONES = [0.1, 0.9] as const;
 const MIN_POINTS = 300;
 // Of its points, those whose channels differ by more than this are coloured: only they tell a
 // matrix apart, and a frame with fewer than MIN_COLOURED, near grey, is not measured either.
 const COLOURED = 0.1;
-const MIN_COLOURED = 100;
+const MIN_COLOURED = 400;
 // The frames measured before giving up on a stream, as in a dark or grey one: its planes are
 // read, as before.
 const MAX_TRIES = 60;
