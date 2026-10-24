@@ -132,6 +132,52 @@ test("a file that doesn't read is reported, and the rest of the project opens", 
   expect(main.document().name()).toBe("One");
 });
 
+test("a segment cut short keeps the records before the cut, and writing goes on in a new one", async () => {
+  const { a, disk, edit, reopen, branches } = await setUp();
+  await edit(a, "main", [rename("One")]);
+  await edit(a, "main", [rename("Two")]);
+  const path = "history/main/1";
+  const bytes = disk.files.get(path) ?? fail();
+  disk.files.set(path, bytes.subarray(0, bytes.byteLength - 1));
+
+  const { unreadable } = await reopen();
+  expect(unreadable).toEqual([path]);
+  expect(branches().history("main")?.entries()).toHaveLength(1);
+
+  // The sequencer appends the batch again, in a segment after the cut one.
+  await edit(a, "main", [rename("Three")]);
+  expect(disk.files.has("history/main/2")).toBe(true);
+  await reopen();
+  const main = branches().history("main") ?? fail();
+  expect(main.entries()).toHaveLength(3);
+  expect(main.document().name()).toBe("Three");
+});
+
+test("the sequencer signs nothing while an entry it signed waits for its batch", async () => {
+  const { a, b, disk, edit, reopen, branches } = await setUp();
+  await edit(a, "main", [rename("One")]);
+  await edit(a, "main", [rename("Two")]);
+  const path = `logs/${a.key}/1`;
+  const bytes = disk.files.get(path) ?? fail();
+  disk.files.set(path, bytes.subarray(0, bytes.byteLength - 1));
+
+  const { unreadable } = await reopen();
+  expect(unreadable).toEqual([path]);
+  await edit(b, "main", [rename("Three")]);
+  const main = branches().history("main") ?? fail();
+  expect(main.entries()).toHaveLength(1);
+  expect(main.pending()).toHaveLength(1);
+});
+
+test("a new segment is never named as one before it", async () => {
+  const a = await author();
+  const tails = new Map([[`logs/${a.key}`, { first: 1, size: SEGMENT_BYTES, cut: false }]]);
+  const folder = createFolder(tails);
+  const { batch, hash } = await a.commit([rename("One")], "0000000000000001");
+  const written = folder.batch(batch, hash) ?? fail();
+  expect([written.path, written.offset]).toEqual([`logs/${a.key}/2`, 0]);
+});
+
 test("a batch is written once, however often it is handed over", async () => {
   const a = await author();
   const folder = createFolder();

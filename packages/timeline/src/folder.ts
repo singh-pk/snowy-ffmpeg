@@ -18,15 +18,16 @@ import { InvalidError } from "./schema";
 export type Write = { path: string; offset: number; bytes: Uint8Array };
 
 /** A file of the project folder, as the editor read it. */
-export type File = { path: string; bytes: Uint8Array };
+export type FolderFile = { path: string; bytes: Uint8Array };
 
 /** The size a log or history segment grows to before the next one starts. */
 export const SEGMENT_BYTES = 1 << 20;
 
 const LENGTH_BYTES = 4;
 
-// A log's or history's last segment: the first seq or n in it, and its length.
-type Tail = { first: number; size: number };
+// A log's or history's last segment: its name, its length, and whether it ends in a record cut
+// short, after which nothing written could be read.
+type Tail = { first: number; size: number; cut: boolean };
 
 function frame(bytes: Uint8Array) {
   const record = new Uint8Array(LENGTH_BYTES + bytes.byteLength);
@@ -35,35 +36,42 @@ function frame(bytes: Uint8Array) {
   return record;
 }
 
-// The records of a segment. Throws an InvalidError for one cut short.
+// The whole records of a segment, and whether the last one is cut short.
 function records(bytes: Uint8Array) {
   const found: Uint8Array[] = [];
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
   for (let at = 0; at < bytes.byteLength;) {
-    if (at + LENGTH_BYTES > bytes.byteLength) throw new InvalidError("", "a record cut short");
-    const length = view.getUint32(at);
-    const end = at + LENGTH_BYTES + length;
-    if (end > bytes.byteLength) throw new InvalidError("", "a record cut short");
-    found.push(bytes.subarray(at + LENGTH_BYTES, end));
+    const start = at + LENGTH_BYTES;
+    if (start > bytes.byteLength) return { found, cut: true };
+    const end = start + view.getUint32(at);
+    if (end > bytes.byteLength) return { found, cut: true };
+    found.push(bytes.subarray(start, end));
     at = end;
   }
 
-  return found;
+  return { found, cut: false };
 }
 
 /**
  * What to write to the project folder for batches and entries: for a new project, or given the
- * last segment of each log and history and the hashes of the batches written, as `openFolder`
- * finds them.
+ * last segment of each log and history and the hashes of the batches and entries written, as
+ * `openFolder` finds them. It keeps and updates what it is given.
  */
-export function createFolder(tails = new Map<string, Tail>(), written = new Set<string>()) {
+export function createFolder(
+  tails = new Map<string, Tail>(),
+  written = { batches: new Set<string>(), entries: new Set<string>() },
+) {
   function append(directory: string, number: number, bytes: Uint8Array): Write {
     const record = frame(bytes);
     let tail = tails.get(directory);
+    const full =
+      tail !== undefined && tail.size > 0 && tail.size + record.byteLength > SEGMENT_BYTES;
 
-    if (tail === undefined || (tail.size > 0 && tail.size + record.byteLength > SEGMENT_BYTES)) {
-      tail = { first: number, size: 0 };
+    // A new segment is never named as one before it, which a batch signed twice with one seq
+    // would otherwise do.
+    if (tail === undefined || tail.cut || full) {
+      tail = { first: Math.max(number, (tail?.first ?? 0) + 1), size: 0, cut: false };
       tails.set(directory, tail);
     }
 
@@ -75,16 +83,18 @@ export function createFolder(tails = new Map<string, Tail>(), written = new Set<
   return {
     /** What to write for a batch committed here or received, or nothing if it is written. */
     batch(batch: Batch, hash: string): Write | undefined {
-      if (written.has(hash)) return undefined;
-      written.add(hash);
+      if (written.batches.has(hash)) return undefined;
+      written.batches.add(hash);
       return append(`logs/${batch.author}`, batch.seq, encodeBatch(batch));
     },
-    /** What to write for the entries a call applied, branch by branch, in order. */
+    /** What to write for the entries a call applied, branch by branch, in order, each once. */
     changes(changes: Changes): Write[] {
       return [...changes].flatMap(([branch, change]) =>
-        change.entered.map(({ entry }) =>
-          append(`history/${branch}`, entry.n, entryFormat.encode(entry)),
-        ),
+        change.entered.flatMap(({ entry, hash }) => {
+          if (written.entries.has(hash)) return [];
+          written.entries.add(hash);
+          return [append(`history/${branch}`, entry.n, entryFormat.encode(entry))];
+        }),
       );
     },
   };
@@ -93,9 +103,9 @@ export function createFolder(tails = new Map<string, Tail>(), written = new Set<
 type Read<T> = { path: string; value: T };
 
 // The objects of every segment under `kind`, with the tail of each directory. A file whose
-// records don't all read is reported in `unreadable`, and the records before the bad one kept.
+// records don't all read is reported in `unreadable`, and the records that do are kept.
 function readSegments<T>(
-  files: readonly File[],
+  files: readonly FolderFile[],
   kind: string,
   decode: (bytes: Uint8Array) => T,
   unreadable: string[],
@@ -108,15 +118,19 @@ function readSegments<T>(
     if (top !== kind || directory === undefined || rest.length > 0) continue;
     if (name === undefined || !/^[1-9][0-9]*$/.test(name)) continue;
     const first = Number(name);
+    const { found: whole, cut } = records(bytes);
     const tail = tails.get(`${kind}/${directory}`);
     if (tail === undefined || tail.first < first)
-      tails.set(`${kind}/${directory}`, { first, size: bytes.byteLength });
+      tails.set(`${kind}/${directory}`, { first, size: bytes.byteLength, cut });
+    if (cut) unreadable.push(path);
 
-    try {
-      for (const record of records(bytes)) found.push({ path, value: decode(record) });
-    } catch (error) {
-      if (!(error instanceof InvalidError)) throw error;
-      unreadable.push(path);
+    for (const record of whole) {
+      try {
+        found.push({ path, value: decode(record) });
+      } catch (error) {
+        if (!(error instanceof InvalidError)) throw error;
+        unreadable.push(path);
+      }
     }
   }
 
@@ -126,19 +140,26 @@ function readSegments<T>(
 const keyOf = (batch: { author: KeyId; seq: number }) => `${batch.author} ${batch.seq}`;
 
 // The batches whose signature is their author's and that follow a batch of their author's
-// before them, by hash, with each path holding one that doesn't.
+// before them, by hash, with each path holding one that doesn't. A batch after one that didn't
+// read doesn't follow it either, so its file is reported too.
 async function verified(read: Array<Read<Batch>>, unreadable: string[]) {
   const byHash = new Map<string, Batch>();
   const hashesOf = new Map<string, Set<string>>();
   const ordered = read.toSorted((a, b) => a.value.seq - b.value.seq);
+  const checked = await Promise.all(
+    ordered.map(async ({ value }) => {
+      const [valid, hash] = await Promise.all([verifyBatch(value), batchHash(value)]);
+      return { valid, hash };
+    }),
+  );
 
-  for (const { path, value } of ordered) {
-    const valid = await verifyBatch(value);
-    const hash = await batchHash(value);
-    const prev =
-      value.seq === 1 || hashesOf.get(keyOf({ ...value, seq: value.seq - 1 }))?.has(value.prev);
+  for (const [i, { path, value }] of ordered.entries()) {
+    const { valid, hash } = checked[i] ?? { valid: false, hash: "" };
+    const chained =
+      value.seq === 1 ||
+      hashesOf.get(keyOf({ author: value.author, seq: value.seq - 1 }))?.has(value.prev) === true;
 
-    if (!valid || prev !== true) {
+    if (!valid || !chained) {
       unreadable.push(path);
       continue;
     }
@@ -155,10 +176,12 @@ async function verified(read: Array<Read<Batch>>, unreadable: string[]) {
 /**
  * Opens a project from the files of its folder: every author's log and every branch's history,
  * with `sequencer` sequencing main. Batches and entries are checked as they would be received;
- * the paths of files holding one that isn't valid are in `unreadable`, and the rest open. Returns
- * the branches and what to write from then on.
+ * the paths of files holding one that isn't valid are in `unreadable`, and the rest open. That
+ * includes a file whose batches follow one that didn't read, and an entry refused as it is
+ * applied; an entry that waits, for its batch or its branch, is checked when it can apply.
+ * Returns the branches and what to write from then on.
  */
-export async function openFolder(files: readonly File[], options: { sequencer: KeyId }) {
+export async function openFolder(files: readonly FolderFile[], options: { sequencer: KeyId }) {
   const unreadable: string[] = [];
   const logs = readSegments(files, "logs", decodeBatch, unreadable);
   const histories = readSegments(files, "history", entryFormat.decode, unreadable);
@@ -194,6 +217,11 @@ export async function openFolder(files: readonly File[], options: { sequencer: K
   }
 
   const tails = new Map([...logs.tails, ...histories.tails]);
-  const folder = createFolder(tails, new Set(batches.keys()));
+  // An entry that waits for its batch is written when it applies unless it is known as read.
+  const entries = await Promise.all(histories.found.map(({ value }) => entryFormat.hash(value)));
+  const folder = createFolder(tails, {
+    batches: new Set(batches.keys()),
+    entries: new Set(entries),
+  });
   return { branches, folder, unreadable: [...new Set(unreadable)] };
 }
