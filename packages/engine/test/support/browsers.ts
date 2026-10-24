@@ -33,6 +33,13 @@ const args = ARGS[gpu];
 if (!args) throw new Error(`SNOWY_GPU=${gpu}: not a GPU`);
 const GPU: LaunchOptions = { args };
 
+// The fixtures of `expected` (test/fixtures/expected.json) the GPU decodes. Without a GPU, no
+// HEVC: Chromium decodes it only in hardware, and macOS, on one, tests it.
+export function decodable<T extends { video?: { codec: string } }>(expected: Record<string, T>) {
+  const entries = Object.entries(expected).filter(([, e]) => !gpu || e.video?.codec !== "hevc");
+  return Object.fromEntries(entries);
+}
+
 // Options replace the GPU ones: with them, Chromium keeps WebGPU on through
 // --disable-features=WebGPU.
 export const launch = (options: LaunchOptions = {}) => chromium.launch({ ...GPU, ...options });

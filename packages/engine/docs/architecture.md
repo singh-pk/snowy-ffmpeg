@@ -139,7 +139,7 @@ The tests run the engine in Chromium through Playwright, with a GPU, because Web
 | Windows (CI: `windows-latest`) | WARP, with `SNOWY_GPU=warp` |
 | Linux (CI: `ubuntu-latest`) | SwiftShader, with `SNOWY_GPU=swiftshader` |
 
-On Linux, SwiftShader needs ANGLE and Chromium's compositor on it too (`--use-angle=swiftshader`, `--enable-features=Vulkan`, `--use-vulkan=swiftshader`): without them, a canvas cannot be read back and a frame cannot be imported as an external texture. So CI runs the engine tests on all three; the benchmarks also run on each, for reading only. The checks that a browser can be made to fail have a test where they do: a page without cross-origin isolation, and WebGPU switched off.
+On Linux, SwiftShader needs ANGLE and Chromium's compositor on it too (`--use-angle=swiftshader`, `--enable-features=Vulkan`, `--use-vulkan=swiftshader`): without them, a canvas cannot be read back and a frame cannot be imported as an external texture. Without a GPU, Chromium decodes no HEVC, which it decodes only in hardware, so there the tests leave out the HEVC fixtures, which macOS tests on its GPU. So CI runs the engine tests on all three; the benchmarks also run on each, for reading only. The checks that a browser can be made to fail have a test where they do: a page without cross-origin isolation, and WebGPU switched off.
 
 ## Fixtures
 
