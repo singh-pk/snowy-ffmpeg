@@ -178,6 +178,7 @@ jobs:
       - run: bun run build
       # --with-deps installs the libraries Chromium needs on Linux, and nothing elsewhere.
       - run: bunx playwright install --with-deps chromium
+      - run: bun xprobe.ts
       - run: bun run test
       # For reading only: shared runners are too noisy to fail on (packages/engine/bench).
       - run: bun run bench --runs 5 >> "$GITHUB_STEP_SUMMARY"
@@ -201,6 +202,7 @@ jobs:
           no-cache: true
       - run: bun install --frozen-lockfile
       - run: bunx playwright install --with-deps chromium
+      - run: bun xprobe.ts
       - run: bun run test
 
   # Unit tests in Chromium (packages/timeline/AGENTS.md).
@@ -222,6 +224,7 @@ jobs:
           no-cache: true
       - run: bun install --frozen-lockfile
       - run: bunx playwright install --with-deps chromium
+      - run: bun xprobe.ts
       - run: bun run test
 
   # The one check the main ruleset requires, so adding, renaming or skipping a job never
