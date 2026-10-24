@@ -1126,13 +1126,32 @@ export function createProject(initial?: Snapshot) {
     return { id, ...record, sequence: state.sequence, removed: state.removed, orphaned };
   }
 
-  /** A sequence's live storyline items in order, each with its start and duration. */
-  function storyline(sequence: ItemId) {
-    return [...storylineOf(sequence).items()].filter(({ id }) => items.get(id)?.removed === false);
+  const present = (id: ItemId) => items.get(id)?.removed === false;
+
+  /**
+   * A sequence's live storyline items in order, each with its start and duration; with `range`,
+   * only those that play in it or start at its end, found from the item at its start.
+   */
+  function storyline(sequence: ItemId, range?: Range) {
+    const line = storylineOf(sequence);
+    if (range === undefined) return [...line.items()].filter(({ id }) => present(id));
+    const found: Array<{ id: ItemId; start: number; duration: number }> = [];
+    const first = line.at(Math.max(range.from, 0));
+    let id = first?.id;
+    let from = first?.start ?? 0;
+
+    while (id !== undefined && from <= range.to) {
+      const duration = present(id) ? (items.get(id)?.record.duration ?? 0) : 0;
+      if (present(id)) found.push({ id, start: from, duration });
+      from += duration;
+      id = line.next(id);
+    }
+
+    return found;
   }
 
-  /** The lane of each shown connected clip of a role. */
-  function lanes(role: ItemId) {
+  /** Each shown connected clip of a role, with its start, duration and lane. */
+  function connected(role: ItemId) {
     const placed = [];
 
     for (const id of live(users, role)) {
@@ -1143,8 +1162,13 @@ export function createProject(initial?: Snapshot) {
       placed.push({ id, start: from, duration: record.duration, lane: record.lane });
     }
 
-    return assignLanes(placed);
+    const assigned = assignLanes(placed);
+    for (const each of placed) each.lane = assigned.get(each.id) ?? each.lane;
+    return placed;
   }
+
+  /** The lane of each shown connected clip of a role. */
+  const lanes = (role: ItemId) => new Map(connected(role).map(({ id, lane }) => [id, lane]));
 
   /** A clip's live effects in chain order, by position and then id, each with its id. */
   function chain(clip: ItemId) {
@@ -1239,6 +1263,9 @@ export function createProject(initial?: Snapshot) {
     start,
     storyline,
     lanes,
+    connected,
+    /** The time base a clip's source points are in: its stream's, or flicks'. */
+    timeBase: timeBaseOf,
     name: () => name,
     sequence: (id: ItemId) => sequences.get(id)?.record,
     role: (id: ItemId) => roles.get(id)?.record,

@@ -605,12 +605,14 @@ type Layer = {
 type Animated = Value | { keyframes: Array<{ at: number; value: Value; ease: Ease }> };   // at in microseconds
 ```
 
-- **A layer is its whole clip,** not the part in its segment: the source time at timeline time `t` is `in + (t − start) × speed`, converted to `timeBase`, so a layer that spans several segments reads its source the same way in each. A layer may start before its segment and before the range.
-- **Keyframes are at their times on the timeline,** worked out from their source points through the clip's in-point and speed, so the engine evaluates a parameter at a time without knowing the clip. A parameter without keyframes is its value.
+- **A layer is its whole clip,** not the part in its segment: the source time at timeline time `t` is `in + (t − start) × speed`, converted to `timeBase`, so a layer that spans several segments reads its source the same way in each, and is the same object in each. A layer may start before its segment and before the range. Source times are the stream's own timestamps, as FFmpeg reports them, so the engine seeks by them as they are.
+- **Keyframes are at their times on the timeline,** in time order, worked out from their source points through the clip's in-point and speed, so the engine evaluates a parameter at a time without knowing the clip. A parameter without keyframes is its value.
 - **Fades** are the times the fade in ends and the fade out starts.
-- Disabled clips and disabled effects play nothing, nor do gaps and markers. A compound clip's layer names its sequence, whose own plan the engine draws into it.
+- Disabled clips, clips of no length and disabled effects play nothing, nor do gaps and markers. A connected clip whose clip is removed plays where that clip was, as [Anchors](#anchors) says.
+- **A clip is a layer of its role's kind.** A compound clip in a video role is its sequence's picture, which the engine draws from that sequence's own plan; in an audio role, it is that sequence's mix. The plan carries the sequence's record, so the engine sizes the picture and the mix from it.
+- Transitions aren't in the plan: a cut plays as a hard cut.
 
-Segment times are microseconds, converted from flicks there and only there, rounded to the nearest, halves upwards. Source in-points stay in stream units, so the engine picks the exact frame. The plan also names the sources whose layers start where the range ends, so the engine can start their decoders before the cut.
+Segment times are microseconds, converted from flicks there and only there, rounded to the nearest, halves upwards. Source in-points stay in stream units, so the engine picks the exact frame. The plan also lists the layers that start where the range ends, so the engine can seek their sources and start their decoders before the cut.
 
 ## Calls and events
 

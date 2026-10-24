@@ -7,13 +7,14 @@
 // every keyframe at its time on the timeline. Times are microseconds from here on, converted from
 // flicks once each; source points stay in their stream's units.
 
-import type { ItemRecord, KeyframeRecord, Value } from "./document";
+import type { ItemRecord, KeyframeRecord, SequenceRecord, Value } from "./document";
 import type { ItemId } from "./ids";
 import type { Document } from "./project";
 import { leafOf } from "./project";
-import { FLICKS_PER_SECOND, flicksToMicros, sourceToFlicks, type Ratio } from "./time";
+import { flicksToMicros, sourceToFlicks, type Ratio } from "./time";
 
 type Clip = Extract<ItemRecord, { kind: "clip" }>;
+type Blend = NonNullable<Clip["video"]>["blend"];
 
 /** A keyframe at its time on the timeline, in microseconds. */
 type PlannedKeyframe = { at: number; value: Value; ease: KeyframeRecord["ease"] };
@@ -45,7 +46,7 @@ type Layer = {
 /** A video layer: a layer, drawn with its opacity, blend and transform. */
 type VideoLayer = Layer & {
   opacity: Animated;
-  blend: string;
+  blend: Blend;
   transform: { x: Animated; y: Animated; scaleX: Animated; scaleY: Animated; rotation: Animated };
 };
 
@@ -59,15 +60,28 @@ type AudioLayer = Layer & {
   bus: ItemId;
 };
 
-/** A part of the range in which the same layers play: video bottom to top, and audio. */
+/**
+ * A part of the range in which the same layers play: video bottom to top, and audio. A layer
+ * that plays on into the next segment is the same object there.
+ */
 type Segment = { from: number; to: number; video: VideoLayer[]; audio: AudioLayer[] };
 
-/** The plan of a range: its segments, and the sources whose layers start where it ends. */
-type Plan = { sequence: ItemId; segments: Segment[]; next: Layer["source"][] };
+/** The plan of a range: the sequence, its segments, and the layers that start where it ends. */
+type Plan = {
+  sequence: SequenceRecord & { id: ItemId };
+  segments: Segment[];
+  next: Array<VideoLayer | AudioLayer>;
+};
 
 // A clip as placed, with what orders it among the others: the storyline first, then each role in
 // order, then each lane from the lowest up.
-type Placed = { clip: Clip & { id: ItemId }; from: number; to: number; order: number[] };
+type Placed = {
+  clip: Clip & { id: ItemId };
+  from: number;
+  to: number;
+  order: number[];
+  video: boolean;
+};
 
 const byOrder = (a: Placed, b: Placed) => {
   for (const [i, value] of a.order.entries()) {
@@ -80,11 +94,16 @@ const byOrder = (a: Placed, b: Placed) => {
 
 /**
  * The render plan of `sequence` from `from` to `to`, in flicks, or undefined for a sequence the
- * document doesn't have. Disabled clips, gaps and markers play nothing.
+ * document doesn't have. Disabled clips, clips of no length, gaps and markers play nothing.
+ * Throws a RangeError for a range that ends before it starts.
  */
 export function plan(document: Document, sequence: ItemId, from: number, to: number) {
-  if (document.sequence(sequence) === undefined) return undefined;
-  const placed = placedClips(document, sequence);
+  if (to < from) throw new RangeError(`a range from ${from} to ${to}`);
+  const record = document.sequence(sequence);
+  if (record === undefined) return undefined;
+  // In compositing order, so a segment's layers keep that order as they come and go.
+  const placed = placedClips(document, sequence, from, to);
+  const layers = new Map(placed.map((each) => [each, layerOf(document, each)]));
   const cuts = new Set([from, to]);
 
   for (const each of placed) {
@@ -97,83 +116,90 @@ export function plan(document: Document, sequence: ItemId, from: number, to: num
 
   for (const [i, start] of bounds.slice(0, -1).entries()) {
     const end = bounds[i + 1] ?? to;
-    const playing = placed.filter((each) => each.from <= start && each.to >= end);
-    segments.push({
+    const segment: Segment = {
       from: flicksToMicros(start),
       to: flicksToMicros(end),
-      video: playing.filter((each) => isVideo(document, each)).map((each) => video(document, each)),
-      audio: playing
-        .filter((each) => !isVideo(document, each))
-        .map((each) => audio(document, each)),
-    });
+      video: [],
+      audio: [],
+    };
+
+    for (const [each, layer] of layers) {
+      if (each.from > start || each.to < end) continue;
+      if ("opacity" in layer) segment.video.push(layer);
+      else segment.audio.push(layer);
+    }
+
+    segments.push(segment);
   }
 
-  const next = placed
-    .filter((each) => each.from === to)
-    .map((each) => layer(document, each).source);
-  return { sequence, segments, next } satisfies Plan;
+  const next = placed.filter((each) => each.from === to).flatMap((each) => layers.get(each) ?? []);
+  return { sequence: { id: sequence, ...record }, segments, next } satisfies Plan;
 }
 
-const isVideo = (document: Document, { clip }: Placed) =>
-  document.role(clip.role)?.kind === "video";
-
-// Every enabled clip of a sequence with its place, in compositing order.
-function placedClips(document: Document, sequence: ItemId) {
+// Every enabled clip of a sequence that plays between `from` and `to`, or starts at `to`, with
+// its place, in compositing order.
+function placedClips(document: Document, sequence: ItemId, from: number, to: number) {
   const placed: Placed[] = [];
+  const roles = document.roles(sequence);
+  const kinds = new Map(roles.map((role) => [role.id, role.kind]));
 
-  for (const { id, start, duration } of document.storyline(sequence)) {
+  const take = (id: ItemId, start: number, order: number[]) => {
     const clip = document.item(id);
-    if (clip?.kind !== "clip" || !clip.enabled) continue;
-    placed.push({ clip, from: start, to: start + duration, order: [0] });
-  }
+    if (clip?.kind !== "clip" || !clip.enabled || clip.duration === 0) return;
+    const end = start + clip.duration;
+    if (end <= from || start > to) return;
+    placed.push({ clip, from: start, to: end, order, video: kinds.get(clip.role) === "video" });
+  };
 
-  for (const [index, role] of document.roles(sequence).entries()) {
-    for (const [id, lane] of document.lanes(role.id)) {
-      const clip = document.item(id);
-      const start = document.start(id);
-      if (clip?.kind !== "clip" || !clip.enabled || start === undefined) continue;
-      placed.push({ clip, from: start, to: start + clip.duration, order: [1, index, lane] });
+  for (const { id, start } of document.storyline(sequence, { from, to })) take(id, start, [0]);
+
+  for (const [index, role] of roles.entries()) {
+    for (const { id, start, lane } of document.connected(role.id)) {
+      take(id, start, [1, index, lane]);
     }
   }
 
   return placed.toSorted(byOrder);
 }
 
-function timeBaseOf(document: Document, clip: Clip): Ratio {
-  const { source } = clip;
-  if (!("asset" in source)) return [1, FLICKS_PER_SECOND];
-  const stream = document.asset(source.asset)?.streams.find((each) => each.index === source.stream);
-  return stream?.timeBase ?? [1, FLICKS_PER_SECOND];
-}
-
-// A parameter of `target` at `param`: its keyframes on the timeline if it has any, else `value`.
+// A parameter at `param`: its keyframes among `keyframes`, on the timeline in time order, if it
+// has any, else `value`. At a negative speed, source order is the reverse of time order.
 function animated(
   document: Document,
   { clip, from }: Placed,
-  target: ItemId,
+  keyframes: readonly KeyframeRecord[],
   param: string,
   value: Value,
 ): Animated {
-  const keyframes = document.keyframes(target).filter((each) => each.param === param);
-  if (keyframes.length === 0) return value;
-  const timeBase = timeBaseOf(document, clip);
-  return {
-    keyframes: keyframes.map(({ at, value: then, ease }) => ({
-      at: flicksToMicros(from + sourceToFlicks(at - clip.in, timeBase, clip.speed)),
-      value: then,
-      ease,
-    })),
-  };
+  const own = keyframes.filter((each) => each.param === param);
+  if (own.length === 0) return value;
+  const timeBase = document.timeBase(clip);
+  const planned = own.map(({ at, value: then, ease }) => ({
+    at: flicksToMicros(from + sourceToFlicks(at - clip.in, timeBase, clip.speed)),
+    value: then,
+    ease,
+  }));
+  return { keyframes: planned.toSorted((a, b) => a.at - b.at) };
 }
 
-function params(each: Placed, document: Document, target: ItemId, values: Record<string, Value>) {
+function paramsOf(
+  document: Document,
+  each: Placed,
+  target: ItemId,
+  values: Record<string, Value>,
+  prefix = "",
+) {
+  const keyframes = document.keyframes(target);
   const found: Record<string, Animated> = {};
-  for (const [name, value] of Object.entries(values))
-    found[name] = animated(document, each, target, name, value);
+
+  for (const [name, value] of Object.entries(values)) {
+    found[name] = animated(document, each, keyframes, `${prefix}${name}`, value);
+  }
+
   return found;
 }
 
-function layer(document: Document, each: Placed): Layer {
+function layerOf(document: Document, each: Placed): VideoLayer | AudioLayer {
   const { clip } = each;
   const { source } = clip;
   const effects = document
@@ -182,58 +208,47 @@ function layer(document: Document, each: Placed): Layer {
     .map((effect) => ({
       id: effect.id,
       kind: effect.kind,
-      params: params(each, document, effect.id, effect.params),
+      params: paramsOf(document, each, effect.id, effect.params),
     }));
   const planned: Layer["source"] =
     "generator" in source
       ? {
           generator: source.generator,
-          params: Object.fromEntries(
-            Object.entries(source.params).map(([name, value]) => [
-              name,
-              animated(document, each, clip.id, `source.params.${name}`, value),
-            ]),
-          ),
+          params: paramsOf(document, each, clip.id, source.params, "source.params."),
         }
       : source;
-  return {
+  const layer: Layer = {
     clip: clip.id,
     source: planned,
     in: clip.in,
-    timeBase: timeBaseOf(document, clip),
+    timeBase: document.timeBase(clip),
     start: flicksToMicros(each.from),
     speed: clip.speed,
     effects,
   };
-}
+  const keyframes = document.keyframes(clip.id);
+  const field = (path: string) =>
+    animated(document, each, keyframes, path, leafOf(clip, path) ?? 0);
 
-// A leaf of a clip's own fields, animated by its keyframes.
-function field(document: Document, each: Placed, path: string) {
-  return animated(document, each, each.clip.id, path, leafOf(each.clip, path) ?? 0);
-}
+  if (each.video) {
+    return Object.assign(layer, {
+      opacity: field("video.opacity"),
+      blend: clip.video?.blend ?? "normal",
+      transform: {
+        x: field("video.transform.x"),
+        y: field("video.transform.y"),
+        scaleX: field("video.transform.scaleX"),
+        scaleY: field("video.transform.scaleY"),
+        rotation: field("video.transform.rotation"),
+      },
+    });
+  }
 
-function video(document: Document, each: Placed): VideoLayer {
-  const leaf = (path: string) => field(document, each, `video.${path}`);
-  return Object.assign(layer(document, each), {
-    opacity: leaf("opacity"),
-    blend: String(leafOf(each.clip, "video.blend")),
-    transform: {
-      x: leaf("transform.x"),
-      y: leaf("transform.y"),
-      scaleX: leaf("transform.scaleX"),
-      scaleY: leaf("transform.scaleY"),
-      rotation: leaf("transform.rotation"),
-    },
-  });
-}
-
-function audio(document: Document, each: Placed): AudioLayer {
-  const fade = (path: string) => Number(leafOf(each.clip, path));
-  return Object.assign(layer(document, each), {
-    gainDb: field(document, each, "audio.gainDb"),
-    pan: field(document, each, "audio.pan"),
-    fadeIn: flicksToMicros(each.from + fade("audio.fadeIn")),
-    fadeOut: flicksToMicros(each.to - fade("audio.fadeOut")),
-    bus: each.clip.role,
+  return Object.assign(layer, {
+    gainDb: field("audio.gainDb"),
+    pan: field("audio.pan"),
+    fadeIn: flicksToMicros(each.from + (clip.audio?.fadeIn ?? 0)),
+    fadeOut: flicksToMicros(each.to - (clip.audio?.fadeOut ?? 0)),
+    bus: clip.role,
   });
 }
