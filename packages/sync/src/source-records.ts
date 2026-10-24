@@ -36,6 +36,10 @@ export type SourceRecordsOptions = {
 
 type Held<T> = { value: T; object: SealedObject };
 
+/** Whether an object's key names one of the source's records. */
+export const isSourceKey = (key: string) =>
+  key.startsWith("catalog@") || key.startsWith("control@") || key.startsWith("init/");
+
 // Reads a record whose object key names its kind.
 async function decoded(sessionKey: CryptoKey, key: string, bytes: Bytes): Promise<SourceRecord> {
   if (key.startsWith("catalog@")) {
@@ -149,9 +153,20 @@ export function createSourceRecords(options: SourceRecordsOptions) {
     );
   }
 
+  /**
+   * Whether this peer holds the whole state a joiner needs: a catalog, a control record, and the
+   * setup of every track in the catalog.
+   */
+  function complete() {
+    const { catalog, control } = held;
+    if (catalog === undefined || control === undefined) return false;
+    return catalog.value.tracks.every((track) => held.setups.has(track.id));
+  }
+
   return {
     receive,
     objects,
+    complete,
     catalog: () => held.catalog?.value,
     control: () => held.control?.value,
     setup: (track: number) => held.setups.get(track)?.value,

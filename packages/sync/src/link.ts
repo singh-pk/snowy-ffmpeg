@@ -7,9 +7,10 @@
 
 import type { ChatControl } from "./chat-requests";
 import type { Bytes, KeyId } from "./crypto";
+import type { StateControl } from "./state-requests";
 
-/** A control message: so far, the chat repair messages. */
-export type Message = ChatControl;
+/** A control message: the chat repair messages, and asking for the session's state on join. */
+export type Message = ChatControl | StateControl;
 
 /** What a link reports. A handler may return a promise; the link doesn't wait for it. */
 export type LinkEvents = {

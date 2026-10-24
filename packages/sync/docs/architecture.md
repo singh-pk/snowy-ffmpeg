@@ -681,7 +681,12 @@ Message text is rendered with `textContent` only.
 
 - **Joining:** a peer is online once its `peer/<PeerId>` namespace is announced on the relay. Peers learn of it through their namespace subscription.
 - **Leaving:** the namespace's withdrawal, or the link's `close` event, marks a peer offline. There are no heartbeats.
-- **Getting current state on join** (the relay holds none): the joiner asks for `catalog`, `control`, `init/*` and the forwarders' capability records from the source if it's online. Otherwise it asks the online peer with the lowest `SHA-256(peer ‖ "state")`, and the next one on `gone` or `close`. Every record is signed, so it can come from any peer.
+- **Getting current state on join** (the relay holds none): the joiner asks for `catalog`, `control`, `init/*` and the forwarders' capability records from the source if it's online. Otherwise it asks the online peer with the lowest `SHA-256(peer ‖ "state")`. Every record is signed, so it can come from any peer.
+  - It sends `{ type: "state-request", ask }` on `ctl`, where `ask` counts up with each request and the answer names it. A peer that holds the whole state (a catalog, a control record and the setup of every track in that catalog) delivers each record unchanged on `deliver`, with the capability records it holds, then answers `{ type: "state-sent", ask, count }`, where `count` counts the source's records only. A peer that doesn't answers `{ type: "state-gone", ask }`.
+  - The joiner asks the next peer on `state-gone`, on a record that doesn't check out, once `count` records have come and the state is still short, and when the asked peer's link closes. `ctl` and `deliver` are separate tracks, so `state-sent` may come before the records: the joiner counts them as they come.
+  - The joiner asks no more once it holds the whole state, from whatever path the records came.
+  - A peer that comes online during an ask is asked in its turn, and the source next. An ask that runs out of peers ends, and starts again when another peer comes online, asking again peers that failed before, since they may hold more by now.
+  - A peer may hand on a record older than the source's newest, which is still the session's own; the source's tracks bring the newer one.
 
 ## Edit sessions
 

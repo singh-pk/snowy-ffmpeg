@@ -16,7 +16,7 @@ Live sessions for [Snowy](https://github.com/singh-pk/snowy-media), over a state
 Every peer keeps its own copy of what it receives, so playback, chat and editing carry on through a dropped connection. Everything is end-to-end encrypted: the relay sees only track names and sizes.
 
 > [!NOTE]
-> In development and not yet published, with no public API yet. So far it has the signed and encrypted objects that sessions exchange (media chunks, the catalog, codec setups, control records and chat batches), the source's newest records as each peer holds them, and chat: ordering, edits, deletes and reactions, sending, and repairing missed messages from other peers. [docs/architecture.md](docs/architecture.md) is the design.
+> In development and not yet published, with no public API yet. So far it has the signed and encrypted objects that sessions exchange (media chunks, the catalog, codec setups, control records and chat batches), the source's newest records as each peer holds them and as a joiner asks for them, and chat: ordering, edits, deletes and reactions, sending, and repairing missed messages from other peers. [docs/architecture.md](docs/architecture.md) is the design.
 
 ## Requirements
 
