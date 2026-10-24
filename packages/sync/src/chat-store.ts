@@ -11,8 +11,8 @@
 // which could give a published seq to another message. The
 // store is this origin's own, so records are checked for shape, not signatures again.
 
-import { checkCheckpoint, checkMessage, isKeyId, type ChatMessage, type Checkpoint } from "./chat";
-import type { KeyId } from "./crypto";
+import { checkCheckpoint, checkMessage, type ChatMessage, type Checkpoint } from "./chat";
+import { isKeyId, type KeyId } from "./crypto";
 
 /** What the store holds of one author, in the order it was written. */
 export type ChatRecords = { messages: ChatMessage[]; checkpoints: Checkpoint[] };

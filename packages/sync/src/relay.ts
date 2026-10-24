@@ -28,6 +28,11 @@ export type RelayOptions = {
   /** This peer's id. */
   self: KeyId;
   /**
+   * What the relay admits this peer with: a token from `peerToken` or `sourceToken`
+   * (src/relay-auth.ts), made just before connecting.
+   */
+  token: string;
+  /**
    * The names of the tracks this peer publishes under `peer/<self>`. They exist before the peer
    * is announced, so a peer that subscribes on seeing it online finds every one.
    */
@@ -43,9 +48,11 @@ export type RelayEvents = {
   link(link: Link): unknown;
   /**
    * The connection closed, and with it every link. Links' `close` and peers' `unannounce` may
-   * come before or after it.
+   * come before or after it. `refused` is true if the relay refused the token: it admits a
+   * connection only after it is made, so a refusal ends one instead, and connecting again with
+   * the same grant fails again.
    */
-  close(): unknown;
+  close(refused: boolean): unknown;
 };
 
 /** A track this peer publishes: each object sent is a group of its own. */
@@ -257,16 +264,19 @@ function publisher(broadcast: Moq.Broadcast.Producer, name: string): Publisher {
   return { send, stop };
 }
 
-// The URL of the session's root on the relay, `snowy/<SessionId>`, under the relay's own path.
-function sessionUrl(relay: string, session: KeyId) {
+// The URL of the session's root on the relay, `snowy/<SessionId>`, under the relay's own path,
+// with the token the relay hands its auth server.
+function sessionUrl(relay: string, session: KeyId, token: string) {
   const url = new URL(relay);
   url.pathname = `${url.pathname.replace(/\/$/, "")}/snowy/${session}`;
+  url.searchParams.set("token", token);
   return url;
 }
 
 /**
  * Connects to the relay with this peer's tracks announced; `listen` then starts presence and
- * links. Rejects if the connection fails.
+ * links. Rejects if the connection fails; a token the relay refuses ends the connection with
+ * `close` instead.
  */
 export async function connectRelay(options: RelayOptions) {
   const { session, self } = options;
@@ -528,7 +538,7 @@ export async function connectRelay(options: RelayOptions) {
   async function connect() {
     try {
       return await Moq.Connection.connect({
-        url: sessionUrl(options.url, session),
+        url: sessionUrl(options.url, session, options.token),
         webtransport: { serverCertificateHashes: options.serverCertificateHashes ?? [] },
         websocket: { enabled: false },
         publish: local.consume(),
@@ -543,11 +553,13 @@ export async function connectRelay(options: RelayOptions) {
   const established = await connect();
 
   async function ended() {
-    await established.closed;
+    const cause = await established.closed;
     if (state.closed) return;
     state.closed = true;
     release();
-    events.emit("close");
+    const refused =
+      cause instanceof Moq.Error.Session && cause.code === Moq.SessionCode.Unauthorized;
+    events.emit("close", refused);
   }
 
   void ended();

@@ -52,7 +52,7 @@ Everything up to [Edit sessions](#edit-sessions) describes watch sessions. Edit 
 
 | Piece | Purpose | Requirement |
 | --- | --- | --- |
-| **Relay** | Fans out objects, carries signaling, and is the route for peers that can't connect directly | Speaks MoQ Transport over WebTransport, keeps no objects after forwarding them, and authorizes requests with tokens signed by the session key ([The relay](#the-relay)) |
+| **Relay** | Fans out objects, carries signaling, and is the route for peers that can't connect directly | Speaks MoQ Transport over WebTransport, keeps no objects after forwarding them, and authorizes connections with tokens signed by the session key, through an auth server that keeps no state ([Authorization](#authorization)) |
 | **STUN, two endpoints** | Lets peers learn their public address for WebRTC, and classify their NAT | Two endpoints on different IP addresses |
 | **Static hosting** | Serves the app | Sends `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` |
 
@@ -133,9 +133,13 @@ type JoinGrant = {
 };
 ```
 
-A peer's relay token is the grant plus a request the peer signs with its own key (`{ peer, session, issuedAt }`). The relay checks both signatures and allows that peer to publish only under its own namespaces ([The relay](#the-relay)).
+The grant's signature covers `snowy join v1\n` followed by the JSON `{ session, rights }`.
 
-The source's token is a request signed by both the session key and the source's peer key. It grants `source/*` plus everything a peer may publish under the source's own `PeerId`.
+A peer's relay token is the grant plus a request the peer signs with its own key: the JSON `{ peer, session, issuedAt }`, with `issuedAt` in milliseconds, after `snowy relay v1\n`. The relay's auth server checks both signatures and lets that peer publish only under its own namespaces ([Authorization](#authorization)).
+
+The source's token is the same request, signed by the source's peer key as above and by the session key after `snowy source v1\n`. It grants `source` plus everything a peer may publish under the source's own `PeerId`.
+
+A token is the unpadded base64url of its JSON (`{ kind: "peer", grant, request, sig }` or `{ kind: "source", request, sig, sessionSig }`), sent as the `token` query parameter of the URL the peer dials. It admits a connection for 5 minutes after `issuedAt`, so a peer makes one each time it connects. Only the request ages: the join grant inside never expires, as in the invite link.
 
 ## Roles
 
@@ -842,13 +846,16 @@ The transports' keepalives and idle timeouts (QUIC's idle timeout, WebRTC's conn
 
 | Who | May publish | May subscribe |
 | --- | --- | --- |
-| Source `S` (token signed by the session key and `S`'s peer key) | `source/*`, plus everything peer `S` may publish | Everything |
-| Peer `P` (join grant plus a request signed by `P`) | `peer/P/*`, `inbox/*/P/*` | `source/*`, `peer/*/caps`, `peer/*/chat`, `peer/*/have`, `peer/P/probe`, `inbox/P/*` |
+| Source `S` (token signed by the session key and `S`'s peer key) | `source`, plus everything peer `S` may publish | Everything |
+| Peer `P` (join grant plus a request signed by `P`) | `peer/P`, `inbox/*/P` | `source`, `peer/*`, `inbox/P/*` |
 | Edit session: owner `O` (token signed by the project key and `O`'s peer key) | `source/*`, plus everything peer `O` may publish | Everything |
 | Edit session: peer `P` with `view` | `peer/P/*` except `batches` and `history/*`, `inbox/*/P/*` | `source/*`, `asset/*`, `peer/*/chat`, `peer/*/grants`, `peer/*/batches`, `peer/*/history/*`, `peer/*/presence`, `peer/*/control`, `inbox/P/*` |
 | Edit session: peer `P` with `propose` or `edit` | The same, plus `peer/P/batches`, `peer/P/history/*` and, with `edit`, `asset/P/*` | The same |
 
-The relay checks the signatures once per connection.
+- **The relay authorizes broadcasts**, the paths in the table, and every track in a broadcast with it, so a peer may subscribe to any track of another peer's broadcast, `have` and `probe` included. Neither is secret.
+- **moq-relay asks an auth server** about each connection (`--auth-url`), posting the path and query it was dialed with; the server answers with the patterns the table gives, or refuses. The server is `authServer` in `src/relay-auth.ts`, a `fetch` handler on Web Crypto that keeps nothing between requests, run beside the relay (`Bun.serve({ fetch: authServer })`, on a loopback address, since moq-relay asks a plain `http://` server only there).
+- **A new connection's token must be fresh**: made at most 5 minutes before, or 1 minute after, by the server's clock. A connection already admitted keeps its grant until it closes.
+- **moq-relay admits a connection only after making it**, so a refused token doesn't fail the connect. The relay ends the connection, and the connection's `close` says it was refused.
 
 ## Security
 
@@ -858,8 +865,9 @@ The relay checks the signatures once per connection.
 | A peer forging media | Chunk headers are signed by the session key, and the body hash is checked before storing |
 | A peer forging capability records | Records are signed by the peer key |
 | A peer forging chat while repairing gaps | Author hash chains plus signed checkpoints |
-| A peer posting as someone else | Relay authorization: only `P` can publish `peer/P/*` |
-| A viewer controlling playback | Only the source can publish `source/*`, and control records are signed |
+| A peer posting as someone else | Relay authorization: only `P` can publish `peer/P` |
+| A relay token read from a log or by the relay | Replayed, it admits a connection only within 5 minutes of being made, as the peer that signed it, in its own session. The join grant inside it never expires, so whoever reads one can join with keys of their own for the session's life, as with a leaked invite but without the session secret: they see track names and sizes, and can write to peers' inboxes, but can't read or forge content. A connection once admitted is never revoked. |
+| A viewer controlling playback | Only the source can publish `source`, and control records are signed |
 | Script injection through chat | `textContent` only |
 | A peer forging an edit or another's asset | Timeline batches are signed by their author and checked against the author's grant; asset chunk headers are signed by the source named in the namespace |
 | A peer forging history | Entries are signed by the sequencer; the consumer accepts them only from the sequencer the signed project record and the latest term name |
@@ -931,6 +939,7 @@ The sync package needs these engine capabilities through public exports:
 | AES-GCM nonce | 96 random bits per encryption |
 | HLC layout | 16 hex digits: 48-bit wall ms, then 16-bit counter |
 | Received HLC ignored when ahead of the wall clock by | More than 60 s |
+| Relay token: admits for / may be ahead of the auth server's clock by | 5 min / 1 min |
 
 ## Limits
 
@@ -949,5 +958,5 @@ The sync package needs these engine capabilities through public exports:
 
 - **Unit tests** (`test/*.unit.ts`, `bun run test`) run in Chromium, each file in a module worker of its own page (`tooling/run-unit.ts`), as every package's tests do: never in Bun, so Web Crypto, `DataView` and base64 are tested in the browser that ships them. The worker is a dedicated one, so the chat store's OPFS sync access handles are tested there too, each test in a session directory of its own. Peers in a test are joined by links in memory (`test/support/memory-link.ts`), which carry messages as JSON, as a transport does. They run in CI's `sync test` job on every change to the package.
 - **Browser tests** (`test/*.test.ts` other than `unit.test.ts`) drive a page with Playwright, as the engine's do, for the modules that need one: IndexedDB, File System Access, WebTransport, WebRTC, and the engine itself.
-- **The relay tests** (`test/relay.test.ts`) run peers in workers of Chromium pages against a real relay: moq-dev's moq-relay, pinned by digest and started in Docker for each test (`test/support/relay.ts`), so one that fails can't fail the next. Its certificate is made for each run and trusted by its hash, so none is kept. On Colima, which doesn't forward UDP ports, the relay is reached at the VM's address: start Colima with `colima start --network-address`.
+- **The relay tests** (`test/relay.test.ts`) run peers in workers of Chromium pages against a real relay: moq-dev's moq-relay, pinned by digest and started in Docker for each test (`test/support/relay.ts`), so one that fails can't fail the next. Its auth server is `src/relay-auth.ts`'s, served by Bun in a container on the relay's network (`test/support/auth-server.ts`); the unit tests check the same code in Chromium. Its certificate is made for each run and trusted by its hash, so none is kept. On Colima, which doesn't forward UDP ports, the relay is reached at the VM's address: start Colima with `colima start --network-address`.
 - **The test relay keeps objects** for a while after forwarding them, which the design's relay doesn't. No test relies on it.

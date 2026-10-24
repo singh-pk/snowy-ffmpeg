@@ -9,15 +9,33 @@
 import { openChat } from "../../src/chat-session";
 import { contentKey, generateKeyPair, keyId, type Bytes, type KeyId } from "../../src/crypto";
 import type { Link } from "../../src/link";
-import { connectRelay, frame, RelayRequestError, unframe } from "../../src/relay";
+import {
+  connectRelay,
+  frame,
+  RelayRequestError,
+  unframe,
+  type RelayOptions,
+} from "../../src/relay";
+import { joinGrant, peerToken, type JoinGrant } from "../../src/relay-auth";
 
 export type RelayConfig = { url: string; hash: string };
 export type Scenario = keyof typeof scenarios;
 
 type Relay = Awaited<ReturnType<typeof connectRelay>>;
 
-const randomId = () =>
-  crypto.getRandomValues(new Uint8Array(32)).toBase64({ alphabet: "base64url", omitPadding: true });
+// A new session, by the join grant its key signs.
+async function newSession() {
+  const key = await generateKeyPair();
+  return joinGrant(key);
+}
+
+// Connects to the relay under test.
+const dial = (config: RelayConfig, options: Omit<RelayOptions, "url">) =>
+  connectRelay({
+    url: config.url,
+    serverCertificateHashes: [{ algorithm: "sha-256", value: Uint8Array.fromBase64(config.hash) }],
+    ...options,
+  });
 
 // Checks that resolve once they hold, looked at again on each `changed()`.
 function watch() {
@@ -43,26 +61,20 @@ function watch() {
 
 async function peer(
   config: RelayConfig,
-  session: KeyId,
+  grant: JoinGrant,
   tracks: string[] = [],
   known: Promise<CryptoKeyPair> = generateKeyPair(),
 ) {
   const pair = await known;
-  const id = await keyId(pair.publicKey);
-  const relay = await connectRelay({
-    url: config.url,
-    serverCertificateHashes: [{ algorithm: "sha-256", value: Uint8Array.fromBase64(config.hash) }],
-    session,
-    self: id,
-    tracks,
-  });
+  const [id, token] = await Promise.all([keyId(pair.publicKey), peerToken(grant, pair)]);
+  const relay = await dial(config, { session: grant.session, self: id, token, tracks });
   return { pair, id, relay, ...watch() };
 }
 
 // Presence: each peer sees the other come online, and go when it leaves.
 async function presence(config: RelayConfig) {
-  const session = randomId();
-  const alice = await peer(config, session);
+  const grant = await newSession();
+  const alice = await peer(config, grant);
   const seen: string[] = [];
   alice.relay.on("announce", () => void seen.push("announce"));
   alice.relay.on("unannounce", () => void seen.push("unannounce"));
@@ -70,7 +82,7 @@ async function presence(config: RelayConfig) {
   alice.relay.on("unannounce", alice.changed);
   alice.relay.listen();
 
-  const bob = await peer(config, session);
+  const bob = await peer(config, grant);
   const bobSaw: KeyId[] = [];
 
   bob.relay.on("announce", (other) => {
@@ -89,8 +101,8 @@ async function presence(config: RelayConfig) {
 // Links: one opens between two online peers, carries a message each way and an object, and
 // closes when one of them leaves.
 async function links(config: RelayConfig) {
-  const session = randomId();
-  const [alice, bob] = await Promise.all([peer(config, session), peer(config, session)]);
+  const grant = await newSession();
+  const [alice, bob] = await Promise.all([peer(config, grant), peer(config, grant)]);
   const heard: unknown[] = [];
   const objects: Array<{ key: string; text: string }> = [];
   const opened: Record<string, Link> = {};
@@ -138,8 +150,8 @@ async function links(config: RelayConfig) {
 // Rejoining: a peer that leaves and comes back with the same key opens a new link with a peer
 // that stayed, which carries messages as the first did.
 async function rejoin(config: RelayConfig) {
-  const session = randomId();
-  const alice = await peer(config, session);
+  const grant = await newSession();
+  const alice = await peer(config, grant);
   const seen: Link[] = [];
   const heard: unknown[] = [];
   const closed = { count: 0 };
@@ -154,13 +166,13 @@ async function rejoin(config: RelayConfig) {
   });
 
   alice.relay.listen();
-  const first = await peer(config, session);
+  const first = await peer(config, grant);
   first.relay.listen();
   await alice.until(() => seen.length === 1);
   await first.relay.close();
   await alice.until(() => closed.count === 1);
 
-  const again = await peer(config, session, [], Promise.resolve(first.pair));
+  const again = await peer(config, grant, [], Promise.resolve(first.pair));
   const fromAlice: unknown[] = [];
 
   again.relay.on("link", (link) => {
@@ -181,8 +193,8 @@ async function rejoin(config: RelayConfig) {
 }
 
 // A peer's chat over the relay: its track carries what it writes, and its links repairs.
-async function chatter(config: RelayConfig, session: KeyId, content: CryptoKey) {
-  const member = await peer(config, session, ["chat"]);
+async function chatter(config: RelayConfig, grant: JoinGrant, content: CryptoKey) {
+  const member = await peer(config, grant, ["chat"]);
   const root = await navigator.storage.getDirectory();
   const dir = await root.getDirectoryHandle(`relay-${crypto.randomUUID()}`, { create: true });
   const track = member.relay.track("chat");
@@ -228,11 +240,11 @@ async function chatter(config: RelayConfig, session: KeyId, content: CryptoKey) 
 // Chat: what one peer writes reaches the others through its track, and a peer that joins late
 // catches up through a link from one version vector.
 async function chatting(config: RelayConfig) {
-  const session = randomId();
-  const content = await contentKey(crypto.getRandomValues(new Uint8Array(32)), session);
+  const grant = await newSession();
+  const content = await contentKey(crypto.getRandomValues(new Uint8Array(32)), grant.session);
   const [alice, bob] = await Promise.all([
-    chatter(config, session, content),
-    chatter(config, session, content),
+    chatter(config, grant, content),
+    chatter(config, grant, content),
   ]);
   const both = (m: typeof alice) =>
     m.until(() => m.ready.links === 1 && m.ready.subscriptions === 1);
@@ -242,7 +254,7 @@ async function chatting(config: RelayConfig) {
   await alice.say("two");
   await bob.until(() => bob.texts().length === 2);
 
-  const carol = await chatter(config, session, content);
+  const carol = await chatter(config, grant, content);
   await carol.until(() => carol.ready.links === 2 && carol.ready.subscriptions === 2);
   await carol.chat.reconnected();
   await carol.until(() => carol.texts().length === 2);
@@ -258,7 +270,8 @@ async function chatting(config: RelayConfig) {
 
 // Refusal: the relay refuses a subscription to a track nobody publishes.
 async function refused(config: RelayConfig) {
-  const alice = await peer(config, randomId());
+  const grant = await newSession();
+  const alice = await peer(config, grant);
   const other = await generateKeyPair();
   const nobody = await keyId(other.publicKey);
 
@@ -272,7 +285,92 @@ async function refused(config: RelayConfig) {
   }
 }
 
-const scenarios = { presence, links, rejoin, chat: chatting, refused };
+// Whether the relay refuses a token, by ending the connection once it has asked the auth server.
+async function refusesToken(config: RelayConfig, options: Omit<RelayOptions, "url">) {
+  const relay = await dial(config, options);
+  const { promise, resolve } = Promise.withResolvers<boolean>();
+  relay.on("close", resolve);
+  return promise;
+}
+
+// Admission: the relay admits a peer whose token is for the session it dials, and refuses one
+// for another session, or under a grant the session key didn't sign.
+async function admission(config: RelayConfig) {
+  const [grant, other, pair] = await Promise.all([newSession(), newSession(), generateKeyPair()]);
+  const [self, elsewhere, forged] = await Promise.all([
+    keyId(pair.publicKey),
+    peerToken(other, pair),
+    peerToken({ ...other, session: grant.session }, pair),
+  ]);
+  const session = grant.session;
+  const outcomes = await Promise.all(
+    [elsewhere, forged].map((token) => refusesToken(config, { session, self, token, tracks: [] })),
+  );
+
+  const bob = await peer(config, grant);
+  const online: KeyId[] = [];
+
+  bob.relay.on("announce", (id) => {
+    online.push(id);
+    bob.changed();
+  });
+
+  bob.relay.listen();
+  const alice = await peer(config, grant);
+  await bob.until(() => online.includes(alice.id));
+  await Promise.all([alice.relay.close(), bob.relay.close()]);
+  return { admitted: online.includes(alice.id), elsewhere: outcomes[0], forged: outcomes[1] };
+}
+
+// An impostor: a peer the relay admits can't announce itself as another peer, so nobody sees
+// that one online or can subscribe to its tracks.
+async function impostor(config: RelayConfig) {
+  const grant = await newSession();
+  const [victim, mallory] = await Promise.all([generateKeyPair(), generateKeyPair()]);
+  const [victimId, token] = await Promise.all([keyId(victim.publicKey), peerToken(grant, mallory)]);
+  const bob = await peer(config, grant);
+  const online: KeyId[] = [];
+
+  bob.relay.on("announce", (other) => {
+    online.push(other);
+    bob.changed();
+  });
+
+  bob.relay.listen();
+  const fake = await dial(config, {
+    session: grant.session,
+    self: victimId,
+    token,
+    tracks: ["chat"],
+  });
+  // The relay admits a connection only after making it. Once the impostor sees Bob it has been
+  // admitted, with whatever it announced; Carol connects after that, so once Bob sees her, he
+  // would have seen the impostor too.
+  const fakeSaw = { bob: false, ...watch() };
+
+  fake.on("announce", (other) => {
+    fakeSaw.bob ||= other === bob.id;
+    fakeSaw.changed();
+  });
+
+  fake.listen();
+  await fakeSaw.until(() => fakeSaw.bob);
+  const carol = await peer(config, grant);
+  await bob.until(() => online.includes(carol.id));
+  const subscription = { refused: false };
+
+  try {
+    const cancel = await bob.relay.subscribe(victimId, "chat", () => undefined);
+    cancel();
+  } catch (error) {
+    subscription.refused = error instanceof RelayRequestError;
+  }
+
+  await Promise.all([fake, bob.relay, carol.relay].map((relay) => relay.close()));
+  return { sawImpostor: online.includes(victimId), subscribeRefused: subscription.refused };
+}
+
+const scenarios = { presence, links, rejoin, chat: chatting, refused, admission, impostor };
 
 async function run({ scenario, config }: { scenario: Scenario; config: RelayConfig }) {
   try {

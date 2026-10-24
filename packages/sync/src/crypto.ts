@@ -9,6 +9,8 @@
 
 const NONCE = 12;
 const KEY = 32;
+// An Ed25519 signature, as unpadded base64url.
+const SIG = /^[A-Za-z0-9_-]{86}$/;
 const encoder = new TextEncoder();
 
 /** Bytes WebCrypto accepts: never a view of a SharedArrayBuffer. */
@@ -33,6 +35,32 @@ export function keyBytes(id: KeyId): Bytes {
   const bytes = new Uint8Array(Uint8Array.fromBase64(id, { alphabet: "base64url" }));
   if (bytes.byteLength !== KEY) throw new RangeError(`not a key id: ${id}`);
   return bytes;
+}
+
+/**
+ * Whether a value is a key id in its one spelling: base64url can spell some keys two ways, which
+ * would give one author two logs.
+ */
+export function isKeyId(value: unknown): value is KeyId {
+  if (typeof value !== "string") return false;
+
+  try {
+    return keyBytes(value).toBase64({ alphabet: "base64url", omitPadding: true }) === value;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The bytes of a signature in its one spelling, or undefined: like a key id, base64url can spell
+ * some signatures more than one way.
+ */
+export function sigBytes(sig: unknown) {
+  if (typeof sig !== "string" || !SIG.test(sig)) return undefined;
+
+  const bytes = new Uint8Array(Uint8Array.fromBase64(sig, { alphabet: "base64url" }));
+  const canonical = bytes.toBase64({ alphabet: "base64url", omitPadding: true }) === sig;
+  return canonical ? bytes : undefined;
 }
 
 /** The public key a key id names, for verifying. */
