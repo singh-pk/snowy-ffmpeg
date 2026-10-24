@@ -44,8 +44,8 @@ export function setUp() {
         tail: "I".repeat(43),
         name: "a.mp4",
         streams: [
-          { index: 0, kind: "video", timeBase: [1, 24_000], start: 0, duration: 60 * SECOND },
-          { index: 1, kind: "audio", timeBase: [1, 48_000], start: 0, duration: 60 * SECOND },
+          { index: 0, kind: "video", timeBase: [1, 24_000], start: 0, duration: 60 * 24_000 },
+          { index: 1, kind: "audio", timeBase: [1, 48_000], start: 0, duration: 60 * 48_000 },
         ],
       },
     },

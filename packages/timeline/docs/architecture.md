@@ -242,7 +242,7 @@ type Keyframe = {
 
 ### Transitions
 
-A transition is anchored to an edit point, not placed in the storyline's order: `{ kind: "transition", cut: ItemId, duration, effect, params }`, where `cut` is the storyline item whose end is the cut. It counts nothing in the storyline's length. It is centred on the cut and plays from the media past each side's edit, which must be there when it is made. If a later edit takes that media away, it shortens to what is left; if its item is removed, it isn't shown until the item is restored.
+A transition is anchored to an edit point, not placed in the storyline's order: `{ kind: "transition", cut: ItemId, duration, effect, params }`, where `cut` is the storyline item whose end is the cut. It counts nothing in the storyline's length. It is split in whole frames on either side of the cut, the odd frame after it, and plays from the media past each side's edit, which must be there when it is made. Each half shortens on its own to the media its side has, so a later edit that takes media away can leave it off centre; if its item is removed, it isn't shown until the item is restored.
 
 ## Layout
 
@@ -587,7 +587,7 @@ The project lives in a folder the user picks (`showDirectoryPicker`, read and wr
 | `history(branch, from, to)` | Entries with author, label, skipped operations and concurrency marks |
 | `plan(sequence, from, to)` | The render plan |
 
-**The render plan** is what `@snowy-media/engine` plays and exports. It cuts the range into segments in which the set of active layers doesn't change, and for each segment lists:
+**The render plan** is what `@snowy-media/engine` plays and exports. It cuts the range into segments in which the set of active layers and transitions doesn't change, and for each segment lists:
 
 - **video layers**, bottom to top in compositing order ([Layout](#layout)): the source, the in-point in stream units and the speed, the effect chain, transform, opacity and blend;
 - **audio layers**: the source, the in-point and speed, the effect chain, gain and pan, fades, and the bus of the clip's role.
@@ -599,6 +599,7 @@ type Layer = {
   in: number;                 // the clip's in-point, in timeBase units
   timeBase: [number, number]; // the stream's; [1, 705600000] for a generator or a sequence
   start: number;              // where the clip starts on the timeline, in microseconds
+  end: number;                // and where it ends; a transition plays it past start or end
   speed: [number, number];
   effects: Array<{ id: ItemId; kind: string; params: Record<string, Animated> }>;
 };
@@ -607,10 +608,10 @@ type Animated = Value | { keyframes: Array<{ at: number; value: Value; ease: Eas
 
 - **A layer is its whole clip,** not the part in its segment: the source time at timeline time `t` is `in + (t − start) × speed`, converted to `timeBase`, so a layer that spans several segments reads its source the same way in each, and is the same object in each. A layer may start before its segment and before the range. Source times are the stream's own timestamps, as FFmpeg reports them, so the engine seeks by them as they are.
 - **Keyframes are at their times on the timeline,** in time order, worked out from their source points through the clip's in-point and speed, so the engine evaluates a parameter at a time without knowing the clip. A parameter without keyframes is its value.
-- **Fades** are the times the fade in ends and the fade out starts.
+- **Fades** are the times the fade in ends and the fade out starts, and shape the clip between its `start` and `end`; past them, over a transition, the transition's effect shapes it.
 - Disabled clips, clips of no length and disabled effects play nothing, nor do gaps and markers. A connected clip whose clip is removed plays where that clip was, as [Anchors](#anchors) says.
 - **A clip is a layer of its role's kind.** A compound clip in a video role is its sequence's picture, which the engine draws from that sequence's own plan; in an audio role, it is that sequence's mix. The plan carries the sequence's record, so the engine sizes the picture and the mix from it.
-- Transitions aren't in the plan: a cut plays as a hard cut.
+- **A transition** plays in the segments over its cut, which list it with its effect, its parameters, its times and the clips on each side, `out` before the cut and `in` after it. Both clips are layers there: the one after the cut plays early, from its media before its start, and the one before plays on, from its media past its end; a side that is a gap or a disabled clip has none. The engine draws the two through the transition's effect. Each half of a transition shortens to the media its side has, in whole frames, and to half the item next to the cut, so two transitions on one item never meet. A transition with no clip on either side plays nothing. Of two transitions on one cut, made at once, the first by id plays.
 
 Segment times are microseconds, converted from flicks there and only there, rounded to the nearest, halves upwards. Source in-points stay in stream units, so the engine picks the exact frame. The plan also lists the layers that start where the range ends, so the engine can seek their sources and start their decoders before the cut.
 

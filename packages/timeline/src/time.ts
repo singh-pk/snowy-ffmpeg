@@ -79,6 +79,19 @@ export function sourceToFlicks(delta: number, timeBase: Ratio, [num, den]: Ratio
 }
 
 /**
+ * How long a clip plays `units` of its stream's `timeBase` at `speed`, in flicks rounded down,
+ * so that it never plays more than the stream has: `units / |speed|`.
+ */
+export function sourceToFlicksDown(units: number, [tbNum, tbDen]: Ratio, [num, den]: Ratio) {
+  const speed = integer(num, "speed");
+  if (speed === 0n) throw new RangeError("speed is zero");
+  const n =
+    integer(units, "units") * positive(tbNum, "time base") * FLICKS * positive(den, "speed");
+  const d = positive(tbDen, "time base") * (speed < 0n ? -speed : speed);
+  return safe(floorDiv(n, d));
+}
+
+/**
  * How many units of its stream's `timeBase` a clip plays at `speed` in `flicks`: `flicks × speed`,
  * converted once; the inverse of `sourceToFlicks`, up to rounding.
  */

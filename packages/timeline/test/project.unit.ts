@@ -469,6 +469,10 @@ test("a transition sits on its cut and needs a storyline item", () => {
   const result = apply(transition(id(2, 0)), transition(id(2, 2)));
   expect(result.skipped.map(({ index, reason }) => [index, reason])).toEqual([[1, "structural"]]);
   expect(project.start(id(result.seq, 0))).toBe(SECOND - FRAME);
+  // An odd frame goes after the cut.
+  const odd = apply({ op: "item.set", id: id(result.seq, 0), path: "duration", value: 3 * FRAME });
+  expect(odd.skipped).toEqual([]);
+  expect(project.start(id(result.seq, 0))).toBe(SECOND - FRAME);
 });
 
 test("a storyline in a range lists what plays in it or starts at its end, as the whole list does", () => {
@@ -487,4 +491,12 @@ test("a storyline in a range lists what plays in it or starts at its end, as the
   ] as const) {
     expect(project.storyline(sequence, { from, to })).toEqual(within(from, to));
   }
+});
+
+test("the item before a storyline item passes over removed ones", () => {
+  const { project, apply } = setUp();
+  apply(clip({ anchor: at("a0") }), clip({ anchor: at("a1") }), clip({ anchor: at("a2") }));
+  apply({ op: "item.remove", id: id(2, 1) });
+  expect(project.itemBefore(id(2, 2))).toEqual({ id: id(2, 0), start: 0, duration: SECOND });
+  expect(project.itemBefore(id(2, 0))).toBe(undefined);
 });
