@@ -114,7 +114,8 @@ export type FromMedia =
 // The render worker's decoders in the video decode worker (src/video.worker.ts), each by its
 // `id`: one opens for a play's video stream that FFmpeg's `module` decodes, from the
 // stream's exported codec parameters, then takes the stream's packets in decoding order
-// (timestamps in its time base), a flush once the stream ends, and a close.
+// (timestamps in its time base), a flush once the stream ends, and a close. A frame it sent
+// goes back, by its `module`, once it is uploaded or dropped, whether its decoder is open or not.
 export type ToVideo =
   | {
       type: "open";
@@ -133,11 +134,31 @@ export type ToVideo =
       flags: number;
     }
   | { type: "flush"; id: number }
-  | { type: "close"; id: number };
+  | { type: "close"; id: number }
+  | { type: "release"; module: "video" | "video-ext"; frame: number; packed: boolean };
 
-// Each decoded frame, transferred; `decoded` once a packet or the flush is done; and a
-// decoder's first error, after which it decodes nothing.
+/**
+ * A frame FFmpeg decoded, left where it is in the shared memory of the module that decoded it
+ * until it goes back: its AVFrame (`frame`), or the buffer a frame stored bottom row first is
+ * packed into (`packed`); where each of its planes starts in the memory and its stride; and the
+ * bytes it holds.
+ */
+export interface HeldFrame {
+  frame: number;
+  packed: boolean;
+  format: VideoPixelFormat;
+  codedWidth: number;
+  codedHeight: number;
+  displayWidth: number;
+  timestamp: number;
+  layout: PlaneLayout[];
+  size: number;
+}
+
+// A decoder's module's memory, once it opens; each decoded frame; `decoded` once a packet or
+// the flush is done; and a decoder's first error, after which it decodes nothing.
 export type FromVideo =
-  | { type: "frame"; id: number; frame: VideoFrame }
+  | { type: "memory"; id: number; memory: WebAssembly.Memory }
+  | { type: "frame"; id: number; module: "video" | "video-ext"; frame: HeldFrame }
   | { type: "decoded"; id: number; flushed: boolean }
   | { type: "error"; id: number; message: string };

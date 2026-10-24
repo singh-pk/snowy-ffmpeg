@@ -45,8 +45,9 @@ test("demuxes every fixture as ffprobe does", async () => {
           const res = await fetch(`/test/fixtures/${n}`);
           const blob = await res.blob();
           await media.request({ type: "open", file: new File([blob], n) });
-          // 64 KiB: far smaller than any fixture, so records wrap and the pump waits.
-          const ring = support.createRing(1 << 16);
+          // 256 KiB: room for an uncompressed frame, and smaller than the larger fixtures, so
+          // records wrap and the pump waits.
+          const ring = support.createRing(1 << 18);
           const hashed = support.hashRing(ring, dts);
           await media.request({ type: "demux", ring, streams, from: 0 });
           all[n] = await hashed;

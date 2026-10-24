@@ -96,6 +96,7 @@ const fixtures: Record<
     audioSeconds?: number;
     twoPass?: boolean;
     scale?: number;
+    bottomUp?: boolean;
   }
 > = {
   "h264-aac.mp4": { seconds: 3, args: [...H264, ...AAC] },
@@ -165,8 +166,8 @@ const fixtures: Record<
     ],
   },
   // Codecs WebCodecs does not decode, which the FFmpeg modules do (src/video.worker.ts):
-  // MPEG-2 and MPEG-4 Part 2 with B-frames, 10-bit 4:2:2 ProRes and 4:4:4 FFV1, and QuickTime
-  // RLE, which is RGB and in video-ext.
+  // MPEG-2 and MPEG-4 Part 2 with B-frames, 10-bit 4:2:2 ProRes and 4:4:4 FFV1, QuickTime RLE,
+  // which is RGB and in video-ext, and uncompressed RGB.
   "mpeg2-aac.mov": { seconds: 3, args: ["-c:v", "mpeg2video", "-bf", "2", ...GOP, ...AAC] },
   "mpeg4-aac.mkv": { seconds: 3, args: ["-c:v", "mpeg4", "-bf", "2", ...GOP, ...AAC] },
   "prores-aac.mov": {
@@ -175,6 +176,14 @@ const fixtures: Record<
   },
   "ffv1-aac.mkv": { seconds: 1, args: ["-c:v", "ffv1", "-pix_fmt", "yuv444p10le", ...AAC] },
   "qtrle-aac.mov": { seconds: 1, args: ["-c:v", "qtrle", "-pix_fmt", "rgb24", ...AAC] },
+  // Uncompressed BGRA stored bottom row first, as Windows writes it, which the decoder gives as
+  // is, with a negative stride; at 5 frames a second, to keep it small.
+  "rawvideo-pcm.avi": {
+    seconds: 1,
+    fps: 5,
+    args: ["-vf", "vflip", "-c:v", "rawvideo", "-pix_fmt", "bgra", "-c:a", "pcm_s16le"],
+    bottomUp: true,
+  },
   // HDR10: 10-bit BT.2020 PQ, which VP9's bitstream does not state and WebM does.
   "hdr-vp9-opus.webm": {
     seconds: 1,
@@ -332,6 +341,19 @@ async function encode(file: string, inputs: string[], args: string[], twoPass = 
   }
 }
 
+// Makes the AVI `file`, its video encoded upside down, store it bottom row first: FFmpeg writes
+// its height negative, top row first, and a positive one turns it the right way up.
+async function bottomUp(file: string) {
+  const bytes = await Bun.file(file).bytes();
+  const at = Buffer.from(bytes.buffer).indexOf("strf");
+  const view = new DataView(bytes.buffer);
+  // The first stream's, a BITMAPINFOHEADER of 40 bytes after the chunk's id and size.
+  if (at < 0 || view.getUint32(at + 8, true) !== 40) throw new Error(`${file}: no video format`);
+  // After its biSize and biWidth, biHeight.
+  view.setInt32(at + 16, Math.abs(view.getInt32(at + 16, true)), true);
+  await Bun.write(file, bytes);
+}
+
 await rm(dir, { recursive: true, force: true });
 await mkdir(dir, { recursive: true });
 const expected: Record<string, unknown> = {};
@@ -342,6 +364,7 @@ for (const [name, fixture] of Object.entries(fixtures)) {
   const file = dir + name;
   const inputs = [...input, ...video(seconds, source, fps, scale), ...clicks(audioSeconds)];
   await encode(file, inputs, args, twoPass);
+  if (fixture.bottomUp) await bottomUp(file);
 
   const probe =
     await $`ffprobe -v error -show_format -show_streams -show_entries packet=codec_type,stream_index,pts,dts,size,flags,data_hash -show_data_hash crc32 -of json ${file}`.json();
