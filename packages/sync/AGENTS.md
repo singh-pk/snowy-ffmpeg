@@ -48,3 +48,4 @@ The relay tests (`test/relay.test.ts`) start a MoQ relay in Docker. On Colima, s
 2. **One writer per object.** Never add an object that two peers write.
 3. **The relay stores nothing.** Never rely on it keeping an object after forwarding it.
 4. **Transports stay behind `Link`.** The scheduler, the store and chat never refer to MoQ or WebRTC directly.
+5. **Authorization checks keys, not plans.** `src/relay-auth.ts` decides only what signatures and grants allow. Limits on who may join or edit beyond that, and accounts, are the app's policy; if the app needs a say, the auth server gains a neutral hook (AGENTS.md rule 10), never the policy itself.

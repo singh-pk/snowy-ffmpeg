@@ -55,3 +55,4 @@ The tests and benchmarks build what they run, and need `@snowy-media/ffmpeg` bui
 5. **No runtime dependencies** besides `@snowy-media/ffmpeg`.
 6. **Expected results come from native FFmpeg.** Never hand-write a timestamp or a frame count: add the case to `scripts/gen-fixtures.ts` and regenerate.
 7. **Performance is measured** with `bun run bench`, before and after, on the same machine; work that moves decoding or conversion onto the CPU also with `bun run bench:low-end` and `bun run test:low-end`, which need a Mac with efficiency cores (docs/architecture.md#low-end).
+8. **No interface.** The engine adds nothing to the DOM: it draws into the canvas it is handed and plays through its own `AudioContext`; the player and the editor own the interface.

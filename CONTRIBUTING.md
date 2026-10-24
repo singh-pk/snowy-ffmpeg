@@ -35,6 +35,7 @@ actionlint && zizmor --offline .github && shellcheck packages/ffmpeg/build/*.sh 
 
 - **Keep it small.** One concern, and normally one package, per pull request. A focused 50-line PR is reviewed the same day; a 1,000-line one waits.
 - **Follow the package's rules** in its AGENTS.md and `docs/`. For FFmpeg that means the boundary in [packages/ffmpeg/docs/architecture.md](packages/ffmpeg/docs/architecture.md): JavaScript reads FFmpeg data only through getters in `src/*.c`, never by offset.
+- **Keep packages headless.** No CSS, UI frameworks, telemetry or product policy such as accounts and usage limits in a package; Snowy's apps own those ([AGENTS.md](AGENTS.md) rule 10).
 - **Prove it.** A behaviour change comes with a test. An FFmpeg demuxing fix adds a fixture to `packages/ffmpeg/scripts/gen-fixtures.ts`, so its expectation comes from native `ffprobe`. A performance change shows benchmark numbers before and after.
 - **Format and lint** with `bun run format` and `bun run check`. The pre-commit hook runs the same check as CI. Besides oxlint's own rules, [`tooling/oxlint-rules`](tooling/oxlint-rules) enforces a few house rules; AGENTS.md lists them.
 - **Update the package's CHANGELOG.md** under *Unreleased* for anything a user would notice. CI requires an entry for `feat`, `fix` and `perf` pull requests; a maintainer adds the `no-changelog` label when nobody outside the repository would notice.

@@ -41,3 +41,4 @@ This package is the edit document of the Snowy editor: a magnetic timeline of se
 4. **Positions are derived.** Never store a time that layout can work out from anchors and durations.
 5. **Event-driven only.** No `setTimeout` or `setInterval`, and no polling. The package acts only when it is called.
 6. **Pure.** No dependency on another Snowy package, and no browser-only API, so it runs in Bun.
+7. **Rights come from grants only.** Who may edit is decided by signed grants alone; any further limit on who edits is the app's policy, applied outside the package.
