@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // A ring of audio in a SharedArrayBuffer, from the media worker to the AudioWorklet: 32-bit
 // float samples, channels interleaved, at the rate the ring was made for. The producer

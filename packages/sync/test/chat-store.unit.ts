@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Chat in the local store (src/chat-store.ts), in Chromium's OPFS: what is appended reads back
 // after reopening, a seq is written once and only once its append succeeds, a last record torn

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Entries and refusals (docs/architecture.md#entries): a sequencer's record that it appended a
 // batch to a branch's history, or refused it. Both are signed by the sequencer's peer key, in

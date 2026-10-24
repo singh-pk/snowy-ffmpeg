@@ -1,0 +1,191 @@
+Snowy License 1.0
+
+Licensor: Pratik Kumar Singh
+
+Software: the files the Licensor makes available under these terms, marked with
+"SPDX-License-Identifier: LicenseRef-Snowy-License-1.0" or with a notice naming the
+Snowy License 1.0, and their compiled, bundled and minified forms.
+
+
+1. Acceptance
+
+To get any licence under these terms, you must agree to them. By using, copying,
+modifying or distributing the software, you agree to them. If you do not agree, you
+have no licence to the software.
+
+
+2. Free use
+
+The Licensor grants you a free, non-exclusive, worldwide licence to use, copy and modify
+the software, to make derivative works of it, and to distribute and sell it and your
+derivative works as part of products, for any of these purposes ("permitted purposes"):
+
+  (a) Individuals. An individual's use for themselves, outside any work they do for an
+      organisation. Work an individual does for an organisation, or that an organisation
+      uses, is that organisation's use. An individual who sells products or services of
+      their own counts as a small organisation under (b).
+
+  (b) Small organisations. Use by or for a for-profit organisation that, together with
+      its affiliates, has at most three people working in it. Count every owner who works
+      in it, every employee, every individual contractor and every person who works for
+      it through another business, such as an agency, paid or unpaid, whatever their
+      hours. When an organisation grows past three, it has 60 days to get a company
+      licence, and may keep using the software as before until then.
+
+  (c) Non-profits and education. Use by a non-profit organisation, a school, a
+      university or a public research institution for its non-profit activities.
+
+  (d) Open-source projects. Developing and distributing a project whose source code is
+      publicly available under a licence approved by the Open Source Initiative, which
+      is not sold or offered as part of a paid product or service. Anyone who builds a
+      product of their own on the project needs a permitted purpose or a company licence
+      for that.
+
+  (e) Evaluation and development. Any organisation's use to evaluate the software, and
+      to develop and test products, its own or for its clients, as long as it does not
+      use the software in production.
+
+
+3. Company licence
+
+Any other use, including use in production by or for an organisation with more than
+three people working in it, needs a company licence from the Licensor. The terms of
+that company licence then govern that use. To get one, contact the Licensor at
+pksn1111@gmail.com.
+
+
+4. Products you may build
+
+Subject to section 5, under a permitted purpose or a company licence you may build,
+distribute and sell any product that uses the software, including products that
+compete with the Licensor's own.
+
+
+5. Toolkit distribution
+
+No one may sell, license for a fee or rent the software, or a derivative work of it, as
+a software development kit, library, framework or toolkit whose main value to the
+people building with it is the software's own functionality, unless the Licensor
+agrees in writing. This applies whatever your size or purpose, and with or without a
+company licence. A product that includes the software alongside substantial
+functionality of its own is not toolkit distribution.
+
+
+6. End users
+
+Anyone may use a product that its maker built and distributes under a permitted
+purpose or a company licence, for what the product is for, without a licence of their
+own. This does not let them take the software out of the product, or build on it.
+
+
+7. Distribution
+
+When you distribute the software or a derivative work of it, you must:
+
+  (a) give every recipient these terms, or a link to them;
+  (b) keep every copyright, licence and SPDX notice, either in the files or, when the
+      code is bundled or minified, in a notice that goes with it; and
+  (c) mark the files you changed.
+
+Delivering the software to end users' devices as part of a product, such as a web page
+loading it, needs only the notices in (b).
+
+Every recipient of the software itself gets their licence from the Licensor, under
+these terms. You may not sublicense the software or offer it under other terms.
+
+
+8. Interoperability
+
+These terms do not restrict reading, writing or creating files in the Snowy project
+format, or implementing or calling the Snowy agent tools, in software that contains no
+part of the software. The project format is the one the sections "The project folder",
+"Projects, assets and files" and "The document" of packages/timeline/docs/architecture.md
+in the software's repository specify, with the later versions of that document. The
+agent tools are the operations and queries that the section "Agents" of that document
+describes, and their JSON Schemas. Anyone may read that documentation and implement
+what it specifies.
+
+
+9. Your content
+
+Media, projects, edits and other output you make with the software are yours. These
+terms claim no rights in them.
+
+
+10. Patents
+
+The Licensor grants you a licence, for your permitted purposes or under your company
+licence, under every patent the Licensor can license that the software as the Licensor
+provides it would infringe. If you, or an organisation you act for, claim that the
+software infringes a patent, your patent licence ends immediately.
+
+
+11. Other components
+
+Files marked with another licence, such as those of @snowy-media/ffmpeg under
+LGPL-2.1-or-later, are licensed under that licence and not under these terms.
+
+
+12. Trademarks
+
+These terms grant no right to use the Licensor's names, logos or trademarks.
+TRADEMARKS.md, at the root of the software's repository, says how they may be used.
+
+
+13. Violations
+
+If you break these terms, your licence ends. If the Licensor tells you of a violation
+for the first time, and you stop it and put right what it caused within 30 days of
+being told, your licence continues as if the violation had not happened.
+
+
+14. No warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OR CONDITION OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING ANY WARRANTY OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR
+NON-INFRINGEMENT.
+
+
+15. No liability
+
+TO THE FULLEST EXTENT THE LAW ALLOWS, THE LICENSOR IS NOT LIABLE TO YOU FOR ANY DAMAGES,
+LOSS OR CLAIM OF ANY KIND ARISING FROM THE SOFTWARE OR THESE TERMS, WHETHER IN
+CONTRACT, TORT OR OTHERWISE, EVEN IF THE LICENSOR WAS TOLD THEY WERE POSSIBLE.
+
+
+16. Definitions
+
+"You" means the individual or organisation that agrees to these terms. An individual
+acting for an organisation agrees for that organisation too.
+
+"Organisation" means a company, partnership, sole proprietorship, trust, association,
+non-profit, school, university, public body or any other entity, together with its
+affiliates.
+
+"Affiliates" means the entities that control an organisation, that it controls, or
+that are under common control with it. Control means owning more than half of an
+entity's voting rights, or being able to direct its management.
+
+"Derivative work" means a work based on the software, such as a changed copy of it or
+code that contains part of it. Code of your own that only calls the software through
+its published interfaces is not a derivative work, though the copy of the software that
+goes with it remains the software.
+
+"Product" means software, a service or a website that you make available to others or
+use in an organisation's operations, and "end users" means the people who use it.
+
+"Production" means any use other than evaluation, development and testing, such as
+making the software available to end users or relying on it in an organisation's
+operations.
+
+"Licensor" means Pratik Kumar Singh, or anyone to whom the Licensor assigns the rights
+in the software.
+
+"The software's repository" means https://github.com/singh-pk/snowy-media, or wherever
+the Licensor moves it.
+
+
+17. Versions
+
+The Licensor may publish new versions of these terms. Each release of the software
+says which version it is under, and you may keep using a release under that version.

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Audio and the clock in Chromium: the media worker decodes and resamples
 // each fixture into the PCM ring, and the engine's AudioWorklet plays it into an

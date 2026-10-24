@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Bundles the engine and each of its workers for browsers. Workers are entry points of their
 // own, loaded by URL (src/index.ts), so each thread loads only its own code.
@@ -7,12 +7,20 @@
 // @snowy-media/ffmpeg stays an import, so the app's bundler resolves it together with the
 // WebAssembly files it loads by URL. A page served without a bundler (the tests) passes
 // `ffmpeg`, the URL path the ffmpeg package is served under, and the imports point there.
+//
+// Bundling drops the source files' SPDX headers, so each bundle carries the licence as a
+// legal comment, which minifiers keep.
 
 import { $, Glob } from "bun";
 import { rm } from "node:fs/promises";
 import { dirname } from "node:path";
 
 const pkg = Bun.fileURLToPath(new URL("../", import.meta.url));
+// REUSE-IgnoreStart
+const LICENSE_NOTICE =
+  "/*! @snowy-media/engine | SPDX-License-Identifier: LicenseRef-Snowy-License-1.0 | " +
+  "https://github.com/singh-pk/snowy-media/blob/main/LICENSES/LicenseRef-Snowy-License-1.0.txt */";
+// REUSE-IgnoreEnd
 
 interface Options {
   /** Where the bundles go. */
@@ -55,6 +63,7 @@ export async function build({ outdir, ffmpeg, entrypoints }: Options) {
     format: "esm",
     packages: "external",
     plugins: ffmpeg ? [ffmpegAt(ffmpeg)] : [],
+    banner: LICENSE_NOTICE,
   });
 }
 

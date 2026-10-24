@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // A worker that writes `count` packets into a ring (test/ring.unit.ts): packet i has size(i)
 // bytes (test/support/ring-packets.ts), byte j of it is (i + j) & 255, and its pts is i. Posts

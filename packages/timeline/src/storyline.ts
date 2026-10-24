@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // A storyline's layout (docs/architecture.md#layout): its items ordered by (position, id), each
 // starting at the sum of the durations before it. They are kept in an AVL tree whose nodes also

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // A ring of packets in a SharedArrayBuffer, from one producer thread to one consumer thread,
 // with no message per packet. It is a byte stream of records: a 32-byte header, then the

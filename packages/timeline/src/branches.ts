@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // A project's branches (docs/architecture.md#branches): main, and one more for each
 // `branch.create` entry, each its own linear history that starts from the document at that entry

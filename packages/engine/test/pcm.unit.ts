@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The PCM ring and its clock, in Chromium, one render quantum at a time as the AudioWorklet reads
 // it: samples arrive intact across the ring's end and from a producer thread that blocks for

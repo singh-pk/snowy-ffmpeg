@@ -6,7 +6,7 @@
 # @snowy-media/timeline
 
 [![ci](https://github.com/singh-pk/snowy-media/actions/workflows/ci.yml/badge.svg)](https://github.com/singh-pk/snowy-media/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/singh-pk/snowy-media/blob/main/LICENSE)
+[![License: Snowy License 1.0](https://img.shields.io/badge/license-Snowy%20License%201.0-blue)](https://github.com/singh-pk/snowy-media/blob/main/LICENSES/LicenseRef-Snowy-License-1.0.txt)
 
 The edit document of the [Snowy](https://github.com/singh-pk/snowy-media) editor: a magnetic timeline whose storyline closes up by itself and whose connected clips move with what they belong to, the typed operations that change it, and one linear history that every person and agent editing a project shares, with undo, revert and branches. It has no DOM, network or media, so it runs in Bun as well as the browser; [`@snowy-media/engine`](../engine) plays what it describes and [`@snowy-media/sync`](../sync) carries it between peers.
 
@@ -15,4 +15,4 @@ The edit document of the [Snowy](https://github.com/singh-pk/snowy-media) editor
 
 ## Licence
 
-MIT.
+The [Snowy License 1.0](https://github.com/singh-pk/snowy-media/blob/main/LICENSES/LicenseRef-Snowy-License-1.0.txt): free for individuals, companies of up to 3 people, non-profits, education, open-source projects and evaluation. Larger companies using it in production need a company licence ([LICENSE.md](https://github.com/singh-pk/snowy-media/blob/main/LICENSE.md)).

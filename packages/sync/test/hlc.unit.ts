@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The hybrid logical clock (src/hlc.ts), in Chromium: it never goes back, a received value moves it
 // past that value, its counter carries into the wall clock, it survives a reload, and a value

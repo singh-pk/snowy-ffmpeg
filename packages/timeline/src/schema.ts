@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Schemas for canonical JSON (docs/architecture.md#batches). A schema checks an untrusted value
 // and returns it in canonical shape: a record's fields in the order its schema declares them,

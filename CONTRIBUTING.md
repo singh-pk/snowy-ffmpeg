@@ -83,18 +83,26 @@ npm only lets a package that already exists trust a workflow, so a new package s
 
 ## Licensing
 
-Each package states its licence in its `package.json`: `packages/ffmpeg` is [LGPL-2.1-or-later](LICENSES/LGPL-2.1-or-later.txt), like FFmpeg; everything else, including the repository tooling, is [MIT](LICENSES/MIT.txt). By contributing you agree that your contribution is licensed under the licence of the files it changes. Every new source file starts with SPDX headers naming that licence:
+[LICENSE.md](LICENSE.md) says which licence covers which files: the packages are under the [Snowy License 1.0](LICENSES/LicenseRef-Snowy-License-1.0.txt), except `packages/ffmpeg`, which is [LGPL-2.1-or-later](LICENSES/LGPL-2.1-or-later.txt) like FFmpeg; the repository tooling is [MIT](LICENSES/MIT.txt); and the name and logos are trademarks ([TRADEMARKS.md](TRADEMARKS.md)).
+
+### The Contributor License Agreement
+
+Before your first pull request is merged, you sign the [Contributor License Agreement](CLA.md). You keep the copyright in your work; the agreement lets the maintainer license it under any terms, including the licence of the files it changes and company licences, which is how Snowy is funded. To sign, add a line with your GitHub account's numeric ID and login to [`.github/cla-signatures.txt`](.github/cla-signatures.txt) in your first pull request, as the file describes. CI checks that you and every commit author have signed; anyone you credit as a co-author must have signed too. One signature covers all your contributions.
+
+### SPDX headers
+
+Every new source file starts with SPDX headers naming the licence of where it lives, for example in `packages/timeline`:
 
 <!-- REUSE-IgnoreStart -->
 
-```c
+```ts
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: LGPL-2.1-or-later
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 ```
 
 <!-- REUSE-IgnoreEnd -->
 
-CI runs [REUSE](https://reuse.software) to check this.
+Use `LGPL-2.1-or-later` in `packages/ffmpeg` and `MIT` for tooling. Code from elsewhere keeps its own copyright and licence in its headers, and is listed in the package's NOTICE. CI runs [REUSE](https://reuse.software) to check every file.
 
 ## Conduct
 

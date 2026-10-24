@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The source's records as a peer holds them (src/source-records.ts), in Chromium: what the source
 // seals is kept, read and passed on unchanged; only a newer catalog or control record replaces

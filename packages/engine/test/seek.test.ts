@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // engine.seek in Chromium, through the public API alone: paused, each seek
 // puts up exactly the frame due at its target, the one FFmpeg's timestamps say, and the clock

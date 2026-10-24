@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Sending this peer's chat (docs/architecture.md#sending). A message is chained and returned at
 // once, for the local log, then queued. Whenever the stream is free, everything queued goes as

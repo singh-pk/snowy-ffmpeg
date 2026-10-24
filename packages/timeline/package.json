@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "The edit document of the Snowy editor: a magnetic timeline, the operations that change it, and one linear history shared by every person and agent editing it",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/singh-pk/snowy-media.git",

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Chat holdings (src/chat-holdings.ts), in Chromium: one checkpoint is kept per run of consecutive
 // chained seqs, the lower one goes when a gap fills, a forked chain stays proven, and every repair or version-vector reply is a

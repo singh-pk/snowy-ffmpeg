@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The connection to the relay (docs/architecture.md#the-relay): MoQ over WebTransport, through
 // the `@moq/net` client. One connection per peer per session gives:

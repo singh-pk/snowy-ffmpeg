@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Ranking peers by hash (docs/architecture.md#gaps-and-repair): who to ask for missing chat,
 // or for the session's state on join. Each asker ranks the same candidates the same way for the

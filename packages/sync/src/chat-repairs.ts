@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Asking for missing chat (docs/architecture.md#gaps-and-repair). The peer with a gap ranks the
 // candidates by `SHA-256(candidate ‖ author ‖ firstMissingSeq)` and asks the lowest; on `gone`,

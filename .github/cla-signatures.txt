@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: 2026 The Snowy Authors
+# SPDX-License-Identifier: MIT
+#
+# The GitHub accounts that signed the Snowy Contributor License Agreement 1.0 (CLA.md), one
+# per line as "<numeric id> <login>", each added in a pull request its owner opened. The ID
+# stays the same when a login changes; find yours at https://api.github.com/users/<login>.
+56654568 singh-pk

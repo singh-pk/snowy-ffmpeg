@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // A MoQ relay for the browser tests: moq-dev's moq-relay in Docker, with a certificate
 // made for the run, asking src/relay-auth.ts's auth server (test/support/auth-server.ts) in a

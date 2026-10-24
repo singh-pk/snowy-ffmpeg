@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Video output in the render worker: decodes a stream's packets from the packet ring with
 // WebCodecs, or for a codec WebCodecs does not decode with FFmpeg (src/wasm-video.ts), into

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // engine.play and engine.pause in Chromium, in real time, through the
 // public API alone: while sync-10min.mp4 plays, the frame on the canvas is, at every animation

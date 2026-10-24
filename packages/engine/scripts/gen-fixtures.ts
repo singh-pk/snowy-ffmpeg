@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Generates the test videos in test/fixtures and their expectations, test/fixtures/expected.json,
 // from native ffprobe. Every video frame carries its number (test/support/frame-id.ts) and the

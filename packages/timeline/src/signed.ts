@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Signed objects: batches, entries and refusals (docs/architecture.md#batches). Each one's bytes
 // are its canonical JSON (src/schema.ts), at most 1 MiB. A peer re-encodes every object it reads

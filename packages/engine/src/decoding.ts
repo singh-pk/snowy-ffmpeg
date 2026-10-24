@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // How far a video decoder has decoded, whatever order it emits frames in: every frame up to a
 // time has come out of it. A packet that makes no frame (a VP8 alt-ref frame) is not waited

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The messages that repair chat between two peers (docs/architecture.md#gaps-and-repair), sent
 // with a link's `send`, and the side that answers them. A peer with a gap sends `chat-request`

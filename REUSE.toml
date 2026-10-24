@@ -1,6 +1,7 @@
 version = 1
 
-# Everything outside packages/ffmpeg is MIT; files that can't carry a header are listed here.
+# Which licence covers what is in LICENSE.md. Files that can't carry a header are listed here;
+# the last matching annotation wins. Tooling, configuration and root documents are MIT.
 [[annotations]]
 path = [
   "**/*.md",
@@ -13,14 +14,36 @@ path = [
   ".gitignore",
   ".editorconfig",
   "bun.lock",
-  "brand/*.png",
-  "packages/*/test/fixtures/**",
 ]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 The Snowy Authors"
 SPDX-License-Identifier = "MIT"
 
-# @snowy-media/ffmpeg is LGPL, like FFmpeg. The last matching annotation wins.
+# Every package is under the Snowy License, new ones included; ffmpeg's annotation below
+# overrides this for packages/ffmpeg.
+[[annotations]]
+path = [
+  "packages/**/*.md",
+  "packages/**/*.json",
+  "packages/**/*.jsonc",
+  "packages/**/*.yml",
+  "packages/**/*.yaml",
+  "packages/**/*.toml",
+  "packages/**/.gitignore",
+  "packages/*/test/fixtures/**",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 The Snowy Authors"
+SPDX-License-Identifier = "LicenseRef-Snowy-License-1.0"
+
+# The name and logos are trademarks, not licensed (TRADEMARKS.md).
+[[annotations]]
+path = "brand/*.png"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Pratik Kumar Singh"
+SPDX-License-Identifier = "LicenseRef-Snowy-Brand"
+
+# @snowy-media/ffmpeg is LGPL, like FFmpeg.
 [[annotations]]
 path = [
   "packages/ffmpeg/**/*.md",

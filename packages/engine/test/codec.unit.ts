@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Codec strings from bitstream fields, in Chromium, for what the fixtures do not cover: the HEVC
 // example of ISO/IEC 14496-15 Annex E, a VP9 profile 2 keyframe, AV1 sequence headers with

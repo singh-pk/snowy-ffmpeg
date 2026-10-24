@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The render worker's queue of decoded frames, in presentation order whatever order the
 // decoder emits them in, and bounded by the bytes they hold, so memory stays bounded at any

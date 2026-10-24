@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Position keys (src/position.ts), in Chromium: a key always fits between two others, the same
 // inputs give the same key, appending keeps keys short, and keys inserted together stay in

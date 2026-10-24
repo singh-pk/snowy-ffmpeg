@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The control record (src/control.ts), in Chromium: it round-trips under the key of its epoch; a
 // malformed one is refused before signing; and one signed by another session, altered, carrying

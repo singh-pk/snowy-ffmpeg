@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The control record (docs/architecture.md#control-record): where the source's playback is, and
 // whether it plays, from a moment on the source's clock. Only the source writes it, as a signed

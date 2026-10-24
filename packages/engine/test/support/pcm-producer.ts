@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // A worker that writes `count` stereo frames into a PCM ring (test/pcm.unit.ts), CHUNK at
 // a time: channel 0 of frame i holds i + 1, never silence, and channel 1 its negative. Posts

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Engine benchmarks in Chromium on a GPU (test/support/browsers.ts). Each run is a fresh
 // browser; every number is the median of --runs runs, in milliseconds. Prints a

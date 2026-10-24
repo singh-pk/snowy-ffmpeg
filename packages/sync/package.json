@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "Live sessions for Snowy over a stateless MoQ relay: watching a local file together with shared chat, and editing a timeline project together",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/singh-pk/snowy-media.git",

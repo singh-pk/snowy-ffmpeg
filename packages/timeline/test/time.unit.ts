@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Time in flicks (src/time.ts), in Chromium: every common frame and sample is whole flicks,
 // conversions round once with halves upwards, speed divides the source, video snaps down to a

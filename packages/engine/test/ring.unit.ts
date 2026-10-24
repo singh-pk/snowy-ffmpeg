@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The packet ring between two threads, in Chromium: every packet arrives intact and in order
 // through a ring far smaller than the data, records wrap around its end, and closing it

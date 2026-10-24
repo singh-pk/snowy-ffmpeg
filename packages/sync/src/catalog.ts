@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The source's records of what it streams (docs/architecture.md#catalog): the catalog, the
 // session's tracks and duration, and one codec setup per track, what a decoder is configured

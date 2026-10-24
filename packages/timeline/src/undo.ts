@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Undo (docs/architecture.md#undo-revert-and-going-back): the operations that take a batch back,
 // worked out from three documents: just before the batch, just after it, and now. A change the

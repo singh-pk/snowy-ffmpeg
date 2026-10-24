@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // How far a decoder has decoded (src/decoding.ts), in Chromium: frames out in presentation or in
 // decode order, a packet that makes no frame, a frame that never comes, and the end. The

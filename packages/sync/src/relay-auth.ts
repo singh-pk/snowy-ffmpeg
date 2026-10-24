@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Relay authorization (docs/architecture.md#authorization): the join grant, the token a peer
 // dials the relay with, and the auth server moq-relay asks (`--auth-url`), which checks a token

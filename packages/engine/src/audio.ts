@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Audio output on the main thread: the AudioWorklet (src/audio.worklet.ts) that plays a PCM
 // ring into an AudioContext and keeps the clock.

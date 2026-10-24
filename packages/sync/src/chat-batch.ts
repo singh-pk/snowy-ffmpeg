@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The chat batch (docs/architecture.md#sending): everything an author had queued when its
 // stream was free, as one object `chat/<author>/<firstSeq>-<lastSeq>`, sealed with the content

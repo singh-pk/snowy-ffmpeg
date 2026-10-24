@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // A peer's chat log (docs/architecture.md#chat): the messages it shows, in the order every peer
 // shows them, by (hlc, author). Chat is append-only, so edits, deletes and reactions are

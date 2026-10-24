@@ -6,7 +6,7 @@
 # @snowy-media/engine
 
 [![ci](https://github.com/singh-pk/snowy-media/actions/workflows/ci.yml/badge.svg)](https://github.com/singh-pk/snowy-media/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/singh-pk/snowy-media/blob/main/LICENSE)
+[![License: Snowy License 1.0](https://img.shields.io/badge/license-Snowy%20License%201.0-blue)](https://github.com/singh-pk/snowy-media/blob/main/LICENSES/LicenseRef-Snowy-License-1.0.txt)
 
 The playback pipeline of [Snowy](https://github.com/singh-pk/snowy-media): it reads a local file, demuxes and decodes it with [`@snowy-media/ffmpeg`](../ffmpeg) and WebCodecs, keeps audio and video in sync, and draws into a canvas with WebGPU, all in workers. It has no user interface; the Snowy player and editor build on it.
 
@@ -33,4 +33,4 @@ try {
 
 ## Licence
 
-[MIT](https://github.com/singh-pk/snowy-media/blob/main/LICENSE). `@snowy-media/ffmpeg`, which it loads at run time, is LGPL-2.1-or-later.
+The [Snowy License 1.0](https://github.com/singh-pk/snowy-media/blob/main/LICENSES/LicenseRef-Snowy-License-1.0.txt): free for individuals, companies of up to 3 people, non-profits, education, open-source projects and evaluation. Larger companies using it in production need a company licence ([LICENSE.md](https://github.com/singh-pk/snowy-media/blob/main/LICENSE.md)). `@snowy-media/ffmpeg`, which it loads at run time, is LGPL-2.1-or-later.

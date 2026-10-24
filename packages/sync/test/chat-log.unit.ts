@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The chat log (src/chat-log.ts), in Chromium: every peer shows the same order whatever order
 // messages arrive in; a late message is marked; gaps and version vectors follow the seqs held;

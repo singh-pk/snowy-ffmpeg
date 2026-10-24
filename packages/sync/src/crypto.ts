@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Keys, signatures and encryption for every object (docs/architecture.md#identity-sessions-and-access,
 // docs/architecture.md#encryption). Peers and the session are Ed25519 public keys, named by

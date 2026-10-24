@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // Links in memory, for tests: each pair joins two peers as a transport would. A message goes as
 // JSON and an object as a copy of its bytes, each arriving in a later task and in order; once a link

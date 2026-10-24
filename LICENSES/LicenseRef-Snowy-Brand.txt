@@ -1,0 +1,6 @@
+Copyright 2026 Pratik Kumar Singh. All rights reserved.
+
+These files hold the Snowy name and logos, which are trademarks of Pratik Kumar Singh.
+They are not licensed under the Snowy License, the MIT License or any other licence in
+this repository. You may use them only as TRADEMARKS.md, at the root of the repository
+(https://github.com/singh-pk/snowy-media/blob/main/TRADEMARKS.md), permits.

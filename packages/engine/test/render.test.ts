@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 The Snowy Authors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Snowy-License-1.0
 //
 // The video output (src/video.ts) in Chromium: for every fixture, frames decoded from the packet ring go up on the canvas at their own
 // timestamps, stay up until the next one is due, and are skipped when the time jumps past
