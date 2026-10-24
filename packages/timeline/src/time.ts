@@ -87,6 +87,11 @@ export function flicksToSource(flicks: number, [tbNum, tbDen]: Ratio, [num, den]
   return roundHalfUp(n, FLICKS * positive(den, "speed") * positive(tbNum, "time base"));
 }
 
+/** `flicks` in microseconds, rounded to the nearest, halves upwards. */
+export function flicksToMicros(flicks: number) {
+  return roundHalfUp(integer(flicks, "flicks") * 1_000_000n, FLICKS);
+}
+
 /** `flicks` moved down to the frame boundary at or before it, at `rate`. */
 export function snapToFrame(flicks: number, rate: Ratio) {
   const frame = BigInt(frameFlicks(rate));

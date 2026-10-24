@@ -470,3 +470,21 @@ test("a transition sits on its cut and needs a storyline item", () => {
   expect(result.skipped.map(({ index, reason }) => [index, reason])).toEqual([[1, "structural"]]);
   expect(project.start(id(result.seq, 0))).toBe(SECOND - FRAME);
 });
+
+test("a storyline in a range lists what plays in it or starts at its end, as the whole list does", () => {
+  const { project, apply } = setUp();
+  apply(clip({ anchor: at("a0") }), clip({ anchor: at("a1") }), clip({ anchor: at("a2") }));
+  apply({ op: "item.remove", id: id(2, 1) });
+  const whole = project.storyline(sequence);
+  const within = (from: number, to: number) =>
+    whole.filter(({ start, duration }) => start + duration > from && start <= to);
+
+  for (const [from, to] of [
+    [0, SECOND / 2],
+    [SECOND, SECOND],
+    [SECOND / 2, 2 * SECOND],
+    [3 * SECOND, 4 * SECOND],
+  ] as const) {
+    expect(project.storyline(sequence, { from, to })).toEqual(within(from, to));
+  }
+});
