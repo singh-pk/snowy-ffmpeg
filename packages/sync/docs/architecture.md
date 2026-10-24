@@ -876,9 +876,30 @@ The transports' keepalives and idle timeouts (QUIC's idle timeout, WebRTC's conn
 | Edit session: peer `P` with `propose` or `edit` | The same, plus `peer/P/batches`, `peer/P/history/*` and, with `edit`, `asset/P/*` | The same |
 
 - **The relay authorizes broadcasts**, the paths in the table, and every track in a broadcast with it, so a peer may subscribe to any track of another peer's broadcast, `have` and `probe` included. Neither is secret.
-- **moq-relay asks an auth server** about each connection (`--auth-url`), posting the path and query it was dialed with; the server answers with the patterns the table gives, or refuses. The server is `authServer` in `src/relay-auth.ts`, a `fetch` handler on Web Crypto that keeps nothing between requests, run beside the relay (`Bun.serve({ fetch: authServer })`, on a loopback address, since moq-relay asks a plain `http://` server only there).
-- **A new connection's token must be fresh**: made at most 5 minutes before, or 1 minute after, by the server's clock. A connection already admitted keeps its grant until it closes.
+- **moq-relay asks an auth server** about each connection (`--auth-url`), posting the path and query it was dialed with; the server answers with the patterns the table gives, or refuses. The server is `authServer` in `src/relay-auth.ts`, or one `createAuthServer` makes with the app's [admission](#admission): a `fetch` handler on Web Crypto that keeps nothing between requests, run beside the relay (`Bun.serve({ fetch: authServer })`, on a loopback address, since moq-relay asks a plain `http://` server only there).
+- **A new connection's token must be fresh**: made at most 5 minutes before, or 1 minute after, by the server's clock. A connection already admitted keeps its grant, however old its token, until it closes or the app's `admit` refuses it.
 - **moq-relay admits a connection only after making it**, so a refused token doesn't fail the connect. The relay ends the connection, and the connection's `close` says it was refused.
+
+### Admission
+
+The auth server decides what keys allow. Whether to admit someone the keys allow, such as a limit on how many may join, is the app's policy, and the package knows nothing of it. An app that has one passes it to `createAuthServer`.
+
+```ts
+type Connection = { id: string; session: SessionId; peer: PeerId; role: "source" | "peer" };
+
+type Admission = {
+  admit?: (connection: Connection) => boolean | Promise<boolean>;
+  end?: (id: string) => void | Promise<void>;
+};
+```
+
+- **`admit` is asked after the token checks out,** on every `connect` and `revalidate`; a token that fails is refused without asking. `id` is the relay's own id for the connection, which every request about it carries, and `role` is the token's kind: the source's, or a peer's. `false` refuses with 403, as a failed token does.
+- **A refusal on `revalidate` ends an admitted connection.** moq-relay asks again when the grant's cadence or a push to its internal listener (`/sessions/revalidate?id=…`) says so, so an app removes someone by refusing them and pushing. This server sets no cadence, so without a push an admitted connection is never asked again.
+- **`end` is told the id of every admitted connection the relay closes,** including one a revalidation refused; a connection refused on `connect` has no `end`. The id is what a connection's `connect`, `revalidate` and `end` share, and `end`'s token isn't checked again, so an app that counts connections keys them by id. The id is the relay's word only while the relay alone can reach the auth server, as on the loopback address above; anyone else who can post to it can report an end.
+- **A failure answers 500.** moq-relay refuses a new connection on any answer but a grant or a refusal, retries a revalidation with backoff, and only logs a failed `end`, so an app whose policy is down admits no one new and removes no one.
+- **An `end` can be missed.** The grant sets no cadence or expiry, so if the relay stops, or gives up on a `connect` that `admit` already allowed, no `end` comes and nothing asks again. An app that counts connections expires them itself.
+- **Without `admit`, every connection whose token checks out is admitted.** `authServer` is `createAuthServer()`.
+- **The package keeps nothing for the policy.** Counting connections, mapping peer keys to people (a person has a peer key per device) and limiting them are the app's, in its own server. An agent a tab carries never reaches `admit`, since it rides that peer's connection; a headless agent connects as a peer and is asked like one.
 
 ## Security
 

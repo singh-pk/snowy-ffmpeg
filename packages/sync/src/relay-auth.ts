@@ -4,8 +4,9 @@
 // Relay authorization (docs/architecture.md#authorization): the join grant, the token a peer
 // dials the relay with, and the auth server moq-relay asks (`--auth-url`), which checks a token
 // and answers with what its peer may publish and subscribe to. The server keeps nothing: each
-// answer comes from the token and the dialed path alone. It is a `fetch` handler on Web Crypto,
-// so it runs wherever that does: `Bun.serve({ fetch: authServer })`, or a Worker.
+// answer comes from the token and the dialed path alone, and from the app's `admit` when it
+// passes one, which keeps whatever state its own policy needs. It is a `fetch` handler on Web
+// Crypto, so it runs wherever that does: `Bun.serve({ fetch: authServer })`, or a Worker.
 
 import { isRecord } from "./chat";
 import {
@@ -161,6 +162,24 @@ const sourceGrant = (peer: KeyId): RelayGrant => ({
   subscribe: ["**"],
 });
 
+// The token a connection dialed at `path` with `query`, once every check passed, or undefined.
+async function checked(path: string, query: string | undefined, now: number, fresh: boolean) {
+  const session = sessionOf(path);
+  const token = readToken(query);
+  if (session === undefined || token === undefined) return undefined;
+
+  const { request } = token;
+  if (request.session !== session) return undefined;
+  const age = now - request.issuedAt;
+  if (fresh && (age > TOKEN_AGE || age < -TOKEN_SKEW)) return undefined;
+
+  const ok = await verified(token, session);
+  return ok ? token : undefined;
+}
+
+const grantOf = ({ kind, request }: Token) =>
+  kind === "source" ? sourceGrant(request.peer) : peerGrant(request.peer);
+
 /**
  * What a connection dialed at `path` with `query` may do, or undefined if its token admits
  * nothing. A new connection's token must be fresh at `now`; a connection already admitted keeps
@@ -172,53 +191,85 @@ export async function authorize(
   now: number,
   fresh = true,
 ): Promise<RelayGrant | undefined> {
-  const session = sessionOf(path);
-  const token = readToken(query);
-  if (session === undefined || token === undefined) return undefined;
-
-  const { request } = token;
-  if (request.session !== session) return undefined;
-  const age = now - request.issuedAt;
-  if (fresh && (age > TOKEN_AGE || age < -TOKEN_SKEW)) return undefined;
-
-  const ok = await verified(token, session);
-  if (!ok) return undefined;
-  return token.kind === "source" ? sourceGrant(request.peer) : peerGrant(request.peer);
+  const token = await checked(path, query, now, fresh);
+  return token === undefined ? undefined : grantOf(token);
 }
+
+/** A connection whose token checked out: the relay's id for it, its session, its peer and role. */
+export type Connection = { id: string; session: KeyId; peer: KeyId; role: "source" | "peer" };
+
+/**
+ * The app's say in who the relay admits, beyond what the keys allow (docs/architecture.md#admission).
+ * The package keeps no state for it: an app that counts connections keeps them by `id`.
+ */
+export type Admission = {
+  /** Whether to admit a connection whose token checked out, asked on `connect` and `revalidate`. */
+  admit?: (connection: Connection) => boolean | Promise<boolean>;
+  /** The relay reports an admitted connection closed, by its id; one refused on `connect` has no end. */
+  end?: (id: string) => void | Promise<void>;
+};
+
+const status = (code: number) => new Response(null, { status: code });
 
 /**
  * The auth server, as a `fetch` handler for moq-relay's `--auth-url`: it answers each request
- * the relay posts about a session with a grant, or 403.
+ * the relay posts about a session with a grant, or 403. A failure in `admission` answers 500,
+ * which refuses a new connection, leaves an admitted one to be asked again, and is only logged
+ * for an `end`.
  */
-export async function authServer(request: Request): Promise<Response> {
-  if (request.method !== "POST") return new Response(null, { status: 405 });
+export function createAuthServer(admission: Admission = {}) {
+  return async (request: Request): Promise<Response> => {
+    if (request.method !== "POST") return status(405);
 
-  let body: unknown;
+    let body: unknown;
 
-  try {
-    body = await request.json();
-  } catch {
-    return new Response(null, { status: 400 });
-  }
+    try {
+      body = await request.json();
+    } catch {
+      return status(400);
+    }
 
-  if (!isRecord(body) || typeof body.path !== "string") return new Response(null, { status: 400 });
-  const { event, path, query } = body;
-  if (event === "end") return new Response(null, { status: 204 });
-  if (event !== "connect" && event !== "revalidate") return new Response(null, { status: 400 });
+    if (!isRecord(body) || typeof body.path !== "string" || typeof body.id !== "string") {
+      return status(400);
+    }
 
-  let grant: RelayGrant | undefined;
+    const { id, event, path } = body;
+    const query = typeof body.query === "string" ? body.query : undefined;
 
-  // A token that breaks the check refuses, as one that fails it does, not as a server error.
-  try {
-    grant = await authorize(
-      path,
-      typeof query === "string" ? query : undefined,
-      Date.now(),
-      event === "connect",
-    );
-  } catch {
-    grant = undefined;
-  }
+    if (event === "end") {
+      try {
+        await admission.end?.(id);
+      } catch {
+        return status(500);
+      }
 
-  return grant === undefined ? new Response(null, { status: 403 }) : Response.json(grant);
+      return status(204);
+    }
+
+    if (event !== "connect" && event !== "revalidate") return status(400);
+
+    let token: Token | undefined;
+
+    // A token that breaks the check refuses, as one that fails it does, not as a server error.
+    try {
+      token = await checked(path, query, Date.now(), event === "connect");
+    } catch {
+      token = undefined;
+    }
+
+    if (token === undefined) return status(403);
+    const { session, peer } = token.request;
+    let admitted: boolean | undefined;
+
+    try {
+      admitted = await admission.admit?.({ id, session, peer, role: token.kind });
+    } catch {
+      return status(500);
+    }
+
+    return admitted === false ? status(403) : Response.json(grantOf(token));
+  };
 }
+
+/** The auth server that admits every connection whose token checks out. */
+export const authServer = createAuthServer();

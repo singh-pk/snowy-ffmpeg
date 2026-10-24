@@ -3,7 +3,8 @@
 //
 // Relay authorization (src/relay-auth.ts), in Chromium: a peer's token admits it to its own
 // namespaces in its own session, the source's to `source` too, and anything forged, stale,
-// misplaced or malformed admits nothing; the auth server answers moq-relay's requests to match.
+// misplaced or malformed admits nothing; the auth server answers moq-relay's requests to match,
+// and asks the app's `admit` only about connections whose token checked out.
 // Usage: bun run test
 
 import { expect, test } from "../../../tooling/unit";
@@ -11,6 +12,8 @@ import { generateKeyPair, keyId, sign } from "../src/crypto";
 import {
   authorize,
   authServer,
+  createAuthServer,
+  type Connection,
   joinGrant,
   peerToken,
   sourceToken,
@@ -35,8 +38,10 @@ async function setup() {
 
 const query = (token: string) => `token=${token}`;
 
-const post = (body: unknown) =>
-  authServer(new Request("http://auth/", { method: "POST", body: JSON.stringify(body) }));
+const relayPost = (body: unknown) =>
+  new Request("http://auth/", { method: "POST", body: JSON.stringify(body) });
+
+const post = (body: unknown) => authServer(relayPost(body));
 
 type TokenJson = {
   kind: string;
@@ -210,4 +215,86 @@ test("the auth server grants a connection, refuses a bad token and acknowledges 
     subscribe: ["source", "peer/*", `inbox/${peerId}/*`],
   });
   expect([refused.status, ended.status, wrongMethod.status]).toEqual([403, 204, 405]);
+});
+
+test("a request without the relay's connection id is malformed", async () => {
+  const { peer, grant, path } = await setup();
+  const token = await peerToken(grant, peer);
+  const responses = await Promise.all([
+    post({ event: "connect", path, query: query(token) }),
+    post({ event: "end", path, reason: "closed" }),
+  ]);
+  expect(responses.map((r) => r.status)).toEqual([400, 400]);
+});
+
+test("`admit` is asked about each connection whose token checks out, and decides it", async () => {
+  const { session, peer, peerId, sessionId, grant, path } = await setup();
+  const asked: Connection[] = [];
+  const server = createAuthServer({
+    admit: (connection) => {
+      asked.push(connection);
+      return connection.id !== "02";
+    },
+  });
+  const [peerTok, sourceTok] = await Promise.all([
+    peerToken(grant, peer),
+    sourceToken(session, peer),
+  ]);
+  const responses = await Promise.all([
+    server(relayPost({ id: "00", event: "connect", path, query: query(peerTok) })),
+    server(relayPost({ id: "01", event: "revalidate", path, query: query(sourceTok) })),
+    server(relayPost({ id: "02", event: "connect", path, query: query(peerTok) })),
+    server(relayPost({ id: "03", event: "connect", path, query: "token=x" })),
+  ]);
+  expect(responses.map((r) => r.status)).toEqual([200, 200, 403, 403]);
+  const byId = asked.toSorted((a, b) => a.id.localeCompare(b.id));
+  expect(byId).toEqual([
+    { id: "00", session: sessionId, peer: peerId, role: "peer" },
+    { id: "01", session: sessionId, peer: peerId, role: "source" },
+    { id: "02", session: sessionId, peer: peerId, role: "peer" },
+  ]);
+  const [body, expected] = await Promise.all([
+    responses[1]?.json(),
+    authorize(path, query(sourceTok), Date.now()),
+  ]);
+  expect(body).toEqual(expected);
+});
+
+test("`admit` may refuse an admitted connection when the relay asks again", async () => {
+  const { peer, grant, path } = await setup();
+  const token = await peerToken(grant, peer);
+  const kicked = new Set(["00"]);
+  const server = createAuthServer({ admit: ({ id }) => !kicked.has(id) });
+  const response = await server(
+    relayPost({ id: "00", event: "revalidate", path, query: query(token) }),
+  );
+  expect(response.status).toBe(403);
+});
+
+test("a failing `admit` or `end` answers 500, never a refusal", async () => {
+  const { peer, grant, path } = await setup();
+  const token = await peerToken(grant, peer);
+  const server = createAuthServer({
+    admit: () => Promise.reject(new Error("down")),
+    end: () => {
+      throw new Error("down");
+    },
+  });
+  const responses = await Promise.all([
+    server(relayPost({ id: "00", event: "connect", path, query: query(token) })),
+    server(relayPost({ id: "01", event: "revalidate", path, query: query(token) })),
+    server(relayPost({ id: "00", event: "end", path, reason: "closed" })),
+  ]);
+  expect(responses.map((r) => r.status)).toEqual([500, 500, 500]);
+});
+
+test("`end` is told the id of each connection the relay closes", async () => {
+  const { path } = await setup();
+  const ended: string[] = [];
+  const server = createAuthServer({ end: (id) => void ended.push(id) });
+  const responses = await Promise.all(
+    ["00", "01"].map((id) => server(relayPost({ id, event: "end", path, reason: "closed" }))),
+  );
+  expect(responses.map((r) => r.status)).toEqual([204, 204]);
+  expect(ended.toSorted()).toEqual(["00", "01"]);
 });
