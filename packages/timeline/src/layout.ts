@@ -48,7 +48,8 @@ export function originAnchorStart(at: number, rate?: Ratio) {
  */
 export function transitionHalves(duration: number, rate: Ratio) {
   const frame = frameFlicks(rate);
-  const frames = Math.floor(duration / frame);
+  // Exact for safe integers, as a float division near the limit might not be.
+  const frames = (duration - (duration % frame)) / frame;
   const before = Math.floor(frames / 2) * frame;
   return { before, after: frames * frame - before };
 }

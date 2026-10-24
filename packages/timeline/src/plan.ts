@@ -188,14 +188,14 @@ function media(document: Document, clip: Clip, side: "after" | "before") {
   if ("generator" in source) return Number.POSITIVE_INFINITY;
   const timeBase = document.timeBase(clip);
   let first = 0;
-  let last = document.length("sequence" in source ? source.sequence : "");
+  let last: number;
 
   if ("asset" in source) {
     const found = document.asset(source.asset)?.streams.find((s) => s.index === source.stream);
     if (found === undefined) return 0;
     first = found.start;
     last = found.start + found.duration;
-  }
+  } else last = document.length(source.sequence);
 
   const forwards = clip.speed[0] > 0;
   const end = clip.in + flicksToSource(clip.duration, timeBase, clip.speed);
@@ -272,7 +272,7 @@ function crossingsOf(
 
   // Half an item, in whole frames, as storyline items are: the first half takes the odd frame.
   const half = (duration: number, part: "first" | "last") => {
-    const frames = Math.floor(duration / frame);
+    const frames = (duration - (duration % frame)) / frame;
     const first = Math.floor(frames / 2);
     return (part === "first" ? frames - first : first) * frame;
   };

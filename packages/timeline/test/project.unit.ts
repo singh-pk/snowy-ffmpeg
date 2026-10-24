@@ -469,6 +469,10 @@ test("a transition sits on its cut and needs a storyline item", () => {
   const result = apply(transition(id(2, 0)), transition(id(2, 2)));
   expect(result.skipped.map(({ index, reason }) => [index, reason])).toEqual([[1, "structural"]]);
   expect(project.start(id(result.seq, 0))).toBe(SECOND - FRAME);
+  // An odd frame goes after the cut.
+  const odd = apply({ op: "item.set", id: id(result.seq, 0), path: "duration", value: 3 * FRAME });
+  expect(odd.skipped).toEqual([]);
+  expect(project.start(id(result.seq, 0))).toBe(SECOND - FRAME);
 });
 
 test("a storyline in a range lists what plays in it or starts at its end, as the whole list does", () => {
