@@ -9,7 +9,18 @@
 import { expect, test } from "../../../tooling/unit";
 import { plan } from "../src/plan";
 import { FLICKS_PER_SECOND } from "../src/time";
-import { asset, at, audio, clip, id, SECOND, sequence, setUp, video } from "./support/project";
+import {
+  asset,
+  at,
+  audio,
+  clip,
+  id,
+  SECOND,
+  sequence,
+  setUp,
+  video,
+  type Op,
+} from "./support/project";
 
 const MICROS = 1_000_000;
 
@@ -202,4 +213,69 @@ test("a range part way through a clip keeps the clip's start, and names what sta
   expect(plan(project, sequence, SECOND, SECOND)?.segments).toEqual([]);
   expect(() => plan(project, sequence, SECOND, 0)).toThrow(RangeError);
   expect(plan(project, video, 0, SECOND)).toBe(undefined);
+});
+
+// A transition on the end of `cut`.
+const dissolve = (cut: string, duration: number): Op => ({
+  op: "item.add",
+  item: { kind: "transition", cut, duration, effect: "dissolve", params: { softness: 1 } },
+});
+
+test("a transition plays both clips over its cut, centred on it", () => {
+  const { project, apply } = setUp();
+  apply(clip({ anchor: at("a0"), in: 24_000 }), clip({ anchor: at("a1"), in: 24_000 }));
+  const [first, second] = [id(2, 0), id(2, 1)];
+  apply(dissolve(first, SECOND / 2));
+  const found = plan(project, sequence, 0, 2 * SECOND);
+  const shown = found?.segments.map((each) => [
+    each.from,
+    each.video.map((l) => [l.clip, l.start]),
+    each.transitions.map((t) => [t.id, t.from, t.to, t.out, t.in]),
+  ]);
+  expect(shown).toEqual([
+    [0, [[first, 0]], []],
+    [
+      0.75 * MICROS,
+      [
+        [first, 0],
+        [second, MICROS],
+      ],
+      [[id(3, 0), 0.75 * MICROS, 1.25 * MICROS, first, second]],
+    ],
+    [1.25 * MICROS, [[second, MICROS]], []],
+  ]);
+  expect(found?.segments[1]?.transitions[0]?.effect).toBe("dissolve");
+  expect(found?.segments[1]?.transitions[0]?.params).toEqual({ softness: 1 });
+});
+
+test("a transition shortens to the media each side has past the cut, on the frames", () => {
+  const { project, apply } = setUp();
+  // The second clip starts at its stream's start, so nothing of it can play before the cut.
+  apply(clip({ anchor: at("a0"), in: 24_000 }), clip({ anchor: at("a1"), in: 0 }));
+  apply(dissolve(id(2, 0), SECOND / 2 + 1));
+  const found = plan(project, sequence, 0, 2 * SECOND);
+  const [crossing] = found?.segments.flatMap((each) => each.transitions) ?? [];
+  expect([crossing?.from, crossing?.to]).toEqual([MICROS, 1.25 * MICROS]);
+});
+
+test("a transition reaches into a range from a clip outside it, and into nothing after a gap", () => {
+  const { project, apply } = setUp();
+  apply(clip({ anchor: at("a0"), in: 24_000 }), clip({ anchor: at("a1"), in: 24_000 }), {
+    op: "item.add",
+    item: { kind: "gap", anchor: at("a2"), duration: SECOND },
+  });
+  const [first, second] = [id(2, 0), id(2, 1)];
+  apply(dissolve(first, SECOND / 2), dissolve(second, SECOND / 2));
+  // The second clip starts after the range, and plays early in it.
+  const early = plan(project, sequence, 0, (9 * SECOND) / 10)
+    ?.segments.at(-1)
+    ?.video.map((l) => l.clip);
+  expect(early).toEqual([first, second]);
+  // The first clip ends before the range, and plays on into it.
+  const late = plan(project, sequence, (11 * SECOND) / 10, (12 * SECOND) / 10)?.segments[0];
+  expect(late?.video.map((l) => l.clip)).toEqual([first, second]);
+  // Into the gap, only the clip before the cut plays.
+  const gap = plan(project, sequence, 2 * SECOND, (21 * SECOND) / 10)?.segments[0];
+  expect(gap?.video.map((l) => l.clip)).toEqual([second]);
+  expect(gap?.transitions.map((t) => [t.out, t.in])).toEqual([[second, undefined]]);
 });

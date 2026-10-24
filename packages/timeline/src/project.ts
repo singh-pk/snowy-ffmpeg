@@ -1150,6 +1150,30 @@ export function createProject(initial?: Snapshot) {
     return found;
   }
 
+  /** The live storyline item before a storyline item, with its start and duration, if any. */
+  function itemBefore(id: ItemId) {
+    const state = items.get(id);
+    if (state === undefined) return undefined;
+    const line = storylineOf(state.sequence);
+    let found = line.has(id) ? line.previous(id) : undefined;
+    while (found !== undefined && !present(found)) found = line.previous(found);
+    if (found === undefined) return undefined;
+    const duration = items.get(found)?.record.duration ?? 0;
+    return { id: found, start: line.start(found), duration };
+  }
+
+  /** The live transitions on the end of a storyline item, by id. */
+  function transitions(cut: ItemId) {
+    const found = [];
+
+    for (const id of live(dependents, cut)) {
+      const record = items.get(id)?.record;
+      if (record?.kind === "transition") found.push(Object.assign({ id }, record));
+    }
+
+    return found.toSorted((a, b) => byCodeUnit(a.id, b.id));
+  }
+
   /** Each shown connected clip of a role, with its start, duration and lane. */
   function connected(role: ItemId) {
     const placed = [];
@@ -1264,6 +1288,8 @@ export function createProject(initial?: Snapshot) {
     storyline,
     lanes,
     connected,
+    itemBefore,
+    transitions,
     /** The time base a clip's source points are in: its stream's, or flicks'. */
     timeBase: timeBaseOf,
     name: () => name,

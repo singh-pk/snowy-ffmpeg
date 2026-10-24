@@ -610,7 +610,7 @@ type Animated = Value | { keyframes: Array<{ at: number; value: Value; ease: Eas
 - **Fades** are the times the fade in ends and the fade out starts.
 - Disabled clips, clips of no length and disabled effects play nothing, nor do gaps and markers. A connected clip whose clip is removed plays where that clip was, as [Anchors](#anchors) says.
 - **A clip is a layer of its role's kind.** A compound clip in a video role is its sequence's picture, which the engine draws from that sequence's own plan; in an audio role, it is that sequence's mix. The plan carries the sequence's record, so the engine sizes the picture and the mix from it.
-- Transitions aren't in the plan: a cut plays as a hard cut.
+- **A transition** plays in the segments over its cut, which list it with its effect, its parameters, its times and the clips on each side, `out` before the cut and `in` after it. Both clips are layers there: the one after the cut plays early, from its media before its start, and the one before plays on, from its media past its end; a side that is a gap or a disabled clip has none. The engine draws the two through the transition's effect. Each half of a transition shortens to the media its side has and to the item next to the cut, so it never reaches past either neighbour, and keeps to the sequence's frames when either side is video. Of two transitions on one cut, made at once, the first by id plays.
 
 Segment times are microseconds, converted from flicks there and only there, rounded to the nearest, halves upwards. Source in-points stay in stream units, so the engine picks the exact frame. The plan also lists the layers that start where the range ends, so the engine can seek their sources and start their decoders before the cut.
 

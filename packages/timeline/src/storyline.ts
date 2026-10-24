@@ -208,6 +208,22 @@ export function createStoryline() {
     return found;
   }
 
+  /** The item before `id` in order, if there is one. */
+  function previous(id: ItemId) {
+    const { position } = node(id);
+    let found: ItemId | undefined;
+    let cursor = root;
+
+    while (cursor !== undefined) {
+      if (compare(position, id, cursor) > 0) {
+        found = cursor.id;
+        cursor = cursor.right;
+      } else cursor = cursor.left;
+    }
+
+    return found;
+  }
+
   /** The smallest position key in the storyline after `position`, if there is one. */
   function keyAfter(position: PositionKey) {
     let found: PositionKey | undefined;
@@ -272,6 +288,7 @@ export function createStoryline() {
     at,
     keyAfter,
     next,
+    previous,
     items,
     has: (id: ItemId) => nodes.has(id),
     /** The storyline's length: the sum of every item's duration. */

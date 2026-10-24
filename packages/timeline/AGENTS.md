@@ -30,7 +30,7 @@ This package is the edit document of the Snowy editor: a magnetic timeline of se
 | `src/undo.ts` | the operations that undo a batch, from the documents before and after it and now |
 | `src/branches.ts` | a project's branches: each one's history, created and closed by entries, and what waits for a branch or for merged entries |
 | `src/folder.ts` | the project folder: logs and histories in segments, what to write, and opening a project from its files |
-| `src/plan.ts` | the render plan: a range of a sequence cut into segments of video and audio layers, for the engine |
+| `src/plan.ts` | the render plan: a range of a sequence cut into segments of video and audio layers and the transitions between them, for the engine |
 | `test/` | unit tests (`*.unit.ts`), run in Chromium by `unit.test.ts` |
 
 ## Rules
