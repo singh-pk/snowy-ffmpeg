@@ -10,7 +10,9 @@ This package is the playback pipeline of Snowy, without any user interface: it r
 | --- | --- |
 | Build the package into `dist/`: the bundles and the declarations of the public API (`tsconfig.dts.json`) | `bun run build` |
 | Browser tests (Chromium) | `bun run test` |
+| The tests as on a budget laptop ([architecture](docs/architecture.md#low-end)) | `bun run test:low-end` |
 | Benchmarks | `bun run bench --runs 5` |
+| The benchmarks as on a budget laptop | `bun run bench:low-end --runs 5` |
 | Regenerate the fixtures (needs native FFmpeg 9.0.2) | `bun run fixtures` |
 
 The tests and benchmarks build what they run, and need `@snowy-media/ffmpeg` built first (`bun run build` in `packages/ffmpeg`; CI takes it from the ffmpeg build job). They need WebGPU on a GPU: macOS, Windows, or Linux with a GPU; or in software with `SNOWY_GPU=warp` on Windows and `SNOWY_GPU=swiftshader` on Linux, as CI runs them ([architecture](docs/architecture.md#testing)).
@@ -52,4 +54,4 @@ The tests and benchmarks build what they run, and need `@snowy-media/ffmpeg` bui
 4. **Queues are bounded by bytes,** never by an item count, so memory stays bounded at any resolution.
 5. **No runtime dependencies** besides `@snowy-media/ffmpeg`.
 6. **Expected results come from native FFmpeg.** Never hand-write a timestamp or a frame count: add the case to `scripts/gen-fixtures.ts` and regenerate.
-7. **Performance is measured** with `bun run bench`, before and after, on the same machine.
+7. **Performance is measured** with `bun run bench`, before and after, on the same machine; work that moves decoding or conversion onto the CPU also with `bun run bench:low-end` and `bun run test:low-end`, which need a Mac with efficiency cores (docs/architecture.md#low-end).

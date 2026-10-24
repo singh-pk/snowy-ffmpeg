@@ -9,7 +9,7 @@
 
 import { parseArgs } from "node:util";
 import type { Page } from "playwright";
-import { launch } from "../test/support/browsers";
+import { cpuTime, launch, PROFILE } from "../test/support/browsers";
 import { ENTRY, MEDIA_WORKER, PAGE, RING_WORKER, serveEngine } from "../test/support/serve";
 
 const { values: args } = parseArgs({
@@ -229,7 +229,8 @@ const benchmarks: Record<string, (tab: Page) => Promise<Timings>> = {
   // The same 4K file played from its start for 8 s, the screen read on every animation frame:
   // how late the frame on screen is for the time heard (engine.currentTime), past when the next
   // frame was due (p50, p90, p99, max), the canvas's read-back included. The first read is left out:
-  // play prerolls video before the clock starts.
+  // play prerolls video before the clock starts. And the CPU time of every browser process over
+  // the time played, in cores (`cpu cores`).
   play: (tab) =>
     tab.evaluate(
       async ({ entry, page, file, times, seconds }) => {
@@ -244,7 +245,14 @@ const benchmarks: Record<string, (tab: Page) => Promise<Timings>> = {
         const handle = await support.fileHandle(file, blob);
         await player.open(handle);
         await player.play();
+        // Exposed by the runner.
+        const used: unknown = Reflect.get(window, "cpuTime");
+        if (typeof used !== "function") throw new Error("no cpuTime");
+        const start = performance.now();
+        const before: unknown = await used();
         const reads = await support.watchScreen(player, canvas, seconds * 1000);
+        const after: unknown = await used();
+        const cores = (Number(after) - Number(before)) / ((performance.now() - start) / 1000);
         await player.pause();
         player.close();
         canvas.remove();
@@ -261,6 +269,7 @@ const benchmarks: Record<string, (tab: Page) => Promise<Timings>> = {
           "late p90": at(0.9),
           "late p99": at(0.99),
           "late max": sorted.at(-1) ?? 0,
+          "cpu cores": cores,
         };
       },
       { entry: ENTRY, page: PAGE, file: SCRUB_4K, times: due, seconds: 8 },
@@ -282,6 +291,7 @@ const measured: Record<string, Timings[]> = {};
 for (let i = 0; i < runs; i++) {
   const browser = await launch();
   const tab = await browser.newPage();
+  await tab.exposeFunction("cpuTime", () => cpuTime(browser));
   await tab.goto(server.url.href);
   // A user gesture, so audio may start for play.
   await tab.mouse.click(1, 1);
@@ -310,7 +320,7 @@ const format = (ms: number) => (ms >= 100 ? ms.toFixed(0) : ms.toPrecision(3));
 const rows = Object.entries(results).flatMap(([bench, timings]) =>
   Object.entries(timings).map(([k, ms]) => `| ${bench} ${k} | ${format(ms)} |`),
 );
-console.log(`| ms (median of ${runs}) | Chromium |`);
+console.log(`| ms, or as named (median of ${runs}) | Chromium${PROFILE ? `, ${PROFILE}` : ""} |`);
 console.log("| --- | ---: |");
 console.log(rows.join("\n"));
 
